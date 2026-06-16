@@ -13,7 +13,7 @@ import EdgeRumCore
 @available(macOS 10.15, *)
 final class SwiftUIModifierTests: XCTestCase {
 
-    private var recorder: Recorder!
+    private var recorder: ProbeRecorder!
     private var startStore: SwiftUIScreenStartStore!
 
     override func setUp() {
@@ -22,7 +22,7 @@ final class SwiftUIModifierTests: XCTestCase {
             Date(timeIntervalSince1970: 1_000_000.0),
             Date(timeIntervalSince1970: 1_000_001.5) // dwell = 1500ms
         ])
-        recorder = Recorder(clock: clock)
+        recorder = ProbeRecorder(clock: clock)
         startStore = SwiftUIScreenStartStore()
     }
 
@@ -41,7 +41,7 @@ final class SwiftUIModifierTests: XCTestCase {
             startStore: startStore
         )
 
-        let calls = recorder.recordedCalls
+        let calls = recorder.calls
         XCTAssertEqual(calls.count, 1)
         guard case let .event(name, attributes) = calls[0] else {
             return XCTFail("Expected .event for navigation, got \(calls[0])")
@@ -68,7 +68,7 @@ final class SwiftUIModifierTests: XCTestCase {
             startStore: startStore
         )
 
-        let calls = recorder.recordedCalls
+        let calls = recorder.calls
         XCTAssertEqual(calls.count, 2)
         guard case let .event(name, attributes) = calls[1] else {
             return XCTFail("Expected .event for screen.duration, got \(calls[1])")
@@ -86,7 +86,7 @@ final class SwiftUIModifierTests: XCTestCase {
             recorder: recorder
         )
 
-        let calls = recorder.recordedCalls
+        let calls = recorder.calls
         XCTAssertEqual(calls.count, 1)
         guard case let .event(name, attributes) = calls[0] else {
             return XCTFail("Expected .event for user.interaction, got \(calls[0])")

@@ -13,9 +13,9 @@ final class RumTimerTests: XCTestCase {
         name: String = "checkout.submit",
         start: Date,
         end: Date
-    ) -> (RumTimer, AdvancingClock, Recorder) {
+    ) -> (RumTimer, AdvancingClock, ProbeRecorder) {
         let clock = AdvancingClock(times: [start, end])
-        let recorder = Recorder(clock: clock)
+        let recorder = ProbeRecorder(clock: clock)
         let timer = RumTimer(name: name, recorder: recorder, clock: clock)
         return (timer, clock, recorder)
     }
@@ -26,7 +26,7 @@ final class RumTimerTests: XCTestCase {
 
         timer.end()
 
-        let calls = recorder.recordedCalls
+        let calls = recorder.calls
         XCTAssertEqual(calls.count, 1)
         guard case let .performance(name, attributes) = calls[0] else {
             return XCTFail("Expected a .performance call, got \(calls[0])")
@@ -42,7 +42,7 @@ final class RumTimerTests: XCTestCase {
         timer.end()
         timer.end(attributes: ["extra": "should_not_be_recorded"])
 
-        XCTAssertEqual(recorder.recordedCalls.count, 1,
+        XCTAssertEqual(recorder.calls.count, 1,
                        "Second .end() must be a no-op")
     }
 
@@ -53,7 +53,7 @@ final class RumTimerTests: XCTestCase {
         timer.cancel()
         timer.end()
 
-        XCTAssertEqual(recorder.recordedCalls.count, 0,
+        XCTAssertEqual(recorder.calls.count, 0,
                        ".cancel() then .end() must record nothing")
     }
 
@@ -64,7 +64,7 @@ final class RumTimerTests: XCTestCase {
         timer.end()
         timer.cancel()
 
-        XCTAssertEqual(recorder.recordedCalls.count, 1,
+        XCTAssertEqual(recorder.calls.count, 1,
                        ".cancel() after .end() must not change recorded count")
     }
 
@@ -76,7 +76,7 @@ final class RumTimerTests: XCTestCase {
         timer.cancel()
         timer.cancel()
 
-        XCTAssertEqual(recorder.recordedCalls.count, 0)
+        XCTAssertEqual(recorder.calls.count, 0)
     }
 
     func testConsumerAttributesAreMergedWithDuration() {
@@ -88,7 +88,7 @@ final class RumTimerTests: XCTestCase {
             "items.count": 4
         ])
 
-        guard case let .performance(_, attributes) = recorder.recordedCalls[0] else {
+        guard case let .performance(_, attributes) = recorder.calls[0] else {
             return XCTFail("Expected a .performance call")
         }
         XCTAssertEqual(attributes["payment.method"], .string("card"))
@@ -100,7 +100,7 @@ final class RumTimerTests: XCTestCase {
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         let (timer, _, recorder) = makeTimer(start: t0, end: t0.addingTimeInterval(0.0006))
         timer.end()
-        guard case let .performance(_, attributes) = recorder.recordedCalls[0] else {
+        guard case let .performance(_, attributes) = recorder.calls[0] else {
             return XCTFail("Expected a .performance call")
         }
         XCTAssertEqual(attributes["duration_ms"], .int(1),

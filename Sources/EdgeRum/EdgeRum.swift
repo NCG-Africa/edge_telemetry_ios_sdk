@@ -103,6 +103,23 @@ public enum EdgeRum {
         startedIdentity = identity
         stateLock.unlock()
 
+        // Hand the full settings to the internal Recorder before
+        // it starts so context snapshots, sample rate, batch size,
+        // and location are all in place when the first event lands.
+        Recorder.shared.configure(RecorderConfig(
+            apiKey: config.apiKey,
+            endpoint: config.endpoint,
+            debug: config.debug,
+            sampleRate: config.sampleRate,
+            batchSize: config.batchSize,
+            flushInterval: config.flushInterval,
+            location: config.location,
+            appName: config.appName,
+            appVersion: config.appVersion,
+            appPackage: config.appPackage,
+            appBuild: config.appBuild,
+            environmentName: config.environment?.rawValue
+        ))
         Recorder.shared.start(
             apiKey: config.apiKey,
             endpoint: config.endpoint,
@@ -124,11 +141,15 @@ public enum EdgeRum {
 
     // MARK: Recording
 
-    /// Record a custom event. `name` is the value the backend uses
-    /// to route the event (`custom_event` on the wire).
+    /// Record a custom event. The user-supplied `name` travels on the
+    /// wire as the `event.name` attribute under the wire-required
+    /// `custom_event` event name — the backend dispatcher routes
+    /// custom events through that single channel.
     public static func track(_ name: String, attributes: [String: AttributeValue]? = nil) {
         guard requireStarted("track") else { return }
-        Recorder.shared.recordEvent(name: name, attributes: attributes ?? [:])
+        var merged: [String: AttributeValue] = attributes ?? [:]
+        merged["event.name"] = .string(name)
+        Recorder.shared.recordEvent(name: "custom_event", attributes: merged)
     }
 
     /// Record a screen entry. Equivalent to the SwiftUI
