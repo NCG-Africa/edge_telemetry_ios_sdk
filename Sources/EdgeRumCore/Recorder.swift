@@ -94,7 +94,7 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     private let _clock: Clock
     private var sessionManager: SessionManager
-    private let transport: TransportSink
+    private var transport: TransportSink
     private let payloadBuilder: PayloadBuilder
     private let context: ContextProvider
 
@@ -200,6 +200,20 @@ public final class Recorder: Recording, @unchecked Sendable {
         sidecar?.write(snapshot: context.snapshot())
     }
 
+    /// F5 production wiring: swap the in-memory `NoopTransportSink` for
+    /// a real HTTP-backed sink. Called once by `EdgeRum.start()` after
+    /// `installPersistedStores`. If the sink is an `HTTPTransportSink`
+    /// it gets a weak reference back to this Recorder so it can call
+    /// `didAckBatch()` on 2xx responses.
+    public func installTransport(_ newTransport: TransportSink) {
+        stateLock.lock()
+        self.transport = newTransport
+        stateLock.unlock()
+        if let http = newTransport as? HTTPTransportSink {
+            http.attach(recorder: self)
+        }
+    }
+
     // MARK: Recording
 
     public var clock: Clock { _clock }
@@ -242,6 +256,12 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.lock()
         _enabled = true
         let configured = _config
+        // T5.5 — re-roll the per-session sampler so the new session
+        // gets its own in/out decision rather than inheriting the
+        // configure() roll.
+        if let rate = _config?.sampleRate {
+            self.sampler = Sampler(sampleRate: rate)
+        }
         stateLock.unlock()
 
         // Rotate to a fresh session — `start()` is the lifecycle
@@ -390,6 +410,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         let events = _buffer
         _buffer.removeAll(keepingCapacity: true)
         let location = _config?.location
+        let currentTransport = transport
         stateLock.unlock()
 
         guard !events.isEmpty else { return }
@@ -400,7 +421,17 @@ public final class Recorder: Recording, @unchecked Sendable {
             location: location,
             flushTime: clock.now
         )
-        transport.send(envelope, reason: reason)
+        currentTransport.send(envelope, reason: reason)
+    }
+
+    /// Forward an offline-queue drain request to the installed
+    /// transport. Called from `EdgeRum.enable()` and (later) F11's
+    /// `didBecomeActive` lifecycle hook.
+    public func drainOfflineQueue() {
+        stateLock.lock()
+        let currentTransport = transport
+        stateLock.unlock()
+        currentTransport.drainOfflineQueue()
     }
 
     /// Drain the buffer and stop. Equivalent to `stop()` plus the
@@ -452,6 +483,13 @@ public final class Recorder: Recording, @unchecked Sendable {
 
         stateLock.lock()
         _insideRotationEmission = true
+        // T5.5 — re-roll the sampler so the new session has its own
+        // in/out decision instead of inheriting the prior session's
+        // roll. Idle rotation crosses a session boundary, so per-spec
+        // (§9.6 "per-session uniform random") the decision is fresh.
+        if let rate = _config?.sampleRate {
+            self.sampler = Sampler(sampleRate: rate)
+        }
         stateLock.unlock()
         defer {
             stateLock.lock()
