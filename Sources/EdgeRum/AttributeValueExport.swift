@@ -10,9 +10,19 @@
 // `pod lib lint` with "Filename used twice". The exported Swift
 // symbol is still `AttributeValue` via the typealias below.
 //
+// Under SwiftPM: `EdgeRumCore` is a real module so we import it and
+// publish a typealias. Under CocoaPods every subspec rolls into a
+// single `EdgeRum` module — the enum from
+// `Sources/EdgeRumCore/AttributeValue.swift` is already public in
+// that module, so the typealias would be a self-referential cycle.
+// The `#if canImport(EdgeRumCore)` guard makes the file a no-op
+// under CocoaPods and active under SwiftPM. Consumers write
+// `AttributeValue` in both worlds.
+//
 // Refs: PLAN-iOS.md §3.2, §F2/T2.3.
 //
 
+#if canImport(EdgeRumCore)
 import EdgeRumCore
 
 /// A single value that may travel as an event attribute on the wire.
@@ -30,3 +40,4 @@ import EdgeRumCore
 /// ])
 /// ```
 public typealias AttributeValue = EdgeRumCore.AttributeValue
+#endif
