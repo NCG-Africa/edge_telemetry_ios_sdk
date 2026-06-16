@@ -250,9 +250,15 @@ public enum EdgeRum {
     /// completionHandler:)` to the SDK so any pending background
     /// uploads can finish after process death. Wire from
     /// `AppDelegate` or `SceneDelegate`.
+    ///
+    /// `completion` is `@Sendable` so it can be hopped onto the main
+    /// queue under Swift 6 strict-concurrency. The system-supplied
+    /// completion handler from
+    /// `application(_:handleEventsForBackgroundURLSession:
+    /// completionHandler:)` is sendable in practice.
     public static func handleBackgroundEvents(
         identifier: String,
-        completion: @escaping () -> Void
+        completion: @Sendable @escaping () -> Void
     ) {
         // F5 wires the BackgroundUploader and calls `completion` once
         // the URLSession finishes its pending tasks. F2 ships the
