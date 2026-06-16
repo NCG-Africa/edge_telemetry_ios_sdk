@@ -1775,22 +1775,27 @@ type-safe attributes. **Status.** `v1.0`. **Refs.** §4.2, §7.
 #### F4 — Identity & session management
 
 **Goal.** Device, user, and session IDs in the exact wire format, with
-crash sidecar for next-launch replay. **Status.** `v1.0`. **Refs.** §8.
+crash sidecar for next-launch replay. **Status.** `v1.0` — landed
+2026-06-16. **Refs.** §8, [ADR-004](docs/decisions.md).
 
-##### T4.1 — ID format generator + regex `[M0]`
+##### T4.1 — ID format generator + regex `[M0]` ✅
 - Helper that produces `device_<epochMs>_<16 hex>_ios` etc. using `SecRandomCopyBytes(8)`.
 - Round-trip regex validates persisted IDs on load; regenerate on mismatch.
 
 **Acceptance.** `XCTAssertMatches(id, "^device_\\d+_[0-9a-f]{16}_ios$")` holds across 10k generated samples.
 
-##### T4.2 — `IdentityProvider` (Keychain + UserDefaults) `[M0]`
+**Shipped in F4 as `Sources/EdgeRumCore/Persistence/IdentityFormat.swift`. Generators live in `SdkContext.swift` / `SessionContext.swift` / `UserContextSnapshot.swift` (carried over from F3).**
+
+##### T4.2 — `IdentityProvider` (Keychain + UserDefaults) `[M0]` ✅
 - `device.id` in Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`).
 - `user.id` in UserDefaults suite `com.edge.rum.session`.
 - Fallback path: if Keychain write fails, log and fall back to UserDefaults.
 
 **Acceptance.** Reinstalling the host app on the simulator regenerates `device.id`.
 
-##### T4.3 — `SessionManager` lifecycle `[M0 → M1]`
+**Shipped in F4 as `KeychainStore.swift` + `UserDefaultsStore.swift` + `IdentityProvider.swift`. `EdgeRum.start()` wires the real stores into `Recorder.shared` via `installPersistedStores(...)`.**
+
+##### T4.3 — `SessionManager` lifecycle `[M0 → M1]` ✅
 - Start a session on `start()` if none active or last-active > 30 min ago.
 - Update last-active on every `Recorder.recordEvent` and `didBecomeActive`.
 - Increment `session.sequence` on transport ack (under `NSLock`).
@@ -1798,11 +1803,15 @@ crash sidecar for next-launch replay. **Status.** `v1.0`. **Refs.** §8.
 
 **Acceptance.** Three consecutive ACKed batches yield `session.sequence = 3`.
 
-##### T4.4 — Crash sidecar `[M3]`
-- `Library/Caches/edge-rum/last-session.json` mirrors current identity on every event.
-- Read on next launch when a crash report is pending — emit replay event with the **previous** session's identity.
+**Shipped in F4 as `UserDefaultsSessionStore.swift` + the `Recorder.bumpLastActiveAndEmitRotationIfNeeded()` hook + `Recorder.didAckBatch()`. `didBecomeActive` / `willResignActive` lifecycle wiring is owned by F11 (`LifecycleCapture`).**
 
-**Acceptance.** Crash sample app (§13.3) test: replayed `app.crash` carries the crashing session's `session.id`, not the current one.
+##### T4.4 — Crash sidecar — writer only `[M3]` ✅ / reader carry-over → F14
+- `Library/Caches/edge-rum/last-session.json` mirrors current identity on every event.
+- ~~Read on next launch when a crash report is pending — emit replay event with the **previous** session's identity.~~ *(reader + replay path lives in `EdgeRumCrash` / T14.3 — see issue #44 carry-over note)*
+
+**Acceptance.** Crash sample app (§13.3) test: replayed `app.crash` carries the crashing session's `session.id`, not the current one. *(Reader + replay path lives in F14 / T14.3.)*
+
+**Shipped in F4 as `SessionSidecar.swift`. Writer is hooked into `Recorder.enqueue(_:)` and `Recorder.didAckBatch()` so the on-disk mirror is fresh whenever the buffer or sequence changes.**
 
 ---
 
