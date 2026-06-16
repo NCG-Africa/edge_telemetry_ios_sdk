@@ -15,9 +15,13 @@ let package = Package(
         .iOS(.v14)
     ],
     products: [
-        // Dynamic framework — the default.
+        // Dynamic framework — the default. Forcing `.dynamic` is what
+        // makes `xcodebuild archive` emit a real `.framework` bundle
+        // (not loose `.o` files), which we then pipe through
+        // `xcodebuild -create-xcframework` in Tools/build-xcframework.sh.
         .library(
             name: "EdgeRum",
+            type: .dynamic,
             targets: ["EdgeRum"]
         ),
         // Static variant for app-extension hosts.
@@ -46,6 +50,12 @@ let package = Package(
                 "EdgeRumOTelBridge"
             ],
             path: "Sources/EdgeRum",
+            resources: [
+                // PrivacyInfo.xcprivacy ships inside every framework slice
+                // so SwiftPM, CocoaPods, and XCFramework consumers all see
+                // the same manifest. Authored declarations land in F20.
+                .copy("Resources/PrivacyInfo.xcprivacy")
+            ],
             plugins: ["EdgeRumVersionPlugin"]
         ),
 
