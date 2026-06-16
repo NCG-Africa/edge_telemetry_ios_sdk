@@ -21,9 +21,19 @@ public enum FlushReason: String, Sendable {
 
 public protocol TransportSink: Sendable {
     func send(_ envelope: EventEnvelope, reason: FlushReason)
+
+    /// Replay any payloads currently sitting in the offline queue.
+    /// Default no-op so test sinks don't need to override.
+    /// `HTTPTransportSink` overrides to drain `OfflineQueue`.
+    func drainOfflineQueue()
 }
 
-/// Default sink used in F3 — drops payloads. F4 replaces it.
+public extension TransportSink {
+    func drainOfflineQueue() {}
+}
+
+/// Default sink used in F3 — drops payloads. F5 replaces it with
+/// `HTTPTransportSink` via `Recorder.installTransport(_:)`.
 public struct NoopTransportSink: TransportSink, Sendable {
     public init() {}
     public func send(_ envelope: EventEnvelope, reason: FlushReason) {

@@ -411,3 +411,110 @@ testing seams F3 set up unchanged.
   successful POST. The F4 contract test
   `IdentityPersistenceConformanceTests` pins this requirement: any
   future regression that loses the increment will fail the test.
+
+---
+
+## ADR-005 — F5 transport: file-backed offline queue, default + background URLSession pair, sampler re-roll on rotation
+
+**Date:** 2026-06-16
+
+**Status:** Accepted.
+
+**Context.** F4 carried two open contracts into F5: the production
+`Recorder` still pointed at `NoopTransportSink`, and `Recorder.didAckBatch()`
+had no caller. F5 implements `HTTPTransportSink` to close both — and lands
+the §9 transport behaviour (retry, offline queue, background uploader,
+per-session sampling) in one go. Four design choices during implementation
+were load-bearing enough to record.
+
+**Decisions.**
+
+1. **One file per batch on the offline queue, named
+   `<epochMs>-<seq>.json`.** No index file, no SQLite, no `QueueFile`
+   port from the Android SDK. Lexicographic ordering of the filenames
+   matches chronological ordering — `FileManager.contentsOfDirectory`
+   sorted by `lastPathComponent` is the FIFO oracle. `seq` is a
+   monotonically increasing in-process counter that disambiguates
+   enqueues inside the same millisecond. `%013lld-%06llu.json` (not
+   `%d`) so 64-bit epoch values are not silently truncated by C's
+   `int`-width default.
+
+2. **Two parallel `URLSession`s — default + background.** The live
+   `BatchTransport` uses `URLSessionConfiguration.default`; a
+   `BackgroundUploader` holds a `URLSessionConfiguration.background(
+   withIdentifier: "com.edge.rum.upload")` for the after-suspend
+   drain path. We considered routing every batch through the
+   background session so a single configuration handles both — but
+   the background configuration requires `uploadTask(with:fromFile:)`,
+   forcing a temp-file write on the live happy path that the default
+   session avoids. Two sessions is one extra ivar and zero performance
+   regression on the hot path; one session is meaningfully slower.
+
+3. **Sampler re-rolls on every session rotation.** F3's `Sampler`
+   was constructed once per `Recorder.configure(_:)`. PLAN-iOS.md §9.6
+   says "per-session uniform random vs `sampleRate`" — the F3 wiring
+   technically violated this on idle rotation because a session born
+   30 minutes into a paused app inherited the prior session's roll.
+   F5 re-rolls in `start()` and inside
+   `bumpLastActiveAndEmitRotationIfNeeded()`. The forced-emit
+   allowlist still bypasses, so the user-visible behaviour on
+   `sampleRate = 0` is unchanged.
+
+4. **`HTTPTransportSink` owns its own `NetworkPathObserver` for the
+   drain trigger.** We considered piping the `NWPathMonitor` callback
+   through `ContextProvider` (which already needs network transition
+   notifications to refresh `network.type` / `network.effectiveType`)
+   so there is one `NWPathMonitor` per process. Rejected because
+   it would have coupled F5's drain behaviour to F8's
+   `network_change` event emission, and starting a second monitor is
+   measured at <100 µs / launch. The two observers will be merged in
+   F8 when the network-context refresh path lands; for now keeping
+   them separate makes each layer testable in isolation.
+
+**Alternatives considered.**
+
+- **Single-file QueueFile port from the Android SDK.** Rejected:
+  iOS `Library/Caches/` purge semantics are file-granular, so a
+  single-file queue would lose every queued batch on disk pressure
+  instead of just the oldest few. The file-per-batch layout maps
+  naturally onto Apple's cache eviction.
+- **Synchronous retry loop on the URLSession callback thread.**
+  Rejected — `URLSession`'s delegate queue is shared with all the
+  app's `default` configuration traffic; blocking it during a 30 s
+  backoff would delay every other request in the host app.
+  `DispatchQueue.asyncAfter` on a dedicated serial queue is the
+  right primitive.
+- **Sampler re-roll on EVERY event instead of every session.**
+  Rejected: contradicts the "per-session" wording in §9.6 and would
+  produce statistical garbage at sub-rate values (a `sampleRate = 0.5`
+  session with 1000 events would emit ≈500 of them rather than all or
+  none).
+- **Closing F5 without the background uploader.** Tempting because
+  the manual smoke test ("suspend mid-upload, relaunch, observe
+  drain") requires a host app and can't run in CI. Rejected because
+  `EdgeRum.handleBackgroundEvents(identifier:completion:)` is already
+  on the public surface (F2 #25) and host apps wiring it up before
+  F5 lands would get a misleading no-op.
+
+**Consequences.**
+
+- New internal directory `Sources/EdgeRumCore/Transport/` holds
+  `BatchTransport`, `RetryPolicy`, `OfflineQueue`,
+  `BackgroundUploader`, `HTTPTransportSink`, and a small
+  `TransportEnvironment` helper. None are exposed by the public
+  `EdgeRum` umbrella — terminology firewall verifies clean.
+- `TransportSink` gained `drainOfflineQueue()` with a default no-op
+  implementation; existing `NoopTransportSink` / `RecordingTransportSink`
+  test seams compile unchanged.
+- `Recorder.installTransport(_:)` is the F5 mirror of F4's
+  `installPersistedStores(...)`. `EdgeRum.start()` calls it once after
+  identity persistence, immediately after `installPersistedStores`.
+- `EdgeRum.enable()` now drains the offline queue as one of the three
+  documented trigger points. The other two — `NWPathMonitor.satisfied`
+  and `didBecomeActive` — are wired by the sink directly and by F11
+  respectively.
+- Coverage of the new transport directory sits at the F5 acceptance
+  bar via `BatchTransportTests`, `RetryPolicyTests`, `OfflineQueueTests`,
+  `HTTPTransportSinkTests`, `BackgroundUploaderTests`, plus the
+  end-to-end `TransportConformanceTests` that pins the
+  `Recorder → didAckBatch` integration F4 #43 left open.

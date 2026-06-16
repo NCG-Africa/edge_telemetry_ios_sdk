@@ -61,6 +61,13 @@ public enum EdgeRum {
     private static let stateLock = NSLock()
     nonisolated(unsafe) private static var startedIdentity: StartedIdentity?
 
+    /// The shared background uploader, instantiated at `start()` time
+    /// so `handleBackgroundEvents(identifier:completion:)` can attach
+    /// the system-supplied completion to the live `URLSession`. Lives
+    /// behind the same `stateLock` as `startedIdentity` because it is
+    /// set and read across the public API boundary.
+    nonisolated(unsafe) private static var sharedBackgroundUploader: BackgroundUploader?
+
     private static let log = OSLog(subsystem: "com.edge.rum", category: "EdgeRum")
 
     // MARK: Lifecycle
@@ -118,6 +125,36 @@ public enum EdgeRum {
                 sessionStore: UserDefaultsSessionStore(),
                 sidecar: SessionSidecar()
             )
+
+            // F5 — replace the F3 NoopTransportSink with the real
+            // HTTP-backed sink. The sink takes a weak reference back to
+            // the Recorder so it can call `didAckBatch()` on 2xx
+            // (F4 carry-over hook, issue #43).
+            let transport = BatchTransport(
+                endpoint: config.endpoint,
+                apiKey: config.apiKey,
+                sdkVersion: EdgeRum.sdkVersion,
+                deviceModel: TransportEnvironment.deviceModel(),
+                osVersion: TransportEnvironment.osVersion(),
+                debug: config.debug
+            )
+            sharedBackgroundUploader = BackgroundUploader(debug: config.debug)
+            let sink = HTTPTransportSink(
+                transport: transport,
+                offlineQueue: OfflineQueue(
+                    maxQueueSize: config.maxQueueSize,
+                    debug: config.debug
+                ),
+                backgroundUploader: sharedBackgroundUploader,
+                apiKey: config.apiKey,
+                userAgent: BatchTransport.makeUserAgent(
+                    sdkVersion: EdgeRum.sdkVersion,
+                    deviceModel: TransportEnvironment.deviceModel(),
+                    osVersion: TransportEnvironment.osVersion()
+                ),
+                debug: config.debug
+            )
+            realRecorder.installTransport(sink)
         }
 
         // Hand the full settings to the internal Recorder before
@@ -220,9 +257,16 @@ public enum EdgeRum {
         Recorder.shared.setEnabled(false)
     }
 
-    /// Resume capture and emission after a `disable()` call.
+    /// Resume capture and emission after a `disable()` call. Also
+    /// asks the transport layer to drain any envelopes that landed in
+    /// the offline queue while the SDK was paused (CLAUDE.md
+    /// "Offline queue rules" — `enable()` is one of the three drain
+    /// triggers).
     public static func enable() {
         Recorder.shared.setEnabled(true)
+        if let realRecorder = Recorder.shared as? Recorder {
+            realRecorder.drainOfflineQueue()
+        }
     }
 
     // MARK: Read-only state
@@ -260,13 +304,19 @@ public enum EdgeRum {
         identifier: String,
         completion: @Sendable @escaping () -> Void
     ) {
-        // F5 wires the BackgroundUploader and calls `completion` once
-        // the URLSession finishes its pending tasks. F2 ships the
-        // signature so host apps can wire it now. Hop to main so the
-        // stub behaviour matches the AppDelegate contract host apps
-        // are expected to satisfy.
-        _ = identifier
-        DispatchQueue.main.async { completion() }
+        // F5 — forward into the live `BackgroundUploader` so the
+        // system-supplied completion fires once the background
+        // URLSession finishes its pending tasks. When the host calls
+        // this before `start(_:)` we don't have an uploader yet — hop
+        // straight to main and complete so the system gets its ack.
+        stateLock.lock()
+        let uploader = sharedBackgroundUploader
+        stateLock.unlock()
+        if let uploader {
+            uploader.attachCompletion(completion, for: identifier)
+        } else {
+            DispatchQueue.main.async { completion() }
+        }
     }
 
     // MARK: Internal helpers

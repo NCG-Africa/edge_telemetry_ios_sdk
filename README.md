@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2) and the core pipeline (F3) are in place. F4 lands persistent identity — `device.id` survives across launches in the Keychain, `user.id` and the session triple live in the `com.edge.rum.session` UserDefaults suite, the 30-minute idle session rotation is enforced on every event, and the `last-session.json` sidecar mirrors the active identity for F14's crash-replay path. HTTP transport (F5), offline queue, and the capture layer (screen / HTTP / interaction / native crash) follow across F5–F18.
+> **Status.** Public API surface (F2), the core pipeline (F3), and persistent identity (F4) are in place. F5 lands the transport layer — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. The capture layer (screen / HTTP / interaction / native crash) follows across F6–F18.
 
 ## Supported iOS
 
@@ -145,6 +145,28 @@ Every public call (`track`, `trackScreen`, `identify`, `time`, `captureError`, p
 5. Hands the assembled batch envelope to the transport layer.
 
 Sample rate, batch size, and flush interval are all configurable on `EdgeRumConfig`. See [`docs/payload-example.jsonc`](docs/payload-example.jsonc) for the exact wire shape and [`docs/decisions.md`](docs/decisions.md) for the design rationale.
+
+## Offline & background
+
+When the live transport can't reach the backend the SDK doesn't drop the batch:
+
+1. The first failure schedules a retry on the **0 / 2 / 8 / 30 s** ladder (status `0`, `429`, or `503`; other 5xx responses are treated as `503`; `429`/`503` honor `Retry-After`, capped at 60 s). Non-retryable 4xx codes drop the batch.
+2. After the fourth attempt fails, the encoded payload spills into `Library/Caches/edge-rum/queue/<epochMs>-<seq>.json` — one file per batch, capped at `maxQueueSize` (default 200) with oldest-file-first overflow.
+3. The queue drains sequentially on three triggers: `NWPathMonitor` reporting `.satisfied`, `EdgeRum.enable()`, and (once F11 lands) `didBecomeActive`. Each success deletes the file; the first failure aborts the drain so the order is preserved.
+
+Background uploads — POSTs that were mid-flight when the user hit the home button — are handled by a separate `URLSessionConfiguration.background(withIdentifier: "com.edge.rum.upload")`. Wire it up from your `AppDelegate`:
+
+```swift
+func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+) {
+    EdgeRum.handleBackgroundEvents(identifier: identifier, completion: completionHandler)
+}
+```
+
+If you skip the wire-up, background uploads still complete — they just won't notify the system, and the OS won't grant you another background window. The next foreground flush replays anything still in the offline queue.
 
 ## Identity & session model
 
