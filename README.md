@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 lights up the first capture surface — every UIKit screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric.** The remaining capture surfaces (HTTP / interaction / native crash) follow across F7–F18.
+> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 (UIKit) and F7 (SwiftUI) light up the first capture surfaces — every screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric, whether the screen is presented through UIKit or SwiftUI.** The remaining capture surfaces (HTTP / native crash) follow across F8–F18.
 
 ## Supported iOS
 
@@ -108,8 +108,10 @@ struct CheckoutView: View {
 
 The two view modifiers are unconditional at the iOS 14 floor.
 
-- `.edgeRumScreen` records a screen entry on appear and the dwell on disappear. Works on every `View`.
+- `.edgeRumScreen` records a screen entry on appear and the dwell on disappear. Works on every `View`. The disappear emit is a `screen.duration` performance metric with the same attribute schema as the UIKit emit (`screen.name`, `screen.kind`, `screen.duration_ms`, `value`) so cross-platform dashboards see one shape.
 - `.edgeRumTrackTap` attaches a `.simultaneousGesture(TapGesture())` so it never swallows the host app's own gestures. **It will not fire on a SwiftUI `Button`** — buttons consume their touch before any simultaneous tap recognizer runs. Instrument `Button` actions directly as shown above.
+
+A working sample app lives at [`Samples/EdgeRumSwiftUISampleApp/`](Samples/EdgeRumSwiftUISampleApp/) — open the `.xcodeproj` in Xcode and Run on any iOS Simulator.
 
 ## Automatic screen capture
 

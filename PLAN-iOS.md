@@ -1898,21 +1898,34 @@ screen entry / exit. **Status.** `v1.0`. **Refs.** §6.1.
 #### F7 — SwiftUI screen capture
 
 **Goal.** Public `.edgeRumScreen` / `.edgeRumTrackTap` modifiers
-emitting allowlisted events. **Status.** `v1.0`. **Refs.** §6.2.
+emitting allowlisted events. **Status.** `v1.0` — shipped. **Refs.** §6.2.
 
 ##### T7.1 — `.edgeRumScreen` modifier `[M2]`
-- `.onAppear` → emit `navigation` with `navigation.kind = "swiftui"`.
-- `.onDisappear` → emit `screen.duration`.
+- `.onAppear` → emit `navigation` with `navigation.kind = "swiftui"`,
+  `navigation.screen` (mirror of UIKit key), `navigation.type = "viewDidAppear"`.
+- `.onDisappear` → emit `screen.duration` as a performance metric
+  (routed via `recordPerformance`, not `recordEvent`) with the F6
+  UIKit attribute schema: `screen.name`, `screen.kind = "swiftui"`,
+  `screen.duration_ms` (Int), `value` (Double seconds). When the
+  disappear has no paired appear, the emit is a silent no-op.
+- Caller-supplied attributes are applied first; SDK-owned keys
+  overwrite so the kind discriminator cannot be hidden.
 
 **Acceptance.** Modifier on a SwiftUI view emits both events with consistent screen name.
 
 ##### T7.2 — `.edgeRumTrackTap` modifier `[M2]`
-- Overlay tap recognizer; emit `user.interaction` with `interaction.kind = "tap"`.
+- `.simultaneousGesture(TapGesture())` → emit `user.interaction`
+  with `interaction.kind = "tap"`. Caller attrs first, SDK-owned
+  keys last.
 
 **Acceptance.** Tapping the modified view fires exactly one `user.interaction` event.
 
 ##### T7.3 — Sample SwiftUI app `[M2]`
-- `Samples/EdgeRumSwiftUISampleApp/` exercising both modifiers.
+- `Samples/EdgeRumSwiftUISampleApp/` exercising both modifiers, built
+  via a checked-in `.xcodeproj` that resolves the SDK as a local
+  Swift Package at `../..`. `.github/workflows/ci.yml` runs
+  `xcodebuild ... -destination 'generic/platform=iOS Simulator'`
+  on every PR.
 
 **Acceptance.** App builds and runs on iOS 14 simulator.
 
