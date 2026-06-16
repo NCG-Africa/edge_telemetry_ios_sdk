@@ -12,8 +12,7 @@ public enum EdgeRum {
     /// SemVer string for this build of the SDK, sent as the
     /// `sdk.version` attribute on every event.
     ///
-    /// During F1 this is a hard-coded placeholder; F1/T1.3 swaps in a
-    /// build-plugin-generated constant sourced from the repo-root
-    /// `VERSION` file.
-    public static let sdkVersion: String = "0.0.0-dev"
+    /// Sourced at build time from the repo-root `VERSION` file via
+    /// `EdgeRumVersionPlugin` — see PLAN-iOS.md §2.6.
+    public static let sdkVersion: String = EdgeRumGeneratedVersion.string
 }
