@@ -1,23 +1,26 @@
 # .github/workflows/ci.yml
 #
-# Three-job CI for the F1 package & build infrastructure:
+# Four-job continuous integration for the EdgeRum SDK.
 #
-#   build  — `swift build -c release` + `xcodebuild` against the iOS
-#            device + simulator destinations.
-#   test   — `swift test --enable-code-coverage`.
-#   audit  — `Tools/check-supported-ios.sh` for the iOS-floor
-#            consistency check.
+# Triggers on every pull request, every push to main, and manual dispatch.
+# Release-artifact builds live in release.yml and only fire on tag pushes.
 #
-# All three depend on Tools/fetch-plcrashreporter.sh succeeding so the
-# binary target resolves. Each job runs on a macos-15 runner with the
-# default Xcode 16 toolchain.
+#   build     — `swift build -c release` + `xcodebuild` against iOS device
+#               + simulator destinations.
+#   test      — `swift test --enable-code-coverage`.
+#   audit     — `Tools/check-supported-ios.sh` (iOS-floor consistency).
+#   pod-lint  — `pod lib lint EdgeRum.podspec --allow-warnings`.
+#
+# All jobs run on a macos-15 runner with the default Xcode 16 toolchain
+# and auto-invoke Tools/fetch-plcrashreporter.sh so the .binaryTarget
+# resolves before build.
 #
 # Per-task acceptance criteria mapped:
 #   - T1.1 (#2) — build job's swift build + xcodebuild step
 #   - T1.3 (#4) — test job's VersionPipelineTests
 #   - T1.4 (#5) — pod-lint job's `pod lib lint`
 #   - T1.5 (#6) — audit job
-#   - T1.2 (#3) — xcframework job (manual / release-only trigger)
+#   - T1.2 (#3) — XCFramework build lives in release.yml (tag-only)
 
 name: CI
 
@@ -92,25 +95,3 @@ jobs:
         run: ./Tools/gen-version.sh Sources/EdgeRum/Generated/EdgeRumVersion.swift
       - name: pod lib lint
         run: pod lib lint EdgeRum.podspec --allow-warnings
-
-  xcframework:
-    name: build xcframework
-    runs-on: macos-15
-    # Long job — run on push to main and release tags, plus manual trigger.
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app || true
-      - name: Build XCFramework (unsigned)
-        env:
-          # Signing identity is intentionally unset for non-release runs;
-          # the script logs a warning and produces an unsigned zip.
-          CODESIGN_IDENTITY: ''
-        run: ./Tools/build-xcframework.sh
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: EdgeRum.xcframework.zip
-          path: build/EdgeRum.xcframework.zip
-          retention-days: 14
