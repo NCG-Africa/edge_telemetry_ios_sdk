@@ -24,10 +24,10 @@ Pod::Spec.new do |s|
     PLAN-iOS.md for the architecture and wire contract.
   DESC
 
-  s.homepage         = 'https://github.com/mktowett/edge-telemetry-ios-sdk'
+  s.homepage         = 'https://github.com/NCG-Africa/edge_telemetry_ios_sdk'
   s.license          = { :type => 'Apache-2.0', :text => 'Apache License 2.0 — see LICENSE' }
   s.author           = { 'Edge Telemetry' => 'noreply@edge.local' }
-  s.source           = { :git => 'https://github.com/mktowett/edge-telemetry-ios-sdk.git',
+  s.source           = { :git => 'https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git',
                          :tag => s.version.to_s }
 
   s.ios.deployment_target = '14.0'
