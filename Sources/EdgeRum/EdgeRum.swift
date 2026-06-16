@@ -20,6 +20,9 @@ import os.log
 // are already visible without an import.
 import EdgeRumCore
 #endif
+#if canImport(EdgeRumCapture)
+import EdgeRumCapture
+#endif
 
 /// Top-level entry point for the EdgeRum SDK.
 ///
@@ -179,6 +182,14 @@ public enum EdgeRum {
             endpoint: config.endpoint,
             debug: config.debug
         )
+
+        // F6 — install UIKit screen capture once. Idempotent and
+        // main-thread-safe; on non-UIKit hosts (the macOS unit-test
+        // runner) `install(...)` is a no-op so this call site stays
+        // unconditional.
+        if config.captureScreens {
+            UIViewControllerCapture.install(debug: config.debug)
+        }
     }
 
     /// Attach a host-app user profile to subsequent events. Calling
