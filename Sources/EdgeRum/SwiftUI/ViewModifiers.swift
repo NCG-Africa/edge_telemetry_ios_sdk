@@ -1,11 +1,17 @@
 // Sources/EdgeRum/SwiftUI/ViewModifiers.swift
 //
-// Refs: PLAN-iOS.md §3.2, §F2/T2.6, §6.2; CLAUDE.md "SwiftUI conventions".
+// Refs: PLAN-iOS.md §3.2, §F2/T2.6, §6.2, §F7; CLAUDE.md "SwiftUI conventions".
 //
 // The two public modifiers emit existing event names (`navigation`,
 // `screen.duration`, `user.interaction`) with a `kind` discriminator
 // so the backend can tell SwiftUI traffic apart from UIKit traffic
 // without a new event name in the allowlist.
+//
+// The disappear path routes through `recordPerformance` and the
+// attribute schema mirrors the F6 UIKit emitter (`screen.name`,
+// `screen.kind`, `screen.duration_ms`, `value`) so the backend's
+// `screen.duration` metric dispatcher sees an identical shape for
+// UIKit and SwiftUI screens.
 //
 
 #if canImport(SwiftUI)
@@ -26,6 +32,12 @@ import EdgeRumCore
 internal enum SwiftUIEmitter {
 
     /// `.edgeRumScreen` on-appear → one `navigation` event.
+    ///
+    /// Attribute precedence: caller-supplied attributes are applied
+    /// first, then SDK-owned keys (`navigation.screen`,
+    /// `navigation.kind`, `navigation.type`) overwrite. A host
+    /// passing `"navigation.kind": "host-supplied"` therefore cannot
+    /// hide the discriminator from the backend.
     internal static func emitScreenAppear(
         name: String,
         attributes: [String: AttributeValue]?,
@@ -35,12 +47,21 @@ internal enum SwiftUIEmitter {
     ) {
         startStore.recordStart(name: name, at: clock.now)
         var payload: [String: AttributeValue] = attributes ?? [:]
+        // SDK-owned keys win on conflict — apply last.
+        payload["navigation.screen"] = .string(name)
         payload["navigation.kind"] = .string("swiftui")
-        payload["navigation.name"] = .string(name)
+        payload["navigation.type"] = .string("viewDidAppear")
         recorder.recordEvent(name: "navigation", attributes: payload)
     }
 
-    /// `.edgeRumScreen` on-disappear → one `screen.duration` event.
+    /// `.edgeRumScreen` on-disappear → one `screen.duration` metric.
+    ///
+    /// Routed through `recordPerformance` (metric, not event) with
+    /// the F6 UIKit attribute schema so the backend's
+    /// `screen.duration` dispatcher handles UIKit and SwiftUI rows
+    /// identically. If no matching `emitScreenAppear` was seen for
+    /// `name`, the call is a silent no-op — matches the UIKit
+    /// "no paired appear → skip" behaviour.
     internal static func emitScreenDisappear(
         name: String,
         attributes: [String: AttributeValue]?,
@@ -48,23 +69,30 @@ internal enum SwiftUIEmitter {
         clock: Clock = Recorder.shared.clock,
         startStore: SwiftUIScreenStartStore = .shared
     ) {
-        let dwellMs = startStore.consumeDwellMs(name: name, now: clock.now)
-        var payload: [String: AttributeValue] = attributes ?? [:]
-        payload["navigation.kind"] = .string("swiftui")
-        payload["navigation.name"] = .string(name)
-        if let dwellMs {
-            payload["duration_ms"] = .int(dwellMs)
+        guard let dwell = startStore.consumeDwell(name: name, now: clock.now) else {
+            return
         }
-        recorder.recordEvent(name: "screen.duration", attributes: payload)
+        var payload: [String: AttributeValue] = attributes ?? [:]
+        // SDK-owned keys win on conflict — apply last.
+        payload["screen.name"] = .string(name)
+        payload["screen.kind"] = .string("swiftui")
+        payload["screen.duration_ms"] = .int(dwell.ms)
+        payload["value"] = .double(dwell.seconds)
+        recorder.recordPerformance(name: "screen.duration", attributes: payload)
     }
 
     /// `.edgeRumTrackTap` → one `user.interaction` event.
+    ///
+    /// Attribute precedence is the same as `emitScreenAppear`:
+    /// caller-supplied attributes first, SDK-owned `interaction.*`
+    /// keys last so the discriminator cannot be overwritten.
     internal static func emitTap(
         name: String,
         attributes: [String: AttributeValue]?,
         recorder: Recording = Recorder.shared
     ) {
         var payload: [String: AttributeValue] = attributes ?? [:]
+        // SDK-owned keys win on conflict — apply last.
         payload["interaction.kind"] = .string("tap")
         payload["interaction.name"] = .string(name)
         recorder.recordEvent(name: "user.interaction", attributes: payload)
@@ -72,10 +100,19 @@ internal enum SwiftUIEmitter {
 }
 
 /// Pairs a screen name with its `onAppear` timestamp so the matching
-/// `onDisappear` event can carry the dwell in `duration_ms`. Backed
-/// by an `NSLock` so concurrent screens don't trip each other.
+/// `onDisappear` emit can carry the dwell as both an `Int` ms count
+/// and a `Double` seconds count (mirrors F6 UIKit). Backed by an
+/// `NSLock` so concurrent screens don't trip each other.
 internal final class SwiftUIScreenStartStore: @unchecked Sendable {
     internal static let shared = SwiftUIScreenStartStore()
+
+    /// Result of `consumeDwell` — both representations the wire
+    /// schema needs, computed from the same `timeIntervalSince`
+    /// call so they cannot disagree.
+    internal struct Dwell: Equatable {
+        internal let seconds: Double
+        internal let ms: Int
+    }
 
     private let lock = NSLock()
     private var starts: [String: Date] = [:]
@@ -88,12 +125,22 @@ internal final class SwiftUIScreenStartStore: @unchecked Sendable {
         lock.unlock()
     }
 
-    internal func consumeDwellMs(name: String, now: Date) -> Int? {
+    /// Pop the start timestamp for `name` and return the dwell. Returns
+    /// `nil` when no paired `recordStart` is present — the caller is
+    /// expected to skip the emit in that case.
+    internal func consumeDwell(name: String, now: Date) -> Dwell? {
         lock.lock()
         let start = starts.removeValue(forKey: name)
         lock.unlock()
         guard let start else { return nil }
-        return Int((now.timeIntervalSince(start) * 1000.0).rounded())
+        let raw = now.timeIntervalSince(start)
+        let safe = max(0.0, raw)
+        return Dwell(seconds: safe, ms: Int((safe * 1000.0).rounded()))
+    }
+
+    /// Backwards-compatible helper for callers that only need ms.
+    internal func consumeDwellMs(name: String, now: Date) -> Int? {
+        consumeDwell(name: name, now: now)?.ms
     }
 
     internal func reset() {
@@ -113,11 +160,13 @@ internal final class SwiftUIScreenStartStore: @unchecked Sendable {
 @available(macOS 10.15, *)
 public extension View {
 
-    /// Record screen-enter and screen-exit events for a SwiftUI view.
+    /// Record screen-enter and screen-exit performance data for a
+    /// SwiftUI view.
     ///
-    /// Emits `navigation` on `.onAppear` and `screen.duration` on
-    /// `.onDisappear`, both tagged with `"navigation.kind": "swiftui"`
-    /// so the backend can distinguish SwiftUI traffic from UIKit.
+    /// Emits a `navigation` event on `.onAppear` and a
+    /// `screen.duration` performance entry on `.onDisappear`, both
+    /// tagged with `"swiftui"` so the backend can distinguish
+    /// SwiftUI traffic from UIKit.
     ///
     /// ```swift
     /// CheckoutView()

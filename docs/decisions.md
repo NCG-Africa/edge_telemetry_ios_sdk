@@ -611,3 +611,60 @@ keys) is already pinned by §6.1 and `Recorder.allowedEventNames`.
   installed; re-enabling resumes capture without a re-install. The
   `previousScreen` pointer is not reset on disable — the next emit
   on enable chains correctly off the last screen seen.
+
+---
+
+## ADR-007 — F7 SwiftUI sample app uses a checked-in `.xcodeproj`
+
+**Date:** 2026-06-16
+
+**Status:** Accepted.
+
+**Context.** F7's `T7.3` requires a working SwiftUI sample app under
+`Samples/EdgeRumSwiftUISampleApp/` that builds against the in-repo SDK
+and exercises both public view modifiers. CI must build this sample on
+every PR so a future change in the public surface that breaks
+consumers fails before merge.
+
+Three project shapes were considered:
+
+1. A hand-rolled, checked-in `.xcodeproj` whose `project.pbxproj`
+   lives in version control verbatim.
+2. An XcodeGen `project.yml` regenerated from a declarative spec at
+   build time (CI installs XcodeGen via Homebrew).
+3. A Tuist `Project.swift` evaluated by the Tuist CLI at build time.
+
+**Decision.** Take option (1). The sample target is small (three Swift
+files, one Info.plist, one asset catalog, one scheme) and stable
+enough that pbxproj churn is bounded.
+
+**Why not XcodeGen or Tuist.** Both introduce a tool dependency on
+every CI run and on every contributor's machine. XcodeGen's spec is
+short but the manifest format is one more thing reviewers must learn,
+and a regenerated pbxproj can drift silently from what Xcode-the-IDE
+would produce when contributors add files. Tuist is overkill for a
+single sample target. The pbxproj diff noise inherent in option (1)
+is a real but acceptable cost — the sample's footprint is unlikely
+to change often.
+
+**Consequences.**
+
+- `Samples/EdgeRumSwiftUISampleApp/EdgeRumSwiftUISampleApp.xcodeproj`
+  is checked into the repo with its shared scheme under
+  `xcshareddata/xcschemes/`. Without the shared scheme, `xcodebuild
+  -scheme EdgeRumSwiftUISampleApp` would fail in CI because user
+  schemes live under `xcuserdata/` (gitignored).
+- The SDK dep is resolved via an `XCLocalSwiftPackageReference` to
+  `../..`, the repo root. The first CI run on a fresh runner still
+  pulls `opentelemetry-swift-core` from network, but the SDK targets
+  themselves resolve from the checkout — no GitHub release is needed.
+- `.github/workflows/ci.yml` gains a `sample-build` job that runs
+  `xcodebuild ... -destination 'generic/platform=iOS Simulator' build`
+  on every PR. Generic-simulator destination avoids the macos-15
+  runner's iOS-runtime-version drift.
+- Contributors who add files to the sample MUST add them to the
+  pbxproj — `swift build` does not touch the sample, so a missing
+  reference is not caught until CI's sample-build job fires.
+- A future migration to XcodeGen is not blocked. The spec can be
+  written from the checked-in pbxproj at any time; the ADR stays in
+  the file marked `Superseded by: ADR-NNN` if that happens.

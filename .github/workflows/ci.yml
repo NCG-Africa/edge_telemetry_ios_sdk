@@ -1,28 +1,31 @@
 # .github/workflows/ci.yml
 #
-# Four-job continuous integration for the EdgeRum SDK.
+# Five-job continuous integration for the EdgeRum SDK.
 #
 # Triggers on every pull request, every push to main, and manual dispatch.
 # Release-artifact builds live in release.yml and only fire on tag pushes.
 #
-#   build     — `swift build -c release` + `xcodebuild` against iOS device
-#               + simulator destinations.
-#   test      — `swift test --enable-code-coverage`.
-#   audit     — `Tools/check-supported-ios.sh` (iOS-floor consistency) +
-#               `Tools/firewall-check.sh` (Rule 1 — terminology firewall).
-#   pod-lint  — `pod lib lint EdgeRum.podspec --allow-warnings`.
+#   build        — `swift build -c release` + `xcodebuild` against iOS device
+#                  + simulator destinations.
+#   test         — `swift test --enable-code-coverage`.
+#   audit        — `Tools/check-supported-ios.sh` (iOS-floor consistency) +
+#                  `Tools/firewall-check.sh` (Rule 1 — terminology firewall).
+#   pod-lint     — `pod lib lint EdgeRum.podspec --allow-warnings`.
+#   sample-build — `xcodebuild` against the F7 SwiftUI sample app under
+#                  Samples/EdgeRumSwiftUISampleApp/.
 #
 # All jobs run on a macos-15 runner with the default Xcode 16 toolchain
 # and auto-invoke Tools/fetch-plcrashreporter.sh so the .binaryTarget
 # resolves before build.
 #
 # Per-task acceptance criteria mapped:
-#   - T1.1 (#2) — build job's swift build + xcodebuild step
-#   - T1.3 (#4) — test job's VersionPipelineTests
-#   - T1.4 (#5) — pod-lint job's `pod lib lint`
-#   - T1.5 (#6) — audit job (check-supported-ios.sh)
-#   - T2.7      — audit job (firewall-check.sh)
-#   - T1.2 (#3) — XCFramework build lives in release.yml (tag-only)
+#   - T1.1 (#2)  — build job's swift build + xcodebuild step
+#   - T1.3 (#4)  — test job's VersionPipelineTests
+#   - T1.4 (#5)  — pod-lint job's `pod lib lint`
+#   - T1.5 (#6)  — audit job (check-supported-ios.sh)
+#   - T2.7       — audit job (firewall-check.sh)
+#   - T1.2 (#3)  — XCFramework build lives in release.yml (tag-only)
+#   - T7.3 (#56) — sample-build job (xcodebuild SwiftUI sample app)
 
 name: CI
 
@@ -121,3 +124,31 @@ jobs:
         # --verbose so destination-not-found failures show the actual
         # destination string CocoaPods chose.
         run: pod lib lint EdgeRum.podspec --allow-warnings --verbose
+
+  sample-build:
+    name: xcodebuild SwiftUI sample (iOS simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Fetch PLCrashReporter
+        # The sample app links against the local SwiftPM package at
+        # ../.., so the same binary-target dependency the SDK needs has
+        # to be in place before xcodebuild resolves the package graph.
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: xcodebuild — F7 SwiftUI sample
+        # Generic-simulator destination keeps us off concrete iOS
+        # runtime IDs the macos-15 image may or may not ship with.
+        # Code signing is force-disabled because we never install the
+        # built .app on a device from CI.
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Samples/EdgeRumSwiftUISampleApp/EdgeRumSwiftUISampleApp.xcodeproj \
+            -scheme EdgeRumSwiftUISampleApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/dd-sample \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build | xcpretty || exit ${PIPESTATUS[0]}
