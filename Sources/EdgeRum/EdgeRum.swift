@@ -214,6 +214,17 @@ public enum EdgeRum {
         if config.captureTaps {
             InteractionCapture.install(debug: config.debug)
         }
+
+        // F10 — install the performance samplers (frame, memory,
+        // long-task) once. Each `install(...)` is idempotent and
+        // main-thread-safe; on non-UIKit hosts the CADisplayLink path
+        // short-circuits, but the memory + run-loop samplers still
+        // arm so the test target exercises them.
+        if config.captureRenderingPerformance {
+            FrameSampler.install(debug: config.debug)
+            MemorySampler.install(debug: config.debug)
+            RunLoopObserverCapture.install(debug: config.debug)
+        }
     }
 
     /// Attach a host-app user profile to subsequent events. Calling

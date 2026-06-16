@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 (UIKit) and F7 (SwiftUI) light up the first capture surfaces — every screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric, whether the screen is presented through UIKit or SwiftUI.** **F8 lands automatic HTTP capture — every outgoing `URLSession` request produces an `http.request` event and a companion `resource_timing` metric.** Native crash capture follows across F14.
+> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 (UIKit) and F7 (SwiftUI) light up the first capture surfaces — every screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric, whether the screen is presented through UIKit or SwiftUI.** **F8 lands automatic HTTP capture — every outgoing `URLSession` request produces an `http.request` event and a companion `resource_timing` metric.** **F9 captures completed UIKit taps as `user.interaction` events with secure-entry fields excluded by construction.** **F10 lights up the continuous performance signals — `frame_render_time` (per-second `CADisplayLink` window), `memory_usage` (10 s mach poll plus memory-pressure transitions), and `long_task` (≥50 ms main-thread stalls) — all flowing as `metric` items on the same envelope.** Native crash capture follows across F14.
 
 ## Supported iOS
 
@@ -143,6 +143,15 @@ Once `EdgeRum.start(_:)` runs, every completed tap on a UIKit view produces a `u
 - **Secure text fields are never recorded.** If the tap's responder chain reaches a `UITextField` with `isSecureTextEntry == true`, the event is silently dropped. The capture path never reads `.text` from any view.
 - **SwiftUI taps** use the public `.edgeRumTrackTap` modifier and emit the same `user.interaction` wire shape; nothing extra is needed for SwiftUI content rendered via `UIHostingController` because it still goes through `UIWindow.sendEvent`.
 - **Opt out** by setting `EdgeRumConfig.captureTaps = false` on the config you pass to `start(_:)`.
+
+## Continuous performance samplers
+
+Once `EdgeRum.start(_:)` runs, three independent samplers emit `metric` items on a steady cadence — no per-call code required. All three share the wire envelope used by the rest of the SDK and respect `EdgeRum.disable()`.
+
+- **`frame_render_time`** — a single `CADisplayLink` attached to the main runloop's `.common` modes feeds a 1-second window aggregator. Every second the aggregator emits one metric carrying `frame.max_ms`, `frame.p95_ms`, `frame.dropped_count`, `frame.target_hz` (60 on standard displays, 120 on ProMotion via `preferredFrameRateRange` on iOS 15+), `frame.source = "displaylink"`, and `value = frame.max_ms`. The display link pauses on `willResignActive` and resumes on `didBecomeActive` so backgrounded apps don't burn battery and don't report a spurious "dropped" burst on resume.
+- **`memory_usage`** — a `DispatchSourceTimer` polls `mach_task_basic_info` (RSS, virtual) and `task_vm_info` (`phys_footprint`) every 10 s; in parallel a `DispatchSource.makeMemoryPressureSource(eventMask: .all)` emits an out-of-band sample tagged `memory.pressure` ∈ `"normal"` / `"warning"` / `"critical"` on every transition. All sizes are reported in kB to match the existing wire contract.
+- **`long_task`** — a `CFRunLoopObserver` on the main runloop measures the interval between `.afterWaiting` and the next `.beforeWaiting`. Any work segment ≥ 50 ms emits a `long_task` metric with `value` (ms), `long_task.threshold_ms`, and a `long_task.stack` snapshot (truncated to 4 KiB). Long tasks are a *metric*, not a crash — F14's separate hang detector handles multi-second stalls and emits `app.crash` with `cause = "Hang"`.
+- **Opt out** by setting `EdgeRumConfig.captureRenderingPerformance = false` on the config you pass to `start(_:)`.
 
 ## Public API
 

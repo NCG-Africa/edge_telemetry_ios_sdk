@@ -790,3 +790,116 @@ per §6.3 (no in-process delegate window for `URLSessionTaskMetrics`).
   the F8 PR body as a manual verification step — CI sandboxes block
   outbound traffic, so the synthetic-metrics test path is the only
   programmatic check of `resource_timing` shape.
+
+---
+
+## ADR-009 — F10 performance samplers: 1 s frame windows, 10 s memory polls, 50 ms `long_task` threshold
+
+**Date:** 2026-06-17
+
+**Status:** Accepted.
+
+**Context.** F10 needs three continuous performance signals —
+`frame_render_time`, `memory_usage`, `long_task` — to land on the
+wire on a steady cadence without any consumer wiring. PLAN-iOS.md
+§6.10/§6.11/§6.12 pin the attribute keys, the threshold for the
+long-task signal, and the choice of `CADisplayLink` / mach /
+`CFRunLoopObserver` as the data sources. The remaining design
+questions are cadence, aggregation, and the placement of the
+`long_task` observer relative to F14's hang detector.
+
+**Decisions.**
+
+1. **One `CADisplayLink` attached to `.common` modes drives a single
+   1 s `FrameWindowAggregator`.** A per-tick aggregator sums the
+   inter-frame delta (`targetTimestamp` − previous `targetTimestamp`),
+   and on every 1 s boundary emits one metric with `max`, `p95`, and a
+   dropped-count derived from `target_hz * 1 s − samples.count`. A
+   shorter window (250 ms) would balloon emit volume; a longer window
+   (5 s) hides bursts that a UX dashboard cares about. 1 s also
+   matches the cadence the Android and web SDKs use for the same
+   signal.
+2. **ProMotion is detected from `UIScreen.main.maximumFramesPerSecond`
+   on iOS 15+; iOS 14 reports 60 unconditionally.** `CADisplayLink`
+   exposes `preferredFrameRateRange` on iOS 15+ which we set to
+   `(minimum: 30, maximum: target, preferred: target)` so the link
+   matches the panel's native refresh rate; on iOS 14 we pass
+   `preferredFramesPerSecond = 0` and report 60 Hz, matching the
+   non-ProMotion device floor for that OS version.
+3. **Memory is sampled every 10 s and on every memory-pressure
+   transition.** The periodic poll covers the steady-state envelope;
+   the pressure source surfaces the spikes that matter. `mach_task_basic_info`
+   gives RSS + virtual; `task_vm_info.phys_footprint` is the value
+   the kernel uses to decide whether to terminate the app under
+   memory pressure, so we emit all three rather than collapse them.
+   Values are reported in kB (Int) per the existing wire contract.
+4. **`long_task` is a metric, not an `app.crash`.** PLAN-iOS.md §6.8
+   reserves `app.crash` with `cause = "Hang"` for F14's dedicated
+   watchdog (multi-second stalls with a separate threshold). F10's
+   `RunLoopObserverCapture` only emits when the
+   `.afterWaiting → .beforeWaiting` span clears 50 ms — a long task
+   on the dashboard, not a paging event for an on-call rotation.
+   The 50 ms threshold matches PerformanceObserver's `longtask` API
+   on the web and the same value used by the web SDK so the
+   dashboards align.
+5. **The captured stack is `Thread.callStackSymbols` at the
+   `.beforeWaiting` tick.** It's the main thread's current frame, not
+   the frame that was hot during the stall. A frame-accurate sample
+   would require `task_threads` + symbol resolution off the main
+   thread, which costs more than the metric itself. The truncation
+   budget (`4 KiB`) drops trailing frames whole so we don't ship a
+   mid-symbol fragment downstream.
+6. **All three samplers gate behind the existing
+   `EdgeRumConfig.captureRenderingPerformance` toggle.** Splitting
+   into three per-signal flags would surface implementation detail to
+   the host app. v1.0 ships them as one feature; if there's pressure
+   to disable a single sampler the toggle can be split later without
+   breaking the existing flag's documented contract (defaults stay
+   `true`).
+
+**Alternatives considered.**
+
+- **Use MetricKit only.** `MXMetricPayload` arrives once per 24 h, so
+  there's no real-time signal during the session. We deliberately
+  pair the on-device sampler with a future MetricKit augmentation
+  (deferred per PLAN-iOS §6.10) — the SDK ships both signals over
+  time.
+- **Per-tick emission for `frame_render_time` (no window).** Would
+  multiply emit volume by 60–120× and produce a metric stream the
+  backend can't dashboard usefully. Window aggregation is what every
+  RUM SDK does for the same reason.
+- **Reuse F14's hang `CFRunLoopObserver` for `long_task`.** F14's
+  watchdog runs on a dedicated thread with a multi-second timeout;
+  bolting a 50 ms threshold onto the same observer would double the
+  emit volume on every short stall and complicate the F14
+  `cause = "Hang"` filter. Two observers cost negligible CPU and keep
+  the two signals' semantics independent.
+- **Wall-clock `Date` instead of `mach_absolute_time` for the long-task
+  span.** `Date` is subject to NTP adjustment and time-zone changes;
+  `mach_absolute_time` is monotonic from boot. The conversion via
+  `mach_timebase_info` is a single divide on every Apple platform.
+
+**Consequences.**
+
+- Three new files under `Sources/EdgeRumCapture/` —
+  `FrameSampler.swift`, `MemorySampler.swift`,
+  `RunLoopObserverCapture.swift`. No public types added; everything
+  is `internal` (`public` on internal targets only to make
+  the test bundle compile).
+- `EdgeRum.start(_:)` gains a `captureRenderingPerformance`-gated
+  block that calls `FrameSampler.install`, `MemorySampler.install`,
+  and `RunLoopObserverCapture.install` in that order.
+- Tests cover the pure aggregator (`FrameWindowAggregator`), the
+  attribute-bag builders (`makeAttributes` on every sampler), and a
+  real `Thread.sleep(forTimeInterval: 0.2)` integration test for the
+  long-task path that drives the main runloop briefly to flush the
+  observer (PLAN-iOS §F10/T10.3 acceptance verbatim). The wire
+  contract test
+  (`PerformanceMetricsWireConformanceTests`) pipes the canonical
+  attribute bag for every metric through a real `Recorder` and
+  asserts the envelope clears `WireAssertions`.
+- `EdgeRum.disable()` halts emission via the same `Recorder.isEnabled`
+  gate every other sampler uses. The display link pauses on
+  `willResignActive` to save battery while suspended; the memory and
+  long-task drivers stay armed (the runloop simply doesn't tick when
+  the app is suspended, so they naturally idle).

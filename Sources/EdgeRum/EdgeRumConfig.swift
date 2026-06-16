@@ -119,7 +119,10 @@ public struct EdgeRumConfig: Sendable {
     /// Capture top-level tap interactions. Default `true`.
     public var captureTaps: Bool = true
 
-    /// Capture frame render time and memory pressure. Default `true`.
+    /// Capture continuous performance signals: per-second frame render
+    /// time (max / p95 / dropped count), 10-second memory usage polls
+    /// plus memory-pressure transitions, and main-thread long-task
+    /// detection (≥50 ms). Default `true`.
     public var captureRenderingPerformance: Bool = true
 
     // MARK: Diagnostics
