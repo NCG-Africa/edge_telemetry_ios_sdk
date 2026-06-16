@@ -1827,6 +1827,8 @@ flush on background. **Status.** `v1.0`. **Refs.** §9.
 
 **Acceptance.** Posting a 30-event batch produces a 200 and a single ACK.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/BatchTransport.swift` — `URLSession` driver with the `X-API-Key` / `Content-Type` / `User-Agent` / `X-Edge-Rum-Internal` headers, `taskDescription = "edge-rum-internal"`, and a structured `BatchSendOutcome` enum (`.success(status:)` / `.failure(status:retryAfter:)`). `Tests/EdgeRumTests/Transport/BatchTransportTests.swift` covers the header contract and the 30-event single-ACK acceptance via `MockURLProtocol`.**
+
 ##### T5.2 — `RetryPolicy` `[M1]`
 - Schedule 0 / 2 / 8 / 30 s for status 0 / 429 / 503.
 - Respect `Retry-After` capped at 60 s.
@@ -1835,6 +1837,8 @@ flush on background. **Status.** `v1.0`. **Refs.** §9.
 
 **Acceptance.** Mock server returning 503 yields four attempts then offline-queue.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/RetryPolicy.swift` — pure value type with `decide(attempt:status:retryAfter:)` returning `.retry(after:)` / `.toOfflineQueue` / `.drop`. Numeric and RFC 1123 HTTP-date forms of `Retry-After` both honored. `RetryPolicyTests` pins the full truth table.**
+
 ##### T5.3 — `OfflineQueue` (file-backed) `[M1]`
 - Files under `Library/Caches/edge-rum/queue/<epochMs>-<seq>.json`.
 - `maxQueueSize` cap; FIFO drop on overflow.
@@ -1842,17 +1846,23 @@ flush on background. **Status.** `v1.0`. **Refs.** §9.
 
 **Acceptance.** Filling the queue past `maxQueueSize` drops the oldest file first.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/OfflineQueue.swift` — file-per-batch FIFO with epoch-prefixed names for lexicographic == chronological ordering. `HTTPTransportSink.drainOfflineQueue()` is the entry point, wired from `EdgeRum.enable()` and from the sink's own `NetworkPathObserver` on `.satisfied` transition. `didBecomeActive` trigger lands with F11 — `drainOfflineQueue` already exists, that integration is one call.**
+
 ##### T5.4 — `BackgroundUploader` `[M1]`
 - `URLSessionConfiguration.background(withIdentifier: "com.edge.rum.upload")`.
 - Public `EdgeRum.handleBackgroundEvents(identifier:completion:)` wired into the uploader's completion.
 
 **Acceptance.** Suspending the app mid-upload and re-launching completes the upload.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/BackgroundUploader.swift` + `EdgeRum.handleBackgroundEvents` body. The system-supplied completion is stored on identifier match and fired from `urlSessionDidFinishEvents(forBackgroundURLSession:)`; identifier mismatch invokes the completion immediately so the host app's expiration handler resolves. Full "suspend mid-upload + relaunch" exercise needs a host app and is covered by the sample app's manual smoke pass.**
+
 ##### T5.5 — Per-session sampling `[M1]`
 - Uniform random at session start vs `sampleRate` (§9.6).
 - Excluded sessions emit only forced-emit allowlist.
 
 **Acceptance.** `sampleRate = 0.5` over 10k synthetic sessions yields 5000 ± 200 sampled.
+
+**Shipped in F5 as the rotation re-roll inside `Recorder.bumpLastActiveAndEmitRotationIfNeeded()` + the `start()` re-roll. F3's `Sampler` only re-rolled on `configure(_:)`, leaving idle-rotated sessions inheriting the prior decision; F5 makes the decision per-session as PLAN-iOS.md §9.6 specifies. `SamplerTests.test10kSessionsAt50PercentHits5000Plus200` pins the statistical acceptance with a seeded LCG so the test is deterministic. See ADR-005 for the rationale.**
 
 ---
 
