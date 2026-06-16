@@ -1,0 +1,30 @@
+## Xcode / Swift
+.build/
+.swiftpm/
+*.xcodeproj/
+*.xcworkspace/xcuserdata/
+DerivedData/
+xcuserdata/
+
+## SwiftPM
+Package.resolved
+
+## CocoaPods
+Pods/
+*.lock
+!Podfile.lock
+
+## XCFramework build output
+build/
+Frameworks/CrashReporter.xcframework/
+
+## Generated code (rebuilt by the version build plugin)
+Sources/EdgeRum/Generated/EdgeRumVersion.swift
+
+## macOS
+.DS_Store
+
+## Editors
+.idea/
+.vscode/
+*.swp
