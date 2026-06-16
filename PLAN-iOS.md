@@ -1969,17 +1969,21 @@ emitting allowlisted events. **Status.** `v1.0` — shipped. **Refs.** §6.2.
 **Goal.** Auto-emit `user.interaction` for taps on `UIControl` / cell
 targets. **Status.** `v1.0`. **Refs.** §6.5.
 
-##### T9.1 — `UIWindow.sendEvent` swizzle `[M2]`
+##### T9.1 — `UIWindow.sendEvent` swizzle `[M2]` ✅
 - Inspect `UIEvent.allTouches`; resolve to `UIControl` or cell.
-- Emit with `interaction.kind = "tap"`, `interaction.target = class name`, `interaction.accessibility_id`.
+- Emit with `interaction.kind = "tap"`, `interaction.target = class name`, `interaction.target_id`.
 
-**Acceptance.** Tapping a button with `accessibilityIdentifier = "checkout"` emits `interaction.accessibility_id = "checkout"`.
+**Acceptance.** Tapping a button with `accessibilityIdentifier = "checkout"` emits `interaction.target_id = "checkout"`.
 
-##### T9.2 — Secure text field exclusion `[M2]`
+**Shipped in F9 as `Sources/EdgeRumCapture/InteractionCapture.swift` — base-class `UIWindow` swizzle, pure `decideEmission(for:currentScreen:)` core, target resolution that walks superviews preferring `UIControl` then `UITableViewCell` / `UICollectionViewCell`, and `interaction.screen` sourced from the existing F6 `UIViewControllerCapture.currentPreviousScreen()` pointer. Emit fires on `.ended` touches only so `.began` doesn't double-fire and `.cancelled` drags don't count. The PLAN's `interaction.accessibility_id` wording is renamed to `interaction.target_id` to match the §6.5 schema; the acceptance is the same identifier, just the key name is `target_id` per the canonical schema. Wired behind `config.captureTaps` in `EdgeRum.start(_:)`.**
+
+##### T9.2 — Secure text field exclusion `[M2]` ✅
 - Skip any view whose responder chain reaches an `isSecureTextEntry == true` field.
 - Never read `text` values.
 
 **Acceptance.** Tapping a `UITextField` with `isSecureTextEntry = true` emits no `user.interaction`.
+
+**Shipped in F9 as `InteractionCapture.responderChainContainsSecureField(startingAt:)` — walks the full `UIResponder` chain from the hit view upward; any link that's a `UITextField` with `isSecureTextEntry == true` short-circuits to `nil` before any attribute bag is built. The capture path never touches `.text` on any view. Covered by `InteractionCaptureTests` (direct hit, responder-chain hit, sentinel-value leak check) and an end-to-end wire conformance test in `Tests/EdgeRumContractTests/InteractionWireConformanceTests.swift`.**
 
 ---
 

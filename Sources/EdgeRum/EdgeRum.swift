@@ -206,6 +206,14 @@ public enum EdgeRum {
             ))
             HTTPCapture.install(debug: config.debug)
         }
+
+        // F9 — install UIKit tap capture once. Idempotent and
+        // main-thread-safe; on non-UIKit hosts (the macOS unit-test
+        // runner) `install(...)` is a no-op so this call site stays
+        // unconditional.
+        if config.captureTaps {
+            InteractionCapture.install(debug: config.debug)
+        }
     }
 
     /// Attach a host-app user profile to subsequent events. Calling
