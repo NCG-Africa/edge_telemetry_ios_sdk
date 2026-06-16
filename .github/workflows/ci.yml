@@ -8,7 +8,8 @@
 #   build     — `swift build -c release` + `xcodebuild` against iOS device
 #               + simulator destinations.
 #   test      — `swift test --enable-code-coverage`.
-#   audit     — `Tools/check-supported-ios.sh` (iOS-floor consistency).
+#   audit     — `Tools/check-supported-ios.sh` (iOS-floor consistency) +
+#               `Tools/firewall-check.sh` (Rule 1 — terminology firewall).
 #   pod-lint  — `pod lib lint EdgeRum.podspec --allow-warnings`.
 #
 # All jobs run on a macos-15 runner with the default Xcode 16 toolchain
@@ -19,7 +20,8 @@
 #   - T1.1 (#2) — build job's swift build + xcodebuild step
 #   - T1.3 (#4) — test job's VersionPipelineTests
 #   - T1.4 (#5) — pod-lint job's `pod lib lint`
-#   - T1.5 (#6) — audit job
+#   - T1.5 (#6) — audit job (check-supported-ios.sh)
+#   - T2.7      — audit job (firewall-check.sh)
 #   - T1.2 (#3) — XCFramework build lives in release.yml (tag-only)
 
 name: CI
@@ -73,12 +75,24 @@ jobs:
         run: swift test --enable-code-coverage
 
   audit:
-    name: supported-iOS audit
+    name: supported-iOS audit + terminology firewall
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Fetch PLCrashReporter
+        # Needed so `swift package dump-symbol-graph` (run inside
+        # firewall-check.sh) can resolve the PLCrashReporter binary
+        # target before emitting EdgeRum's public symbol graph.
+        run: ./Tools/fetch-plcrashreporter.sh
       - name: Run check-supported-ios.sh
         run: ./Tools/check-supported-ios.sh
+      - name: Run firewall-check.sh (Rule 1 — terminology firewall)
+        # Confirms no banned OpenTelemetry vocabulary leaked into the
+        # public Swift symbol graph, public doc comments, README, or
+        # consumer-facing markdown under docs/.
+        run: ./Tools/firewall-check.sh
 
   pod-lint:
     name: pod lib lint
