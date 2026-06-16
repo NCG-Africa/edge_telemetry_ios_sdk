@@ -134,6 +134,16 @@ Once `EdgeRum.start(_:)` runs, every outgoing `URLSession` request produces an `
 - **Background sessions are not instrumented.** `URLSessionConfiguration.background(withIdentifier:)` has no in-process delegate window for `URLSessionTaskMetrics`, so emitting an `http.request` without a timing companion would be misleading. The host's background uploads continue to work; they just don't appear in the capture stream.
 - **Opt out** by setting `EdgeRumConfig.captureHTTP = false` on the config you pass to `start(_:)`.
 
+## Automatic interaction capture
+
+Once `EdgeRum.start(_:)` runs, every completed tap on a UIKit view produces a `user.interaction` event — no per-button code required. The capture is installed on the base `UIWindow.sendEvent(_:)` so every subclass inherits it, and emits exactly once per `.ended` touch (drag-aways and `.began`-only sequences are ignored).
+
+- **What's captured.** `interaction.kind = "tap"`, `interaction.target` (reflected class name of the resolved target view), `interaction.target_id` (the `accessibilityIdentifier`, or the button's current title when the target is a `UIButton`; omitted otherwise), and `interaction.screen` (the current screen name from the F6 navigation pointer; omitted when no screen has appeared yet).
+- **Target resolution** prefers a `UIControl` ancestor (button, switch, slider, segmented control), then a `UITableViewCell` / `UICollectionViewCell`, falling back to the hit view itself. Controls always win over cells so the report names the action surface, not the row container.
+- **Secure text fields are never recorded.** If the tap's responder chain reaches a `UITextField` with `isSecureTextEntry == true`, the event is silently dropped. The capture path never reads `.text` from any view.
+- **SwiftUI taps** use the public `.edgeRumTrackTap` modifier and emit the same `user.interaction` wire shape; nothing extra is needed for SwiftUI content rendered via `UIHostingController` because it still goes through `UIWindow.sendEvent`.
+- **Opt out** by setting `EdgeRumConfig.captureTaps = false` on the config you pass to `start(_:)`.
+
 ## Public API
 
 | Symbol | Purpose |
