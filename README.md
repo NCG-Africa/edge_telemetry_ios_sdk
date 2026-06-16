@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2), the core pipeline (F3), and persistent identity (F4) are in place. F5 lands the transport layer — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. The capture layer (screen / HTTP / interaction / native crash) follows across F6–F18.
+> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 lights up the first capture surface — every UIKit screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric.** The remaining capture surfaces (HTTP / interaction / native crash) follow across F7–F18.
 
 ## Supported iOS
 
@@ -110,6 +110,16 @@ The two view modifiers are unconditional at the iOS 14 floor.
 
 - `.edgeRumScreen` records a screen entry on appear and the dwell on disappear. Works on every `View`.
 - `.edgeRumTrackTap` attaches a `.simultaneousGesture(TapGesture())` so it never swallows the host app's own gestures. **It will not fire on a SwiftUI `Button`** — buttons consume their touch before any simultaneous tap recognizer runs. Instrument `Button` actions directly as shown above.
+
+## Automatic screen capture
+
+Once `EdgeRum.start(_:)` runs, every UIKit screen entry produces a `navigation` event and every paired exit produces a `screen.duration` metric — no per-screen code required. The capture is installed on the base `UIViewController` so every subclass inherits it.
+
+- **Container view controllers are skipped.** `UINavigationController`, `UITabBarController`, and `UIPageViewController` are recognised and never produce their own `navigation` events — the contained controller's `viewDidAppear` is what counts.
+- **Screen names** prefer the controller's `accessibilityIdentifier` (stable across renames), falling back to the reflected type name.
+- **SwiftUI screens** presented via `UIHostingController` are recognised automatically and tagged `navigation.kind = "swiftui"`; the hosted Content type provides the screen name. The public `.edgeRumScreen` modifier emits the same wire shape for SwiftUI screens that are not driven through a hosting controller.
+- **`navigation.previous_screen`** chains across appears so transitions are easy to reconstruct downstream.
+- **Opt out** by setting `EdgeRumConfig.captureScreens = false` on the config you pass to `start(_:)`.
 
 ## Public API
 

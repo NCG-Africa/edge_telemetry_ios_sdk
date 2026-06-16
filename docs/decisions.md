@@ -518,3 +518,96 @@ were load-bearing enough to record.
   `HTTPTransportSinkTests`, `BackgroundUploaderTests`, plus the
   end-to-end `TransportConformanceTests` that pins the
   `Recorder → didAckBatch` integration F4 #43 left open.
+
+---
+
+## ADR-006 — UIKit screen capture via base-class method swizzling
+
+**Date:** 2026-06-16
+
+**Status:** Accepted.
+
+**Context.** F6 needs every UIKit screen entry / exit to emit a
+`navigation` event and `screen.duration` metric without consumer-side
+code. The host app can be UIKit, SwiftUI-via-`UIHostingController`, or
+mixed. The wire shape (`navigation`, `screen.duration`, attribute
+keys) is already pinned by §6.1 and `Recorder.allowedEventNames`.
+
+**Decision.**
+
+1. **Swizzle base `UIViewController`, not subclasses.** Exchange the
+   IMPs for `viewDidAppear(_:)` and `viewWillDisappear(_:)` on
+   `UIViewController` itself. Subclass overrides keep their own IMPs
+   and reach the base via `super.viewDidAppear(animated)`, which
+   resolves to our injected body. One install site, one IMP swap per
+   selector, no per-subclass bookkeeping.
+2. **Install is one-shot and never undone.** A small
+   `os_unfair_lock`-backed flag guarantees idempotency under
+   concurrent install calls. `EdgeRum.disable()` does not un-swizzle —
+   the Objective-C runtime cannot safely undo IMP exchanges on a
+   class that may already be subclassed by the host app at unknown
+   depths. Runtime opt-out instead checks `Recorder.isEnabled` at
+   emit time.
+3. **Screen-name fallback order — accessibility identifier → reflected
+   type name.** `accessibilityIdentifier` is the right primary because
+   host apps already set it for UI tests and it survives refactors
+   that rename the underlying type. The reflected type name
+   (`String(reflecting: type(of: vc))`) is the deterministic fallback
+   when no identifier is set.
+4. **`UIHostingController` is detected by reflected type-name match,
+   not by `is UIHostingController<…>` casts.** The Swift cast requires
+   spelling out the generic parameter, which we don't know at the
+   capture site. The reflected type name is what the runtime hands
+   us and is stable across iOS versions.
+5. **Per-controller state lives on the controller via
+   `objc_setAssociatedObject`.** A Swift-side
+   `[ObjectIdentifier: ScreenState]` map would leak entries for any
+   controller that deallocates between appear and disappear. The
+   associated object is freed automatically when the controller is.
+6. **`navigation.previous_screen` is a single global pointer, not a
+   stack.** UIKit's navigation stack model already maintains
+   ordering — re-deriving it inside the SDK would duplicate work.
+   The previous-screen pointer mirrors the user's mental model
+   ("which screen was I just on?") and matches the web/Android SDKs'
+   behaviour for the same attribute.
+
+**Alternatives considered.**
+
+- **Subscribing to `UIWindow.didBecomeKey` + traversing the responder
+  chain.** Rejected — misses presented modals, child controllers, and
+  navigation stack pushes; would require a polling fallback.
+- **`@objc dynamic` override of `viewDidAppear` injected by a
+  consumer-side category.** Rejected — only works in mixed
+  Objective-C / Swift host apps and requires per-consumer setup,
+  violating "zero-code capture".
+- **Swizzling on `UIHostingController` directly for SwiftUI screens.**
+  Rejected — the host might present a SwiftUI view via a
+  `UIViewControllerRepresentable` wrapper, not `UIHostingController`,
+  so single-point detection on the hosting class is incomplete. The
+  base-class swizzle plus `String(reflecting:)` detection catches
+  every path UIKit drives.
+- **Storing per-controller `appearedAt` in a thread-safe dictionary
+  keyed by `ObjectIdentifier`.** Rejected — leaks on disappear-less
+  deallocation (sheet dismissal, system kills). Associated objects
+  are the right primitive.
+
+**Consequences.**
+
+- `Sources/EdgeRumCapture/UIViewControllerCapture.swift` replaces the
+  F1 stub as the module's first real surface. The umbrella `EdgeRum`
+  imports `EdgeRumCapture` so `EdgeRum.start(_:)` can call
+  `UIViewControllerCapture.install(debug:)` once, gated on
+  `config.captureScreens`.
+- The Objective-C-visible swizzle entry points
+  (`edgerum_swizzled_viewDidAppear:` / `edgerum_swizzled_viewWillDisappear:`)
+  live as `internal extension UIViewController` so they sit on the
+  base class and never leak into the public umbrella module.
+- Tests cover the pure-Swift helpers (`extractHostedContent`,
+  `isHostingControllerTypeName`, the previous-screen pointer) on
+  every platform; the UIKit-driven tests are gated behind
+  `#if canImport(UIKit) && os(iOS)` and run on the iOS simulator
+  job in CI.
+- `EdgeRum.disable()` halts emission while the swizzle stays
+  installed; re-enabling resumes capture without a re-install. The
+  `previousScreen` pointer is not reset on disable — the next emit
+  on enable chains correctly off the last screen seen.

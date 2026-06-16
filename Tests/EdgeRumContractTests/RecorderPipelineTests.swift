@@ -56,6 +56,30 @@ final class RecorderPipelineContractTests: XCTestCase {
         XCTAssertEqual(events.first?["value"] as? Double, 18.4)
     }
 
+    /// F6 — `screen.duration` must encode as a `metric` with both the
+    /// scalar `value` (seconds, Double) and the duration_ms attribute.
+    /// Matches the shape produced by `UIViewControllerCapture.handleViewWillDisappear`.
+    func testScreenDurationMetricEnvelopePassesWireAssertions() throws {
+        let (recorder, sink, _) = makeRecorder()
+        recorder.recordPerformance(name: "screen.duration", attributes: [
+            "screen.name": "Cart",
+            "screen.kind": "uikit",
+            "screen.duration_ms": 4300,
+            "value": 4.3
+        ])
+        recorder.flush(reason: .manual)
+        let envelope = try XCTUnwrap(sink.envelopes.first)
+        let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
+        let events = try XCTUnwrap(json["events"] as? [[String: Any]])
+        XCTAssertEqual(events.first?["type"] as? String, "metric")
+        XCTAssertEqual(events.first?["metricName"] as? String, "screen.duration")
+        XCTAssertEqual(events.first?["value"] as? Double, 4.3)
+        let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
+        XCTAssertEqual(attrs["screen.name"] as? String, "Cart")
+        XCTAssertEqual(attrs["screen.kind"] as? String, "uikit")
+        XCTAssertEqual(attrs["screen.duration_ms"] as? Int, 4300)
+    }
+
     func testErrorEnvelopeIsAppCrashWithFlattenedFields() throws {
         let (recorder, sink, _) = makeRecorder()
         recorder.recordError(
