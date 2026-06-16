@@ -14,7 +14,12 @@
 
 import Foundation
 import os.log
+#if canImport(EdgeRumCore)
+// SwiftPM: `EdgeRumCore` is a separate internal target. CocoaPods
+// rolls every subspec into one `EdgeRum` module — the same types
+// are already visible without an import.
 import EdgeRumCore
+#endif
 
 /// Top-level entry point for the EdgeRum SDK.
 ///
