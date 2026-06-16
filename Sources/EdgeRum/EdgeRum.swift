@@ -103,6 +103,18 @@ public enum EdgeRum {
         startedIdentity = identity
         stateLock.unlock()
 
+        // If the shared Recorder is the real concrete type (i.e. the
+        // host hasn't swapped in a test probe), upgrade its in-memory
+        // identity stores to the persisted Keychain + UserDefaults
+        // pair so `device.id` and `session.id` survive across launches.
+        if let realRecorder = Recorder.shared as? Recorder {
+            realRecorder.installPersistedStores(
+                identityProvider: IdentityProvider(),
+                sessionStore: UserDefaultsSessionStore(),
+                sidecar: SessionSidecar()
+            )
+        }
+
         // Hand the full settings to the internal Recorder before
         // it starts so context snapshots, sample rate, batch size,
         // and location are all in place when the first event lands.
