@@ -17,6 +17,7 @@ Pods/
 ## XCFramework build output
 build/
 Frameworks/CrashReporter.xcframework/
+Frameworks/.crashreporter.version
 
 ## Generated code (rebuilt by the version build plugin)
 Sources/EdgeRum/Generated/EdgeRumVersion.swift
