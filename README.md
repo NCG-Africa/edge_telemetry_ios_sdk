@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2) is in place. F3 lands the core pipeline — the internal Recorder fan-in, identity context, sampler, and JSON envelope assembly — so the SDK now produces wire-conformant batches in memory. Transport (HTTP POST), persistence, offline queue, and the capture layer (screen / HTTP / interaction / native crash) follow across F4–F18.
+> **Status.** Public API surface (F2) and the core pipeline (F3) are in place. F4 lands persistent identity — `device.id` survives across launches in the Keychain, `user.id` and the session triple live in the `com.edge.rum.session` UserDefaults suite, the 30-minute idle session rotation is enforced on every event, and the `last-session.json` sidecar mirrors the active identity for F14's crash-replay path. HTTP transport (F5), offline queue, and the capture layer (screen / HTTP / interaction / native crash) follow across F5–F18.
 
 ## Supported iOS
 
@@ -146,13 +146,34 @@ Every public call (`track`, `trackScreen`, `identify`, `time`, `captureError`, p
 
 Sample rate, batch size, and flush interval are all configurable on `EdgeRumConfig`. See [`docs/payload-example.jsonc`](docs/payload-example.jsonc) for the exact wire shape and [`docs/decisions.md`](docs/decisions.md) for the design rationale.
 
+## Identity & session model
+
+F4 makes the three SDK-owned identifiers persistent so the backend sees stable values across launches:
+
+| ID | Format | Storage |
+| --- | --- | --- |
+| `device.id` | `device_<epochMs>_<16 hex>_ios` | Keychain (service `com.edge.rum.identity`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`). UserDefaults fallback when the Keychain write fails. iOS clears Keychain on uninstall on modern installs — `device.id` rotates on reinstall in practice. |
+| `session.id` | `session_<epochMs>_<16 hex>_ios` | UserDefaults suite `com.edge.rum.session` along with `session.start_time`, `session.sequence`, and `session.lastActiveAt`. |
+| `user.id` | `user_<epochMs>_<16 hex>` | Same UserDefaults suite. SDK-owned anonymous id — `EdgeRum.identify(_:)` attaches `user.name`/`user.email`/`user.phone` as additional attributes but **does not** change this generated `user.id`. |
+
+The 16 hex chars come from `SecRandomCopyBytes(8)` formatted `%02x` — not `UUID()`, whose 128-bit hex section would break the cross-platform regex the backend dispatcher uses.
+
+A session rotates when either of the following holds at the next `recordEvent`:
+
+- the persisted `lastActiveAt` is older than 30 minutes, **or**
+- there's no persisted session at all (cold start / first launch).
+
+Rotation emits a `session.finalized` event carrying the **prior** session's identity (so the backend can close the session out correctly), followed by `session.started` for the new id. `session.sequence` increments after each successful transport ack via `Recorder.didAckBatch()` so the backend can detect dropped batches.
+
+A read-only mirror of the live identity is written to `Library/Caches/edge-rum/last-session.json` on every event — F14's crash backend reads it on next launch so a replayed `app.crash` carries the crashing session's id rather than the current one.
+
 ## Design docs
 
 | Doc | What it covers |
 | --- | --- |
 | [`PLAN-iOS.md`](PLAN-iOS.md) | The full feature plan F1 → F23, milestones, acceptance criteria, and per-task references. Authoritative for scope. |
 | [`docs/data-flow.md`](docs/data-flow.md) | End-to-end data flow from capture call to backend ingest. Internal — references the internal architecture by name. |
-| [`docs/decisions.md`](docs/decisions.md) | Architectural Decision Records. ADR-002 explains the F2 public API shape choices. |
+| [`docs/decisions.md`](docs/decisions.md) | Architectural Decision Records. ADR-002 covers F2; ADR-003 covers F3; ADR-004 covers the F4 persistent identity model. |
 | [`docs/payload-example.jsonc`](docs/payload-example.jsonc) | Reference batch payload — what the SDK actually ships on the wire. |
 | [`CLAUDE.md`](CLAUDE.md) | Contributor guide; binding rules for AI-assisted development. |
 

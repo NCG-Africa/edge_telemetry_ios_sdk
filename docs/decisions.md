@@ -266,3 +266,148 @@ during implementation were load-bearing enough to record.
   reusable helper. Every transport-touching test in F4+ runs every
   envelope through `assertValidEnvelope(_:)` before further
   assertions.
+
+---
+
+## ADR-004 — F4 persistent identity: Keychain `device.id`, UserDefaults `user.id` + session triple, sidecar mirror
+
+**Date:** 2026-06-16
+
+**Status:** Accepted.
+
+**Context.** F3 shipped in-memory identity stores so the Recorder
+pipeline could be exercised end-to-end without touching disk. The
+backend dispatcher routes by `(device.id, session.id, user.id)`
+attributes on every event; without persistence, each app launch would
+look like a brand-new device to the backend and the cross-platform
+analytics joins (web/Android/iOS) would break. F4's job is to make
+the three identifiers survive across launches while keeping the
+testing seams F3 set up unchanged.
+
+**Decision.**
+
+1. **`device.id` lives in the Keychain** under
+   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. Service name
+   `com.edge.rum.identity`; account name `device.id`. The
+   "ThisDeviceOnly" variant keeps the value out of iCloud Keychain so
+   a restored device gets a fresh `device.id` — which matches the
+   web/Android SDK semantics where `device.id` is per-install, not
+   per-iCloud-identity. Modern iOS clears the Keychain on uninstall
+   on most installs, so reinstalling rotates `device.id`
+   transparently. Documented in the README "Identity & session
+   model" section.
+
+2. **`user.id` and the session triple live in the UserDefaults
+   suite `com.edge.rum.session`.** UserDefaults is faster than the
+   Keychain for the per-event write hot path (the session
+   `lastActiveAt` field updates on every `recordEvent`), and the
+   session is short-lived so its accessibility classification matters
+   less. The suite name is reserved across the SDK — every persisted
+   key in F4 (`edge.rum.device.id.fallback`, `edge.rum.user.id`,
+   `edge.rum.session.state`) lives under it so future tooling can
+   wipe the whole namespace in one call.
+
+3. **Keychain failure falls back to UserDefaults.** A `SecItemAdd`
+   failure is rare on iOS but observed on locked-down enterprise
+   profiles. On failure, the IdentityProvider writes `device.id` to
+   `edge.rum.device.id.fallback` in the same UserDefaults suite. On
+   subsequent reads the IdentityProvider checks the Keychain first,
+   then the fallback. When the Keychain becomes writable again, the
+   next `regenerateDeviceId()` re-persists to the Keychain and clears
+   the fallback. The fallback is observable via
+   `IdentitySnapshot.deviceIdFromFallback` so the Recorder can emit
+   one diagnostic `os_log` line at startup when it kicks in.
+
+4. **Sidecar location `Library/Caches/edge-rum/last-session.json`.**
+   The Caches directory is preserved across app terminations but iOS
+   may purge it under disk pressure. That's acceptable for the
+   sidecar because it is only load-bearing while a crash report from
+   the PRIOR launch is still pending. Anything more durable
+   (Documents) would persist crash-replay attribution into
+   indefinitely many launches, which is wrong. The mirror is
+   restricted to the identity triple plus `sdk.version` /
+   `sdk.platform` (`SessionSidecar.mirroredKeys`) — transient values
+   like battery level and network type are deliberately omitted so
+   the replayed crash event carries the prior session's *identity*,
+   not its environment.
+
+5. **`identify()` does not persist `external_id`.** Only the
+   SDK-owned anonymous `user.id` is persistent. Host-app identifiers
+   passed through `EdgeRum.identify(_:)` ride on events as
+   `user.external_id` / `user.name` / `user.email` / `user.phone`
+   attributes (via `ContextProvider.setUser`) but the SDK does not
+   write them to disk. Rationale: the host app already manages its
+   own user record and re-identifies on launch; persisting our copy
+   would risk a stale identifier surviving a host-app logout.
+
+6. **`Recorder.installPersistedStores(...)` is the integration
+   point** — called once by `EdgeRum.start()` against the shared
+   Recorder via an `as? Recorder` cast. This means test probes
+   (`ProbeRecorder`) are not affected by `start()` and existing F2/F3
+   tests continue to pass unchanged. The shared default Recorder
+   keeps its in-memory backing until the host opts in by calling
+   `EdgeRum.start(_:)`, which is also the only path on which
+   real-Keychain writes happen at all.
+
+7. **Mid-event idle rotation emits a `session.finalized` +
+   `session.started` pair.** When `recordEvent` / `recordPerformance`
+   detects the touch crossed the 30-minute idle threshold, the prior
+   session id is written as event attributes on the finalized event
+   (they win over the context bag at flush time), the context
+   refreshes to the new session, and the started event is emitted.
+   A re-entrancy flag (`_insideRotationEmission`) blocks the
+   synthetic emissions from re-triggering the same rotation path.
+   The originating event then proceeds normally.
+
+8. **`Recorder.didAckBatch()` is the public hook for sequence
+   increments.** F5's transport layer calls it after every 2xx
+   response — three consecutive ACKed batches yield
+   `session.sequence == 3` on the next emitted event. Issue #43
+   acceptance.
+
+**Alternatives considered.**
+
+- **`device.id` in UserDefaults instead of the Keychain.** Simpler,
+  faster, no `SecItem*` calls. Rejected: UserDefaults is wiped on
+  uninstall AND on `removePersistentDomain(forName:)`; the Keychain
+  is the only iOS-supplied store that survives the latter while
+  still being purged on uninstall on modern installs. Matches the
+  Android SDK's `EncryptedSharedPreferences` choice for the analogous
+  field.
+
+- **iCloud-synced `device.id` for cross-device continuity.**
+  Rejected: the backend treats every install as a distinct device for
+  analytics purposes. Cross-device joining is a `user.id` problem,
+  not a `device.id` problem.
+
+- **Sidecar in `Library/Application Support/`.** Rejected: that
+  directory is included in iOS backups and would carry the previous
+  install's session state into a fresh install — exactly the
+  cross-launch attribution bug the sidecar exists to prevent.
+
+- **Closing the F4 scope at T4.3 and deferring the sidecar entirely
+  to F14.** Rejected: the sidecar *writer* is a single file with no
+  cross-target dependency on PLCrashReporter, and writing it now
+  lets F14 land the reader side without first having to also wire
+  the writer. The reader/replay side is the carry-over noted on
+  issue #44.
+
+**Consequences.**
+
+- One new public surface in `EdgeRumCore`:
+  `Recorder.installPersistedStores(identityProvider:sessionStore:sidecar:)`.
+  Still internal from `import EdgeRum`'s perspective because
+  `EdgeRumCore` is not in `Package.swift`'s `products:`. Locked in by
+  `PackageProductsTests`.
+- The shared `Recorder()` default keeps in-memory backing; tests that
+  predate F4 keep passing without modification. F4's new tests
+  inject `InMemoryKeychainStore` / `InMemoryUserDefaultsStore` so the
+  CI host doesn't need real Keychain access.
+- `EdgeRum.start(_:)` gains a single line that does the
+  `as? Recorder` cast and calls `installPersistedStores`. Misuse
+  protection: if the cast fails (probe installed), persistence is
+  silently skipped — the probe handles its own state.
+- F5's transport layer must call `Recorder.didAckBatch()` after every
+  successful POST. The F4 contract test
+  `IdentityPersistenceConformanceTests` pins this requirement: any
+  future regression that loses the increment will fail the test.

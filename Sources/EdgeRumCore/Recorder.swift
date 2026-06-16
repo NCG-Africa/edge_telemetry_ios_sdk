@@ -93,7 +93,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     private let log = OSLog(subsystem: "com.edge.rum", category: "Recorder")
 
     private let _clock: Clock
-    private let sessionManager: SessionManager
+    private var sessionManager: SessionManager
     private let transport: TransportSink
     private let payloadBuilder: PayloadBuilder
     private let context: ContextProvider
@@ -109,6 +109,11 @@ public final class Recorder: Recording, @unchecked Sendable {
     private var _buffer: [Event] = []
     private var _deviceId: String
 
+    /// Re-entrancy guard so synthetic `session.finalized` /
+    /// `session.started` emissions during a mid-event rotation don't
+    /// re-touch the session manager (which would recurse).
+    private var _insideRotationEmission: Bool = false
+
     // MARK: Init
 
     public init(
@@ -118,7 +123,9 @@ public final class Recorder: Recording, @unchecked Sendable {
         transport: TransportSink = NoopTransportSink(),
         payloadBuilder: PayloadBuilder = PayloadBuilder(),
         contextProvider: ContextProvider? = nil,
-        sdkVersion: String = "0.0.0"
+        sdkVersion: String = "0.0.0",
+        identityProvider: IdentityProvider? = nil,
+        sidecar: SessionSidecar? = nil
     ) {
         self._clock = clock
         self.queue = DispatchQueue(label: "edge.rum.recorder", qos: .utility)
@@ -127,26 +134,70 @@ public final class Recorder: Recording, @unchecked Sendable {
         self.sampler = sampler ?? Sampler(sampleRate: 1.0)
         self.transport = transport
         self.payloadBuilder = payloadBuilder
-        self._deviceId = DeviceIdentitySnapshot.newId(at: clock.now)
+        self.sidecar = sidecar
+
+        let deviceId: String
+        let userId: String
+        if let identityProvider {
+            let snapshot = identityProvider.resolve()
+            deviceId = snapshot.deviceId
+            userId = snapshot.userId
+        } else {
+            deviceId = DeviceIdentitySnapshot.newId(at: clock.now)
+            userId = UserContextSnapshot.newAnonymousId(at: clock.now)
+        }
+        self._deviceId = deviceId
 
         if let provided = contextProvider {
             self.context = provided
         } else {
             // Seed with minimal context so reads pre-configure don't
             // crash; `configure(_:)` will refresh app/device.
-            let now = clock.now
             let session = resolvedSessionManager.touch().state
-            let userId = UserContextSnapshot.newAnonymousId(at: now)
             self.context = ContextProvider(
                 app: AppContext(),
                 device: DeviceContext(),
-                deviceIdentity: DeviceIdentitySnapshot(id: self._deviceId),
+                deviceIdentity: DeviceIdentitySnapshot(id: deviceId),
                 network: NetworkContext(),
                 session: SessionContextSnapshot(session),
                 user: UserContextSnapshot(id: userId),
                 sdk: SdkContext(version: sdkVersion)
             )
         }
+    }
+
+    /// Optional sidecar that mirrors session + identity to a file the
+    /// crash backend (F14) reads on next launch. F4 ships the writer;
+    /// the reader lives in `EdgeRumCrash`.
+    private var sidecar: SessionSidecar?
+
+    /// Production wiring: swap the in-memory IdentityProvider / session
+    /// store for Keychain + UserDefaults-backed ones. Called once by
+    /// `EdgeRum.start()`. Safe to call again — recomputes the merged
+    /// identity from persisted values without rotating the session.
+    public func installPersistedStores(
+        identityProvider: IdentityProvider,
+        sessionStore: SessionStore,
+        sidecar: SessionSidecar?
+    ) {
+        let snapshot = identityProvider.resolve()
+        let revivedManager = SessionManager(
+            store: sessionStore,
+            clock: _clock
+        )
+        let session = revivedManager.touch().state
+
+        stateLock.lock()
+        self.sessionManager = revivedManager
+        self._deviceId = snapshot.deviceId
+        self.sidecar = sidecar
+        stateLock.unlock()
+
+        context.refreshDeviceIdentity(DeviceIdentitySnapshot(id: snapshot.deviceId))
+        context.refreshUser(UserContextSnapshot(id: snapshot.userId))
+        context.refreshSession(SessionContextSnapshot(session))
+
+        sidecar?.write(snapshot: context.snapshot())
     }
 
     // MARK: Recording
@@ -246,6 +297,8 @@ public final class Recorder: Recording, @unchecked Sendable {
             return
         }
 
+        bumpLastActiveAndEmitRotationIfNeeded()
+
         stateLock.lock()
         let currentSampler = self.sampler
         stateLock.unlock()
@@ -265,6 +318,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
 
     public func recordPerformance(name: String, attributes: [String: AttributeValue]) {
+        bumpLastActiveAndEmitRotationIfNeeded()
         stateLock.lock()
         let currentSampler = self.sampler
         stateLock.unlock()
@@ -359,14 +413,87 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.unlock()
     }
 
+    /// Called by the transport layer after a successful (`2xx`) batch
+    /// flush. Increments `session.sequence` under the SessionManager's
+    /// lock and refreshes the context so subsequent events carry the
+    /// new sequence value.
+    ///
+    /// Acceptance #43: three consecutive ACKed batches → an event
+    /// emitted after the third ACK reads `session.sequence == 3`.
+    public func didAckBatch() {
+        sessionManager.incrementSequence()
+        if let state = sessionManager.currentState() {
+            context.refreshSession(SessionContextSnapshot(state))
+            sidecar?.write(snapshot: context.snapshot())
+        }
+    }
+
     // MARK: Internals
+
+    /// Update the session's `lastActiveAt` to "now" and, if the touch
+    /// crossed the 30-min idle threshold, emit the
+    /// `session.finalized` → `session.started` rotation pair for the
+    /// prior and new sessions respectively. Synthetic emissions go
+    /// through `recordEventInternal` which skips this hook to avoid
+    /// re-entry.
+    private func bumpLastActiveAndEmitRotationIfNeeded() {
+        stateLock.lock()
+        if _insideRotationEmission {
+            stateLock.unlock()
+            return
+        }
+        stateLock.unlock()
+
+        let prior = context.currentSession()
+        let result = sessionManager.touch()
+        guard result.rotated else { return }
+        let priorSession = prior
+        let newSnapshot = SessionContextSnapshot(result.state)
+
+        stateLock.lock()
+        _insideRotationEmission = true
+        stateLock.unlock()
+        defer {
+            stateLock.lock()
+            _insideRotationEmission = false
+            stateLock.unlock()
+        }
+
+        // The prior session's identity needs to ride with the
+        // `session.finalized` event since the context is about to
+        // refresh to the new session before the buffer's next flush.
+        var finalizedAttrs: [String: AttributeValue] = [
+            "session.id": .string(priorSession.id),
+            "session.start_time": .string(WireDateFormatter.string(from: priorSession.startTime)),
+            "session.sequence": .int(priorSession.sequence)
+        ]
+        finalizedAttrs["session.rotation"] = .string("idle")
+        recordEventInternal(name: "session.finalized", attributes: finalizedAttrs)
+
+        context.refreshSession(newSnapshot)
+
+        recordEventInternal(name: "session.started", attributes: ["session.rotation": .string("idle")])
+    }
+
+    /// Bypass-touch event emission used by the rotation hook.
+    private func recordEventInternal(name: String, attributes: [String: AttributeValue]) {
+        guard Self.allowedEventNames.contains(name) else { return }
+        let now = clock.now
+        let event = Event.event(name: name, timestamp: now, attributes: AttributeBag(attributes))
+        enqueue(event)
+        if name == "session.finalized" || name == "app.crash" {
+            flush(reason: .immediate)
+        }
+    }
 
     private func enqueue(_ event: Event) {
         stateLock.lock()
         _buffer.append(event)
         let count = _buffer.count
         let cap = _config?.batchSize ?? 30
+        let sidecar = self.sidecar
         stateLock.unlock()
+        sidecar?.write(snapshot: context.snapshot())
         if count >= cap {
             flush(reason: .batchSize)
         }
