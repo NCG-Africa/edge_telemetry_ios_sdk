@@ -10,7 +10,7 @@
   "type": "telemetry_batch",
   "timestamp": "2026-06-14T10:30:00.512Z",
   "location": "Nairobi/Kenya",
-  "batch_size": 4,
+  "batch_size": 5,
   "events": [
 
     // ── navigation (UIKit screen entry) ─────────────────────────────────
@@ -103,6 +103,36 @@
         "http.request_size": 0,
         "http.response_size": 18244,
         "http.from_cache": false
+      }
+    },
+
+    // ── metric: resource_timing (companion of http.request above) ──────
+    // Emitted immediately after the http.request event for the same
+    // URLSession task. The five resource.*_ms fields are derived from
+    // URLSessionTaskMetrics' last transactionMetrics entry.
+    {
+      "type": "metric",
+      "metricName": "resource_timing",
+      "value": 342.0,
+      "timestamp": "2026-06-14T10:30:00.457Z",
+      "attributes": {
+        "app.name": "Shop",
+        "app.package_name": "com.example.shop",
+        "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+        "device.platform": "ios",
+        "network.type": "wifi",
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "session.start_time": "2026-06-14T10:25:00.002Z",
+        "user.id": "user_1717100000000_deadbeefcafef00d",
+        "sdk.version": "1.0.0",
+        "sdk.platform": "ios-native",
+        "resource.url": "https://api.example.com/products",
+        "resource.host": "api.example.com",
+        "resource.dns_ms": 12,
+        "resource.connect_ms": 31,
+        "resource.tls_ms": 45,
+        "resource.ttfb_ms": 240,
+        "resource.response_ms": 14
       }
     },
 

@@ -10,6 +10,7 @@
 		BF0000000000000000000001 /* EdgeRumSwiftUISampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001 /* EdgeRumSwiftUISampleApp.swift */; };
 		BF0000000000000000000002 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* HomeScreen.swift */; };
 		BF0000000000000000000003 /* DetailScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003 /* DetailScreen.swift */; };
+		BF0000000000000000000007 /* NetworkScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000007 /* NetworkScreen.swift */; };
 		BF0000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000005 /* Assets.xcassets */; };
 		BF0000000000000000000005 /* EdgeRum in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000001 /* EdgeRum */; };
 /* End PBXBuildFile section */
@@ -18,6 +19,7 @@
 		F10000000000000000000001 /* EdgeRumSwiftUISampleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeRumSwiftUISampleApp.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* HomeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreen.swift; sourceTree = "<group>"; };
 		F10000000000000000000003 /* DetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailScreen.swift; sourceTree = "<group>"; };
+		F10000000000000000000007 /* NetworkScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkScreen.swift; sourceTree = "<group>"; };
 		F10000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F10000000000000000000005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F10000000000000000000006 /* EdgeRumSwiftUISampleApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EdgeRumSwiftUISampleApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -49,6 +51,7 @@
 				F10000000000000000000001 /* EdgeRumSwiftUISampleApp.swift */,
 				F10000000000000000000002 /* HomeScreen.swift */,
 				F10000000000000000000003 /* DetailScreen.swift */,
+				F10000000000000000000007 /* NetworkScreen.swift */,
 				F10000000000000000000005 /* Assets.xcassets */,
 				F10000000000000000000004 /* Info.plist */,
 			);
@@ -141,6 +144,7 @@
 				BF0000000000000000000001 /* EdgeRumSwiftUISampleApp.swift in Sources */,
 				BF0000000000000000000002 /* HomeScreen.swift in Sources */,
 				BF0000000000000000000003 /* DetailScreen.swift in Sources */,
+				BF0000000000000000000007 /* NetworkScreen.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
