@@ -99,7 +99,14 @@ final class EdgeRumAPITests: XCTestCase {
             return nil
         }
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.0, "checkout_started")
+        // The wire `eventName` for custom track() calls is always
+        // `"custom_event"`; the user-supplied name carries as the
+        // `event.name` attribute. F3 enforces this strict allowlist
+        // mapping at the EdgeRum.track call site so the Recorder's
+        // `allowedEventNames` set never has to accept arbitrary
+        // strings.
+        XCTAssertEqual(events.first?.0, "custom_event")
+        XCTAssertEqual(events.first?.1["event.name"], .string("checkout_started"))
         XCTAssertEqual(events.first?.1["cart.size"], .int(3))
     }
 
@@ -227,77 +234,5 @@ final class EdgeRumAPITests: XCTestCase {
     }
 }
 
-// MARK: - Probe Recorder
-
-/// In-memory `Recording` that captures every call so tests can
-/// assert exact routing behaviour.
-internal final class ProbeRecorder: Recording, @unchecked Sendable {
-    private let lock = NSLock()
-    private var _calls: [RecordedCall] = []
-    private var _enabled: Bool = false
-
-    private let _clock: Clock = SystemClock()
-    private let _sessionId: String = "session_0_0000000000000000_ios"
-    private let _deviceId: String = "device_0_0000000000000000_ios"
-
-    internal init() {}
-
-    internal var calls: [RecordedCall] {
-        lock.lock(); defer { lock.unlock() }
-        return _calls
-    }
-
-    internal var clock: Clock { _clock }
-    internal var currentSessionId: String { _sessionId }
-    internal var currentDeviceId: String { _deviceId }
-
-    internal var isEnabled: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return _enabled
-    }
-
-    internal func start(apiKey: String, endpoint: URL, debug: Bool) {
-        lock.lock()
-        _enabled = true
-        _calls.append(.start(apiKey: apiKey, endpoint: endpoint, debug: debug))
-        lock.unlock()
-    }
-
-    internal func stop() {
-        lock.lock()
-        _enabled = false
-        _calls.append(.stop)
-        lock.unlock()
-    }
-
-    internal func setEnabled(_ enabled: Bool) {
-        lock.lock()
-        _enabled = enabled
-        _calls.append(.setEnabled(enabled))
-        lock.unlock()
-    }
-
-    internal func recordEvent(name: String, attributes: [String: AttributeValue]) {
-        lock.lock()
-        _calls.append(.event(name: name, attributes: attributes))
-        lock.unlock()
-    }
-
-    internal func recordPerformance(name: String, attributes: [String: AttributeValue]) {
-        lock.lock()
-        _calls.append(.performance(name: name, attributes: attributes))
-        lock.unlock()
-    }
-
-    internal func recordError(domain: String, code: Int, message: String?, context: [String: AttributeValue]) {
-        lock.lock()
-        _calls.append(.error(domain: domain, code: code, message: message, context: context))
-        lock.unlock()
-    }
-
-    internal func setUser(_ user: RecorderUser) {
-        lock.lock()
-        _calls.append(.setUser(user))
-        lock.unlock()
-    }
-}
+// ProbeRecorder lives at Tests/EdgeRumTests/Helpers/ProbeRecorder.swift
+// (extracted in F3 so RumTimerTests can use the same test double).
