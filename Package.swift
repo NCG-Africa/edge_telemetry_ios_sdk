@@ -12,7 +12,12 @@ import PackageDescription
 let package = Package(
     name: "EdgeRum",
     platforms: [
-        .iOS(.v14)
+        .iOS(.v14),
+        // macOS floor exists only so `swift build` / `swift test` run
+        // on the macOS CI host. The SDK is iOS-only; consumers ship
+        // iOS apps. `.v11` (Big Sur) is the contemporaneous macOS for
+        // iOS 14 and gives us `NWPathMonitor`, `os.Logger`, etc.
+        .macOS(.v11)
     ],
     products: [
         // Dynamic framework — the default. Forcing `.dynamic` is what
