@@ -45,7 +45,8 @@ let package = Package(
                 "EdgeRumCrash",
                 "EdgeRumOTelBridge"
             ],
-            path: "Sources/EdgeRum"
+            path: "Sources/EdgeRum",
+            plugins: ["EdgeRumVersionPlugin"]
         ),
 
         // MARK: - Internal targets
@@ -74,6 +75,12 @@ let package = Package(
                 .product(name: "OpenTelemetrySdk", package: "opentelemetry-swift-core")
             ],
             path: "Sources/EdgeRumOTelBridge"
+        ),
+
+        // MARK: - Build plugin: version-file generator
+        .plugin(
+            name: "EdgeRumVersionPlugin",
+            capability: .buildTool()
         ),
 
         // MARK: - Binary target: PLCrashReporter 1.12.0
