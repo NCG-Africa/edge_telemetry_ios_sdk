@@ -177,3 +177,92 @@ surface couples to the (not yet built) Recorder.
 - `Tools/firewall-check.sh` runs on every PR (audit job) and
   policies `Sources/EdgeRum/`, the public symbol graph, `README.md`,
   and consumer-facing `docs/*.md` against Rule 1's banned-token list.
+
+---
+
+## ADR-003 — F3 core pipeline: strict allowlist, in-memory seams, manual ISO 8601 encoding
+
+**Date:** 2026-06-16
+
+**Status:** Accepted.
+
+**Context.** F2 stood up the public API surface and the internal
+`Recording` protocol with a no-op stub Recorder. F3 lands the real
+pipeline behind that seam — context merging, batching, payload
+assembly — without touching transport, persistence, or the offline
+queue (those are F4–F5). Issue #8 lists five tasks: T3.1 (Recorder
+façade), T3.2 (EventEnvelope + AttributeBag), T3.3 (ContextProvider),
+T3.4 (Sampler + Clock), T3.5 (PayloadBuilder). Five design choices
+during implementation were load-bearing enough to record.
+
+**Decisions.**
+
+1. **Keep the `Recording` protocol shape stable; remap `track()` →
+   `custom_event` in the public surface.** `EdgeRum.track(name, attrs)`
+   now sets `attrs["event.name"] = name` and calls
+   `Recorder.recordEvent(name: "custom_event", attributes: attrs)`.
+   The Recorder's `allowedEventNames` set stays strict (12 wire-spec
+   values) and rejects everything else.
+2. **`AttributeBag` merge semantics: event attrs win on conflict.**
+   `context.merging(event)` always lets event-supplied keys overwrite
+   context-supplied keys. Matches CLAUDE.md's `{ _, new in new }`
+   spec literally and prevents stale context attributes from masking
+   intentional event-site overrides.
+3. **Manual ISO 8601 encoding via `ISO8601DateFormatter` with
+   `[.withInternetDateTime, .withFractionalSeconds]`.** Not
+   `JSONEncoder.dateEncodingStrategy = .iso8601` because the strategy
+   omits fractional seconds on some Apple runtimes, and the backend
+   dispatcher relies on the `.SSS` precision for ordering events
+   within a session.
+4. **In-memory `TransportSink` (`NoopTransportSink`) + in-memory
+   `SessionStore` (`InMemorySessionStore`) as F3 defaults.** Both are
+   protocols so F4 can layer `HTTPTransportSink` (POST to
+   `<endpoint>/collector/telemetry`) and `UserDefaultsSessionStore`
+   (suite `com.edge.rum.session`) on top without touching the
+   Recorder.
+5. **`SecRandomCopyBytes(8)` everywhere for ID entropy.** Not
+   `UUID()`. The `UUID` hex section is 128 bits and breaks the
+   `^(session|device|user)_\d+_[0-9a-f]{16}(_ios)?$` format the
+   Android/web/iOS dispatcher all share.
+
+**Alternatives considered.**
+
+- **Permissive `allowedEventNames`** — let `recordEvent(name: "foo")`
+  pass through as a `custom_event`. Rejected because it shifts the
+  custom-event mapping into the Recorder, where it's harder to test
+  in isolation and one capture-layer typo silently lands an unknown
+  `eventName` on the wire (the backend drops these without warning).
+- **`JSONEncoder.dateEncodingStrategy = .iso8601`** — one less
+  formatter to keep alive. Rejected because the strategy drops
+  fractional seconds on older runtimes and would silently degrade
+  precision once a host app ships on an older iOS minor.
+- **A single F3 commit that also ships `HTTPTransportSink` so events
+  reach the backend on day one.** Rejected — the issue boundary
+  (issue #8 = "Recorder, context, payload"; issue #14 = transport)
+  is clean, and conflating them would block CI on a working backend
+  endpoint we don't have yet.
+
+**Consequences.**
+
+- F2's single test `testTrackRoutesNameAndAttributes` flips one
+  assertion from `name == "checkout_started"` to
+  `name == "custom_event"` plus
+  `attributes["event.name"] == "checkout_started"`. This is the only
+  F2 test edit; everything else routes unchanged.
+- `Recorder.shared` continues to be the singleton entry point;
+  `installShared(_:)` still swaps in test probes. F3 adds
+  `configure(_:)` to the `Recording` protocol with a default no-op,
+  so existing probes (`ProbeRecorder`) compile unchanged.
+- `Recorder.flush(reason:)` and `Recorder.shutdown()` are concrete
+  methods on the `Recorder` class (not on `Recording`). F4 calls
+  them directly via `Recorder.shared as? Recorder`.
+- `ContextProvider` snapshots app/device/network/session/user/sdk
+  bags. Battery monitoring is read whenever
+  `UIDevice.isBatteryMonitoringEnabled` is `true`; F3 does not toggle
+  it on the host's behalf. Cellular `network.effectiveType` is
+  reported as `"cellular"` only — `CTTelephonyNetworkInfo`-derived
+  refinement (`"4g"`/`"5g"`) lands in F8.
+- `Tests/EdgeRumContractTests/WireAssertions.swift` is the new
+  reusable helper. Every transport-touching test in F4+ runs every
+  envelope through `assertValidEnvelope(_:)` before further
+  assertions.

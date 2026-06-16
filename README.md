@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2) is in place; the event-emitting pipeline ships across F3–F18. This README documents what is consumable today and links to the design docs for everything else.
+> **Status.** Public API surface (F2) is in place. F3 lands the core pipeline — the internal Recorder fan-in, identity context, sampler, and JSON envelope assembly — so the SDK now produces wire-conformant batches in memory. Transport (HTTP POST), persistence, offline queue, and the capture layer (screen / HTTP / interaction / native crash) follow across F4–F18.
 
 ## Supported iOS
 
@@ -133,6 +133,18 @@ The two view modifiers are unconditional at the iOS 14 floor.
 | `EdgeRum.sdkVersion` | SemVer string for this build, emitted as `sdk.version` on every event. |
 
 `EdgeRumConfig` defaults documented in code: `sampleRate = 1.0`, `maxQueueSize = 200`, `flushInterval = 5.0s`, `batchSize = 30`, `hangTimeout = 5.0s`, all `capture*` toggles `true`, `debug = false`. See [`Sources/EdgeRum/EdgeRumConfig.swift`](Sources/EdgeRum/EdgeRumConfig.swift) for the full field list.
+
+## How events flow
+
+Every public call (`track`, `trackScreen`, `identify`, `time`, `captureError`, plus the two SwiftUI modifiers) routes through one internal Recorder. The Recorder:
+
+1. Validates the wire `eventName` against a strict 12-name allowlist (anything else is dropped, and logged when `debug = true`).
+2. Applies the per-session sample-rate decision. The forced-emit set — `session.started`, `session.finalized`, `app.crash`, `network_change` — always passes regardless of the sample rate.
+3. Merges the current identity context (`app.*`, `device.*`, `session.*`, `user.*`, `network.*`, `sdk.*`) into the event's attributes; event-supplied attrs win on conflict.
+4. Buffers events and flushes by whichever of these fires first: `batchSize` reached, `flushInterval` timer elapsed, or an immediate-flush event (`recordError`, `session.finalized`).
+5. Hands the assembled batch envelope to the transport layer.
+
+Sample rate, batch size, and flush interval are all configurable on `EdgeRumConfig`. See [`docs/payload-example.jsonc`](docs/payload-example.jsonc) for the exact wire shape and [`docs/decisions.md`](docs/decisions.md) for the design rationale.
 
 ## Design docs
 
