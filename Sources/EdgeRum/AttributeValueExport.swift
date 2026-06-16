@@ -1,8 +1,14 @@
-// Sources/EdgeRum/AttributeValue.swift
+// Sources/EdgeRum/AttributeValueExport.swift
 //
 // Public re-export of the sealed-enum attribute type. The actual enum
 // is declared in `EdgeRumCore` so the internal Recorder protocol can
 // take it without a back-edge on the public umbrella module.
+//
+// File is named `AttributeValueExport.swift` (not `AttributeValue.swift`)
+// because CocoaPods rolls every subspec into one Pods target and two
+// Swift files sharing a basename inside a single target fail
+// `pod lib lint` with "Filename used twice". The exported Swift
+// symbol is still `AttributeValue` via the typealias below.
 //
 // Refs: PLAN-iOS.md §3.2, §F2/T2.3.
 //
