@@ -1,0 +1,116 @@
+# .github/workflows/ci.yml
+#
+# Three-job CI for the F1 package & build infrastructure:
+#
+#   build  — `swift build -c release` + `xcodebuild` against the iOS
+#            device + simulator destinations.
+#   test   — `swift test --enable-code-coverage`.
+#   audit  — `Tools/check-supported-ios.sh` for the iOS-floor
+#            consistency check.
+#
+# All three depend on Tools/fetch-plcrashreporter.sh succeeding so the
+# binary target resolves. Each job runs on a macos-15 runner with the
+# default Xcode 16 toolchain.
+#
+# Per-task acceptance criteria mapped:
+#   - T1.1 (#2) — build job's swift build + xcodebuild step
+#   - T1.3 (#4) — test job's VersionPipelineTests
+#   - T1.4 (#5) — pod-lint job's `pod lib lint`
+#   - T1.5 (#6) — audit job
+#   - T1.2 (#3) — xcframework job (manual / release-only trigger)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: swift build (release)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: swift build -c release
+        run: swift build -c release
+      - name: xcodebuild — iOS device
+        run: |
+          xcodebuild -scheme EdgeRum \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd-iphoneos \
+            build | xcpretty || exit ${PIPESTATUS[0]}
+      - name: xcodebuild — iOS Simulator
+        run: |
+          xcodebuild -scheme EdgeRum \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/dd-iphonesimulator \
+            build | xcpretty || exit ${PIPESTATUS[0]}
+
+  test:
+    name: swift test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: swift test --enable-code-coverage
+        run: swift test --enable-code-coverage
+
+  audit:
+    name: supported-iOS audit
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run check-supported-ios.sh
+        run: ./Tools/check-supported-ios.sh
+
+  pod-lint:
+    name: pod lib lint
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: Pre-generate version file
+        # `pod lib lint` doesn't run the SwiftPM build plugin, so we
+        # write the generated SemVer constant ahead of the lint.
+        run: ./Tools/gen-version.sh Sources/EdgeRum/Generated/EdgeRumVersion.swift
+      - name: pod lib lint
+        run: pod lib lint EdgeRum.podspec --allow-warnings
+
+  xcframework:
+    name: build xcframework
+    runs-on: macos-15
+    # Long job — run on push to main and release tags, plus manual trigger.
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Build XCFramework (unsigned)
+        env:
+          # Signing identity is intentionally unset for non-release runs;
+          # the script logs a warning and produces an unsigned zip.
+          CODESIGN_IDENTITY: ''
+        run: ./Tools/build-xcframework.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EdgeRum.xcframework.zip
+          path: build/EdgeRum.xcframework.zip
+          retention-days: 14
