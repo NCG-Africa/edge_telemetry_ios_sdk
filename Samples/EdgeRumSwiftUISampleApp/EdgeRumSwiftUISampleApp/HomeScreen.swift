@@ -33,6 +33,9 @@ struct HomeScreen: View {
 
             NavigationLink("Open detail", destination: DetailScreen())
                 .padding()
+
+            NavigationLink("Open network demo", destination: NetworkScreen())
+                .padding(.top, 4)
         }
         .padding()
         .edgeRumScreen("Home", attributes: ["funnel.step": 1])

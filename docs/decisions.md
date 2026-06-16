@@ -668,3 +668,125 @@ to change often.
 - A future migration to XcodeGen is not blocked. The spec can be
   written from the checked-in pbxproj at any time; the ADR stays in
   the file marked `Superseded by: ADR-NNN` if that happens.
+
+---
+
+## ADR-008 — F8 HTTP capture: URLProtocol + `protocolClasses` instance-getter swizzle
+
+**Date:** 2026-06-17
+
+**Status:** Accepted.
+
+**Context.** F8 needs every outbound `URLSession` request to produce
+an `http.request` event and a paired `resource_timing` metric without
+consumer-side wiring. The wire keys are pinned by PLAN-iOS.md §6.3.
+Three concrete iOS surfaces have to be covered: `URLSession.shared`,
+`URLSession(configuration: .default, …)` and the equivalent
+`.ephemeral`, and a custom-delegate session built from one of those
+configurations. Background-identified configurations are out of scope
+per §6.3 (no in-process delegate window for `URLSessionTaskMetrics`).
+
+**Decisions.**
+
+1. **`EdgeRumURLProtocol` is the only interception primitive.** A
+   `URLProtocol` subclass is registered globally via
+   `URLProtocol.registerClass(_:)` so `URLSession.shared` (and any
+   session whose `protocolClasses` includes it) routes through us.
+   Inside `startLoading()` we mark the request with a private
+   `URLProtocol.setProperty(_:forKey:in:)` flag so the inner session's
+   re-issued task does not re-enter `canInit(with:)` recursively.
+2. **`URLSessionTaskMetrics` are collected by the internal session's
+   own delegate, not by wrapping the consumer's delegate.** The
+   protocol owns a private `URLSession(configuration:
+   .ephemeral, delegate: EdgeRumMetricsDelegate, …)` whose delegate
+   forwards data + response + metrics back into the protocol
+   instance. The consumer's own delegate never sees our internal
+   traffic — which avoids the "double-call the consumer's
+   `didFinishCollecting`" trap that a session-level delegate-proxy
+   approach falls into.
+3. **For custom-configured sessions, swizzle the instance getter for
+   `URLSessionConfiguration.protocolClasses`, not the class-method
+   getters for `default`/`ephemeral`.** The class-method-swizzle
+   approach (preferred by older SDK patterns) crashes with SIGILL on
+   modern Foundation because Swift-imported class methods do not
+   tolerate IMP swapping via `method_exchangeImplementations`. The
+   instance getter swizzle is the Datadog/Sentry pattern and works
+   across iOS 14+ and the macOS test runner. Every URLSession that
+   reads its config's `protocolClasses` (which is what happens at
+   URL-loading setup time) gets back an array prefixed with
+   `EdgeRumURLProtocol`.
+4. **Background-identified configurations return their original
+   `protocolClasses` array unchanged.** The swizzled getter checks
+   `self.identifier != nil` and skips the prepend — background
+   uploads (the host's, and our own
+   `com.edge.rum.upload` session) never enter our recording path.
+5. **Defense-in-depth filter is three independent checks.** The
+   `X-Edge-Rum-Internal: 1` header and `taskDescription =
+   "edge-rum-internal"` markers — both set by `BatchTransport` on
+   every internal request — are the primary gates. The host-prefix
+   check against `config.endpoint.host` is the safety net for cases
+   where a future refactor strips one of the markers. `canInit(with:)`
+   re-runs the same filter at intercept time and `recordOutcome`
+   re-runs it again at emit time so a regression in either layer is
+   caught by the other.
+6. **`sanitizeUrl` runs synchronously, on the caller thread.** Per
+   PLAN-iOS.md §6.3. The sanitised URL is reflected on both the
+   `http.request` event and the companion `resource_timing` metric
+   so query-string redactions stay consistent across both signals.
+7. **`ignoreUrls` regex is matched against the sanitised URL string
+   (not the original).** Consumers who use `sanitizeUrl` to strip
+   secrets and then `ignoreUrls` to drop the sanitised form get the
+   intuitive behaviour; matching against the original would force
+   them to write two regex variants.
+
+**Alternatives considered.**
+
+- **Class-method swizzle on `URLSessionConfiguration.default` /
+  `.ephemeral` getters.** The "obvious" pattern — every other SDK
+  doc shows it. Empirically crashes with SIGILL on the macOS Swift 6
+  Foundation runtime when `method_exchangeImplementations` swaps a
+  Swift-imported class method's IMP. Standalone reproduction in
+  `/tmp/swiz_test.swift`. Switched to instance getter swizzle.
+- **Wrap the consumer's session delegate.** Lets us also intercept
+  WebSocket / upload-task callbacks. Rejected: doubles the surface,
+  requires `NSProxy`-style forwarding for every URLSessionDelegate
+  selector, and the URLProtocol path already covers data + download
+  tasks (the only ones F8 emits for). WebSocket telemetry is not a
+  v1.0 signal.
+- **Background-configuration support.** Would let the host's
+  background uploads emit `http.request` too. Rejected per PLAN-iOS.md
+  §6.3 edge case — background tasks have no live delegate window
+  for `URLSessionTaskMetrics`, so we'd emit an event with empty
+  resource timing. Better to document the gap than emit half-shaped
+  events. Future enhancement could store metrics in
+  `urlSessionDidFinishEvents(forBackgroundURLSession:)` and replay
+  on next launch.
+- **Skip `URLSessionConfiguration` swizzle entirely; rely on
+  `URLProtocol.registerClass` alone.** Works for `URLSession.shared`
+  on iOS but does NOT cover `URLSession(configuration: .default, …)`
+  — custom configs ignore globally-registered protocols. Would fail
+  T8.2's acceptance criterion ("`URLSession(configuration: .default,
+  delegate: customDelegate, ...)` still produces `http.request`").
+
+**Consequences.**
+
+- One new file `Sources/EdgeRumCapture/HTTPCapture.swift` holds the
+  installer, URLProtocol subclass, internal metrics delegate, and
+  `protocolClasses` swizzle. No public types added.
+- `EdgeRum.start(_:)` gains a `captureHTTP`-gated block that calls
+  `HTTPCapture.configure(_:)` (passing `ignoreUrls`, `sanitizeUrl`,
+  and the collector endpoint host) and `HTTPCapture.install(debug:)`.
+- `HTTPCapture.currentConfig` is read on every recorded request so
+  hot-swapping config via a follow-up `configure(_:)` works without
+  re-installing the swizzle.
+- The SDK's own collector POST is filtered three times before any
+  capture: by `canInit` (header + endpoint host), by `recordOutcome`
+  (header + endpoint host + task description), and by the user's
+  own `ignoreUrls` if they configure it.
+- Tests cover the filter pipeline (`HTTPCaptureTests`), the wire
+  shape of both signals (`HTTPCaptureWireConformanceTests`), and
+  the swizzle install path (idempotency + concurrent install). A
+  live-network smoke against `https://httpbin.org` is documented in
+  the F8 PR body as a manual verification step — CI sandboxes block
+  outbound traffic, so the synthetic-metrics test path is the only
+  programmatic check of `resource_timing` shape.

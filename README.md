@@ -2,7 +2,7 @@
 
 `edge-rum-ios` is the native iOS sibling of the [`edge-rum`](https://github.com/NCG-Africa/edge-rum) (web/Ionic/Capacitor) and [`edge-rum-android`](https://github.com/NCG-Africa/edge-rum-android) SDKs. It captures performance data, errors, native crashes, hangs, network requests, and user interactions on iOS apps and ships them as JSON to the EdgeTelemetryProcessor backend used by all three platforms.
 
-> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 (UIKit) and F7 (SwiftUI) light up the first capture surfaces — every screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric, whether the screen is presented through UIKit or SwiftUI.** The remaining capture surfaces (HTTP / native crash) follow across F8–F18.
+> **Status.** Public API surface (F2), the core pipeline (F3), persistent identity (F4), and the F5 transport layer are in place — events flow over HTTPS to the EdgeRum collector endpoint, the retry schedule survives transient failures, failed batches spill onto a file-backed offline queue, and a background `URLSession` finishes pending uploads after the host app is suspended. **F6 (UIKit) and F7 (SwiftUI) light up the first capture surfaces — every screen entry now auto-emits a `navigation` event and every paired exit emits a `screen.duration` metric, whether the screen is presented through UIKit or SwiftUI.** **F8 lands automatic HTTP capture — every outgoing `URLSession` request produces an `http.request` event and a companion `resource_timing` metric.** Native crash capture follows across F14.
 
 ## Supported iOS
 
@@ -122,6 +122,17 @@ Once `EdgeRum.start(_:)` runs, every UIKit screen entry produces a `navigation` 
 - **SwiftUI screens** presented via `UIHostingController` are recognised automatically and tagged `navigation.kind = "swiftui"`; the hosted Content type provides the screen name. The public `.edgeRumScreen` modifier emits the same wire shape for SwiftUI screens that are not driven through a hosting controller.
 - **`navigation.previous_screen`** chains across appears so transitions are easy to reconstruct downstream.
 - **Opt out** by setting `EdgeRumConfig.captureScreens = false` on the config you pass to `start(_:)`.
+
+## Automatic HTTP capture
+
+Once `EdgeRum.start(_:)` runs, every outgoing `URLSession` request produces an `http.request` event and a companion `resource_timing` performance metric — no per-call code required. Both `URLSession.shared` and consumer-created `URLSession(configuration: .default, delegate:, ...)` flows are intercepted at the protocol layer; the SDK never wraps or replaces your delegate.
+
+- **What's captured.** `http.method`, `http.url`, `http.host`, `http.path`, `http.status_code`, `http.duration_ms`, `http.request_size`, `http.response_size`, `http.from_cache`, and `http.error` (only on failure). The companion `resource_timing` metric carries `resource.dns_ms`, `resource.connect_ms`, `resource.tls_ms`, `resource.ttfb_ms`, and `resource.response_ms` derived from `URLSessionTaskMetrics`.
+- **The SDK's own POSTs are filtered out** of the recording stream by three independent checks: an `X-Edge-Rum-Internal` request header, the `edge-rum-internal` task description marker, and a host-prefix check against the configured collector endpoint. Your dashboards never see SDK traffic.
+- **`EdgeRumConfig.ignoreUrls`** drops events whose URL matches any of the supplied `NSRegularExpression`s — useful for keeping your own analytics endpoints or known-noisy URLs out of the data.
+- **`EdgeRumConfig.sanitizeUrl`** runs synchronously on the caller thread for every captured URL — strip query parameters, redact path segments, replace tokens. The sanitised URL is reflected on both the `http.request` event and the `resource_timing` metric so query-string redactions stay consistent across both signals.
+- **Background sessions are not instrumented.** `URLSessionConfiguration.background(withIdentifier:)` has no in-process delegate window for `URLSessionTaskMetrics`, so emitting an `http.request` without a timing companion would be misleading. The host's background uploads continue to work; they just don't appear in the capture stream.
+- **Opt out** by setting `EdgeRumConfig.captureHTTP = false` on the config you pass to `start(_:)`.
 
 ## Public API
 

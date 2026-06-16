@@ -190,6 +190,22 @@ public enum EdgeRum {
         if config.captureScreens {
             UIViewControllerCapture.install(debug: config.debug)
         }
+
+        // F8 — install HTTP request capture. The config carries the
+        // host's `ignoreUrls` regex set, `sanitizeUrl` callback, and
+        // the collector's own host so the capture layer can filter the
+        // SDK's own POSTs as a third defense layer (in addition to the
+        // `X-Edge-Rum-Internal` header and `edge-rum-internal` task
+        // description that `BatchTransport` sets on every internal
+        // request).
+        if config.captureHTTP {
+            HTTPCapture.configure(HTTPCaptureConfig(
+                ignoreUrls: config.ignoreUrls,
+                sanitizeUrl: config.sanitizeUrl,
+                endpointHost: config.endpoint.host
+            ))
+            HTTPCapture.install(debug: config.debug)
+        }
     }
 
     /// Attach a host-app user profile to subsequent events. Calling
