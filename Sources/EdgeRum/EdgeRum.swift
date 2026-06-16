@@ -14,7 +14,12 @@
 
 import Foundation
 import os.log
+#if canImport(EdgeRumCore)
+// SwiftPM: `EdgeRumCore` is a separate internal target. CocoaPods
+// rolls every subspec into one `EdgeRum` module — the same types
+// are already visible without an import.
 import EdgeRumCore
+#endif
 
 /// Top-level entry point for the EdgeRum SDK.
 ///
@@ -102,6 +107,18 @@ public enum EdgeRum {
         }
         startedIdentity = identity
         stateLock.unlock()
+
+        // If the shared Recorder is the real concrete type (i.e. the
+        // host hasn't swapped in a test probe), upgrade its in-memory
+        // identity stores to the persisted Keychain + UserDefaults
+        // pair so `device.id` and `session.id` survive across launches.
+        if let realRecorder = Recorder.shared as? Recorder {
+            realRecorder.installPersistedStores(
+                identityProvider: IdentityProvider(),
+                sessionStore: UserDefaultsSessionStore(),
+                sidecar: SessionSidecar()
+            )
+        }
 
         // Hand the full settings to the internal Recorder before
         // it starts so context snapshots, sample rate, batch size,
@@ -233,9 +250,15 @@ public enum EdgeRum {
     /// completionHandler:)` to the SDK so any pending background
     /// uploads can finish after process death. Wire from
     /// `AppDelegate` or `SceneDelegate`.
+    ///
+    /// `completion` is `@Sendable` so it can be hopped onto the main
+    /// queue under Swift 6 strict-concurrency. The system-supplied
+    /// completion handler from
+    /// `application(_:handleEventsForBackgroundURLSession:
+    /// completionHandler:)` is sendable in practice.
     public static func handleBackgroundEvents(
         identifier: String,
-        completion: @escaping () -> Void
+        completion: @Sendable @escaping () -> Void
     ) {
         // F5 wires the BackgroundUploader and calls `completion` once
         // the URLSession finishes its pending tasks. F2 ships the

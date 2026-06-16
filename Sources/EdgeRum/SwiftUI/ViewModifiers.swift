@@ -10,7 +10,12 @@
 
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(EdgeRumCore)
+// SwiftPM: `EdgeRumCore` is a separate internal target. CocoaPods
+// rolls every subspec into one `EdgeRum` module — the same types
+// are already visible without an import.
 import EdgeRumCore
+#endif
 
 // MARK: - Internals (testable in isolation)
 
