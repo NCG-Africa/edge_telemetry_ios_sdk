@@ -1,0 +1,112 @@
+# .github/workflows/release.yml
+#
+# Release pipeline — fires ONLY on a SemVer tag push (`v*`) or a manual
+# dispatch. Every other event (PR, push to main, branch push) is ignored
+# so we never accidentally cut a release.
+#
+# What a tag push does:
+#   1. Verifies the tag SemVer matches the repo-root VERSION file.
+#   2. Builds the XCFramework via Tools/build-xcframework.sh
+#      (iphoneos, iphonesimulator, maccatalyst).
+#   3. Computes the SHA-256 of the zip for SwiftPM
+#      .binaryTarget(url:checksum:) consumers.
+#   4. Creates a GitHub Release with the zip + checksum attached and
+#      auto-generated release notes.
+#
+# What a manual dispatch does:
+#   Same as a tag push EXCEPT step 4 — the release is skipped. Useful
+#   for validating the pipeline without cutting a real release.
+#
+# Refs: PLAN-iOS.md §2.5, §2.6; F1/T1.2 (issue #3).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'              # vMAJOR.MINOR.PATCH[-PRERELEASE], e.g. v1.0.0-alpha.1
+  workflow_dispatch:
+
+permissions:
+  contents: write          # required for softprops/action-gh-release
+
+jobs:
+  xcframework:
+    name: build xcframework
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+
+      - name: Verify tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(cat VERSION | tr -d '[:space:]')"
+          if [[ "${tag}" != "${file}" ]]; then
+            echo "Tag '${GITHUB_REF_NAME}' (=${tag}) does not match VERSION file ('${file}')." >&2
+            echo "Bump VERSION before tagging, or retag from the right commit." >&2
+            exit 1
+          fi
+          echo "release: tag ${GITHUB_REF_NAME} matches VERSION ${file}"
+
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+
+      - name: Build XCFramework
+        env:
+          # CI runs unsigned by default. Set CODESIGN_IDENTITY as a
+          # repository secret + map it here to publish signed builds.
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+        run: ./Tools/build-xcframework.sh
+
+      - name: Compute SHA-256
+        id: checksum
+        run: |
+          checksum="$(shasum -a 256 build/EdgeRum.xcframework.zip | awk '{print $1}')"
+          size="$(stat -f%z build/EdgeRum.xcframework.zip)"
+          echo "checksum=${checksum}" >> "${GITHUB_OUTPUT}"
+          echo "size=${size}"        >> "${GITHUB_OUTPUT}"
+          echo "${checksum}  EdgeRum.xcframework.zip" > build/EdgeRum.xcframework.zip.sha256
+          echo ""
+          echo "    sha256: ${checksum}"
+          echo "    size:   ${size} bytes"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EdgeRum.xcframework
+          path: |
+            build/EdgeRum.xcframework.zip
+            build/EdgeRum.xcframework.zip.sha256
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          # GITHUB_REF_NAME is the tag (vX.Y.Z) at this point.
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## EdgeRum ${{ github.ref_name }}
+
+            **SwiftPM `.binaryTarget(url:checksum:)`**:
+
+            ```swift
+            .binaryTarget(
+                name: "EdgeRum",
+                url: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/EdgeRum.xcframework.zip",
+                checksum: "${{ steps.checksum.outputs.checksum }}"
+            )
+            ```
+
+            **CocoaPods**: `pod 'EdgeRum', '${{ github.ref_name }}'`
+
+            Built from `${{ github.sha }}`. See `CHANGELOG.md` for details.
+          files: |
+            build/EdgeRum.xcframework.zip
+            build/EdgeRum.xcframework.zip.sha256
