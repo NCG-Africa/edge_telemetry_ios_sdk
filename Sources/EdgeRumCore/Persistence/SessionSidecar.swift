@@ -29,6 +29,15 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
 
     /// Default path: `<Library>/Caches/edge-rum/last-session.json`.
     public static func defaultURL() -> URL? {
+        guard let base = defaultBaseDirectoryURL() else { return nil }
+        return base.appendingPathComponent("last-session.json", isDirectory: false)
+    }
+
+    /// `<Library>/Caches/edge-rum/` — the SDK's per-app cache root.
+    /// F14 places PLCrashReporter's `basePath` alongside the sidecar
+    /// (under `plcr/`) so the entire SDK footprint can be wiped by
+    /// deleting one directory.
+    public static func defaultBaseDirectoryURL() -> URL? {
         let fm = FileManager.default
         guard let caches = try? fm.url(
             for: .cachesDirectory,
@@ -36,9 +45,7 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
             appropriateFor: nil,
             create: true
         ) else { return nil }
-        return caches
-            .appendingPathComponent("edge-rum", isDirectory: true)
-            .appendingPathComponent("last-session.json", isDirectory: false)
+        return caches.appendingPathComponent("edge-rum", isDirectory: true)
     }
 
     /// Attribute keys that get mirrored to the sidecar — strictly the

@@ -23,6 +23,9 @@ import EdgeRumCore
 #if canImport(EdgeRumCapture)
 import EdgeRumCapture
 #endif
+#if canImport(EdgeRumCrash)
+import EdgeRumCrash
+#endif
 
 /// Top-level entry point for the EdgeRum SDK.
 ///
@@ -185,6 +188,22 @@ public enum EdgeRum {
         // launch as the SDK can observe.
         PageLoadCapture.touchLaunchStart()
 
+        // F14 — replay BEFORE rotating to a new session. If the prior
+        // launch crashed, PLCrashIntegration reads the pending PLCR
+        // report, folds in the *crashed* session's identity from the
+        // sidecar, and pushes one `app.crash` event through the
+        // recorder (which immediately flushes). Skipped here for any
+        // host swap-in test probe — replay only makes sense against
+        // the real Recorder pipeline.
+        if config.captureNativeCrashes, Recorder.shared is Recorder {
+            PLCrashIntegration.replayIfNeeded(
+                recorder: Recorder.shared,
+                sidecar: SessionSidecar(),
+                config: PLCrashIntegrationConfig(),
+                debug: config.debug
+            )
+        }
+
         Recorder.shared.start(
             apiKey: config.apiKey,
             endpoint: config.endpoint,
@@ -249,6 +268,17 @@ public enum EdgeRum {
         // and emits one `page_load` event per process.
         if config.capturePageLoad {
             PageLoadCapture.install(debug: config.debug)
+        }
+
+        // F14 — install PLCrashReporter LAST so its Mach exception
+        // server registers after every other capture is wired. Inside
+        // `install(...)` a single-shot guard makes repeat `start()`
+        // calls a no-op.
+        if config.captureNativeCrashes {
+            PLCrashIntegration.install(
+                config: PLCrashIntegrationConfig(),
+                debug: config.debug
+            )
         }
     }
 
