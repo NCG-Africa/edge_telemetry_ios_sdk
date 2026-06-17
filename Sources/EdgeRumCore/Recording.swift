@@ -47,6 +47,11 @@ public protocol Recording: AnyObject, Sendable {
     var currentSessionId: String { get }
     var currentDeviceId: String { get }
     var clock: Clock { get }
+    /// `true` when the host passed `EdgeRumConfig.debug = true`. F13's
+    /// `AppErrorBuilder` reads this so dropped `NSError.userInfo` keys
+    /// are logged in debug-only builds. Default no-op `false` so test
+    /// probes that predate F13 don't have to track config state.
+    var debug: Bool { get }
 
     func configure(_ config: RecorderConfig)
     func start(apiKey: String, endpoint: URL, debug: Bool)
@@ -55,7 +60,6 @@ public protocol Recording: AnyObject, Sendable {
 
     func recordEvent(name: String, attributes: [String: AttributeValue])
     func recordPerformance(name: String, attributes: [String: AttributeValue])
-    func recordError(domain: String, code: Int, message: String?, context: [String: AttributeValue])
 
     func setUser(_ user: RecorderUser)
 
@@ -76,6 +80,10 @@ public extension Recording {
     func configure(_ config: RecorderConfig) {
         _ = config
     }
+
+    /// Default — test probes that don't track host config inherit
+    /// `debug == false`. The real `Recorder` overrides this.
+    var debug: Bool { false }
 
     /// Default no-op so existing test probes don't have to adopt the
     /// new requirement. The real `Recorder` overrides this.

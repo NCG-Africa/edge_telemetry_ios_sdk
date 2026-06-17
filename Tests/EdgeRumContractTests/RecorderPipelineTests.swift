@@ -80,24 +80,45 @@ final class RecorderPipelineContractTests: XCTestCase {
         XCTAssertEqual(attrs["screen.duration_ms"] as? Int, 4300)
     }
 
-    func testErrorEnvelopeIsAppCrashWithFlattenedFields() throws {
+    func testAppCrashEnvelopePassesWireAssertions() throws {
+        // F13: `EdgeRum.captureError` builds the full attribute bag
+        // via `AppErrorBuilder` and emits it through `recordEvent`.
+        // Drive the same path directly so the recorder pipeline is
+        // exercised without going through the public namespace.
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordError(
+        let err = NSError(
             domain: "PaymentDomain",
             code: 42,
-            message: "Card declined",
-            context: ["payment.method": "card"]
+            userInfo: [NSLocalizedDescriptionKey: "Card declined"]
         )
+        let attrs = AppErrorBuilder.build(
+            error: err,
+            context: ["payment.method": .string("card")],
+            stack: ["0  edge_rum_ios  test_frame"],
+            debug: false
+        )
+        recorder.recordEvent(name: "app.crash", attributes: attrs)
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.first?["eventName"] as? String, "app.crash")
-        let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
-        XCTAssertEqual(attrs["cause"] as? String, "AppError")
-        XCTAssertEqual(attrs["error.domain"] as? String, "PaymentDomain")
-        XCTAssertEqual(attrs["error.code"] as? Int, 42)
-        XCTAssertEqual(attrs["error.message"] as? String, "Card declined")
-        XCTAssertEqual(attrs["payment.method"] as? String, "card")
+        let wireAttrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
+        XCTAssertEqual(wireAttrs["cause"] as? String, "AppError")
+        XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
+        XCTAssertEqual(wireAttrs["error.kind"] as? String, "nserror")
+        XCTAssertEqual(wireAttrs["error.domain"] as? String, "PaymentDomain")
+        XCTAssertEqual(wireAttrs["error.code"] as? Int, 42)
+        XCTAssertEqual(wireAttrs["error.message"] as? String, "Card declined")
+        // T13.2: NSError.userInfo entries flatten with the `error.userInfo.` prefix.
+        XCTAssertEqual(
+            wireAttrs["error.userInfo.\(NSLocalizedDescriptionKey)"] as? String,
+            "Card declined"
+        )
+        // T13.1: caller-supplied context keys arrive prefixed with `crash.context.`,
+        // not bare. Catches regressions to the F2/F3 un-prefixed behaviour.
+        XCTAssertEqual(wireAttrs["crash.context.payment.method"] as? String, "card")
+        XCTAssertNil(wireAttrs["payment.method"])
+        XCTAssertNotNil(wireAttrs["error.stack"])
     }
 
     func testEnvelopeBytesContainNoForbiddenTokens() throws {
