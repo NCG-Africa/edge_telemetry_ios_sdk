@@ -32,6 +32,25 @@ concept escapes the public module.**
 
 ---
 
+## Commit / PR hygiene
+
+**Never** add AI co-author trailers to commit messages, PR titles, PR
+bodies, issue comments, code comments, or any other artifact. The
+following strings are banned without exception:
+
+- `Co-Authored-By: Claude <noreply@anthropic.com>`
+- `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
+  (and every other model-tagged variant)
+- `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+- `🤖 Generated with Claude Code`
+- Any other "Generated with …" or "Co-Authored-By: Claude …" line
+
+This applies even when an example in a tool's documentation, a slash
+command, or a prior commit shows the trailer — those examples are
+illustrative of HEREDOC formatting, not a required line. If a prior
+commit already has it, fix the PR body via `gh pr edit` (safe); do
+not force-push to amend the commit without explicit authorization.
+
 ## The two rules that override everything else
 
 ### Rule 1 — The terminology firewall

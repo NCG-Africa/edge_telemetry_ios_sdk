@@ -667,15 +667,18 @@ has a documented fallback: assume `frame.target_hz = 60` on iOS 14.
 
 ### 6.4 `page_load` analogue
 
-- **Source**: `UIApplication.didFinishLaunchingNotification` start time
-  → first `CADisplayLink` callback after the app is `.active`.
+- **Source**: SDK-observed launch instant (PageLoadCapture.launchStart,
+  touched eagerly from `EdgeRum.start(_:)` before any other startup
+  work) → first `CADisplayLink` callback after the app is `.active`.
 - **eventName**: `page_load`.
 - **Attributes**:
   - `page_load.duration_ms` (Int)
-  - `page_load.cold` (Bool)
-  - `page_load.prewarm` (Bool — from
+  - `page_load.cold_start` (Bool — `true` unless prewarmed)
+  - `page_load.prewarmed` (Bool — from
     `ProcessInfo.processInfo.environment["ActivePrewarm"] == "1"`,
-    iOS 15+; absent on iOS 14).
+    iOS 15+; absent on iOS 14)
+  - `page_load.source` (String — always `"displaylink"` for the v1.0
+    capture; v1.1 may augment with `"metrickit"` per §21.3)
 - Fired exactly once per process.
 
 ### 6.5 Tap / interaction capture
@@ -1775,22 +1778,27 @@ type-safe attributes. **Status.** `v1.0`. **Refs.** §4.2, §7.
 #### F4 — Identity & session management
 
 **Goal.** Device, user, and session IDs in the exact wire format, with
-crash sidecar for next-launch replay. **Status.** `v1.0`. **Refs.** §8.
+crash sidecar for next-launch replay. **Status.** `v1.0` — landed
+2026-06-16. **Refs.** §8, [ADR-004](docs/decisions.md).
 
-##### T4.1 — ID format generator + regex `[M0]`
+##### T4.1 — ID format generator + regex `[M0]` ✅
 - Helper that produces `device_<epochMs>_<16 hex>_ios` etc. using `SecRandomCopyBytes(8)`.
 - Round-trip regex validates persisted IDs on load; regenerate on mismatch.
 
 **Acceptance.** `XCTAssertMatches(id, "^device_\\d+_[0-9a-f]{16}_ios$")` holds across 10k generated samples.
 
-##### T4.2 — `IdentityProvider` (Keychain + UserDefaults) `[M0]`
+**Shipped in F4 as `Sources/EdgeRumCore/Persistence/IdentityFormat.swift`. Generators live in `SdkContext.swift` / `SessionContext.swift` / `UserContextSnapshot.swift` (carried over from F3).**
+
+##### T4.2 — `IdentityProvider` (Keychain + UserDefaults) `[M0]` ✅
 - `device.id` in Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`).
 - `user.id` in UserDefaults suite `com.edge.rum.session`.
 - Fallback path: if Keychain write fails, log and fall back to UserDefaults.
 
 **Acceptance.** Reinstalling the host app on the simulator regenerates `device.id`.
 
-##### T4.3 — `SessionManager` lifecycle `[M0 → M1]`
+**Shipped in F4 as `KeychainStore.swift` + `UserDefaultsStore.swift` + `IdentityProvider.swift`. `EdgeRum.start()` wires the real stores into `Recorder.shared` via `installPersistedStores(...)`.**
+
+##### T4.3 — `SessionManager` lifecycle `[M0 → M1]` ✅
 - Start a session on `start()` if none active or last-active > 30 min ago.
 - Update last-active on every `Recorder.recordEvent` and `didBecomeActive`.
 - Increment `session.sequence` on transport ack (under `NSLock`).
@@ -1798,11 +1806,15 @@ crash sidecar for next-launch replay. **Status.** `v1.0`. **Refs.** §8.
 
 **Acceptance.** Three consecutive ACKed batches yield `session.sequence = 3`.
 
-##### T4.4 — Crash sidecar `[M3]`
-- `Library/Caches/edge-rum/last-session.json` mirrors current identity on every event.
-- Read on next launch when a crash report is pending — emit replay event with the **previous** session's identity.
+**Shipped in F4 as `UserDefaultsSessionStore.swift` + the `Recorder.bumpLastActiveAndEmitRotationIfNeeded()` hook + `Recorder.didAckBatch()`. `didBecomeActive` / `willResignActive` lifecycle wiring is owned by F11 (`LifecycleCapture`).**
 
-**Acceptance.** Crash sample app (§13.3) test: replayed `app.crash` carries the crashing session's `session.id`, not the current one.
+##### T4.4 — Crash sidecar — writer only `[M3]` ✅ / reader carry-over → F14
+- `Library/Caches/edge-rum/last-session.json` mirrors current identity on every event.
+- ~~Read on next launch when a crash report is pending — emit replay event with the **previous** session's identity.~~ *(reader + replay path lives in `EdgeRumCrash` / T14.3 — see issue #44 carry-over note)*
+
+**Acceptance.** Crash sample app (§13.3) test: replayed `app.crash` carries the crashing session's `session.id`, not the current one. *(Reader + replay path lives in F14 / T14.3.)*
+
+**Shipped in F4 as `SessionSidecar.swift`. Writer is hooked into `Recorder.enqueue(_:)` and `Recorder.didAckBatch()` so the on-disk mirror is fresh whenever the buffer or sequence changes.**
 
 ---
 
@@ -1818,6 +1830,8 @@ flush on background. **Status.** `v1.0`. **Refs.** §9.
 
 **Acceptance.** Posting a 30-event batch produces a 200 and a single ACK.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/BatchTransport.swift` — `URLSession` driver with the `X-API-Key` / `Content-Type` / `User-Agent` / `X-Edge-Rum-Internal` headers, `taskDescription = "edge-rum-internal"`, and a structured `BatchSendOutcome` enum (`.success(status:)` / `.failure(status:retryAfter:)`). `Tests/EdgeRumTests/Transport/BatchTransportTests.swift` covers the header contract and the 30-event single-ACK acceptance via `MockURLProtocol`.**
+
 ##### T5.2 — `RetryPolicy` `[M1]`
 - Schedule 0 / 2 / 8 / 30 s for status 0 / 429 / 503.
 - Respect `Retry-After` capped at 60 s.
@@ -1826,6 +1840,8 @@ flush on background. **Status.** `v1.0`. **Refs.** §9.
 
 **Acceptance.** Mock server returning 503 yields four attempts then offline-queue.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/RetryPolicy.swift` — pure value type with `decide(attempt:status:retryAfter:)` returning `.retry(after:)` / `.toOfflineQueue` / `.drop`. Numeric and RFC 1123 HTTP-date forms of `Retry-After` both honored. `RetryPolicyTests` pins the full truth table.**
+
 ##### T5.3 — `OfflineQueue` (file-backed) `[M1]`
 - Files under `Library/Caches/edge-rum/queue/<epochMs>-<seq>.json`.
 - `maxQueueSize` cap; FIFO drop on overflow.
@@ -1833,17 +1849,23 @@ flush on background. **Status.** `v1.0`. **Refs.** §9.
 
 **Acceptance.** Filling the queue past `maxQueueSize` drops the oldest file first.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/OfflineQueue.swift` — file-per-batch FIFO with epoch-prefixed names for lexicographic == chronological ordering. `HTTPTransportSink.drainOfflineQueue()` is the entry point, wired from `EdgeRum.enable()` and from the sink's own `NetworkPathObserver` on `.satisfied` transition. `didBecomeActive` trigger lands with F11 — `drainOfflineQueue` already exists, that integration is one call.**
+
 ##### T5.4 — `BackgroundUploader` `[M1]`
 - `URLSessionConfiguration.background(withIdentifier: "com.edge.rum.upload")`.
 - Public `EdgeRum.handleBackgroundEvents(identifier:completion:)` wired into the uploader's completion.
 
 **Acceptance.** Suspending the app mid-upload and re-launching completes the upload.
 
+**Shipped in F5 as `Sources/EdgeRumCore/Transport/BackgroundUploader.swift` + `EdgeRum.handleBackgroundEvents` body. The system-supplied completion is stored on identifier match and fired from `urlSessionDidFinishEvents(forBackgroundURLSession:)`; identifier mismatch invokes the completion immediately so the host app's expiration handler resolves. Full "suspend mid-upload + relaunch" exercise needs a host app and is covered by the sample app's manual smoke pass.**
+
 ##### T5.5 — Per-session sampling `[M1]`
 - Uniform random at session start vs `sampleRate` (§9.6).
 - Excluded sessions emit only forced-emit allowlist.
 
 **Acceptance.** `sampleRate = 0.5` over 10k synthetic sessions yields 5000 ± 200 sampled.
+
+**Shipped in F5 as the rotation re-roll inside `Recorder.bumpLastActiveAndEmitRotationIfNeeded()` + the `start()` re-roll. F3's `Sampler` only re-rolled on `configure(_:)`, leaving idle-rotated sessions inheriting the prior decision; F5 makes the decision per-session as PLAN-iOS.md §9.6 specifies. `SamplerTests.test10kSessionsAt50PercentHits5000Plus200` pins the statistical acceptance with a seeded LCG so the test is deterministic. See ADR-005 for the rationale.**
 
 ---
 
@@ -1879,21 +1901,34 @@ screen entry / exit. **Status.** `v1.0`. **Refs.** §6.1.
 #### F7 — SwiftUI screen capture
 
 **Goal.** Public `.edgeRumScreen` / `.edgeRumTrackTap` modifiers
-emitting allowlisted events. **Status.** `v1.0`. **Refs.** §6.2.
+emitting allowlisted events. **Status.** `v1.0` — shipped. **Refs.** §6.2.
 
 ##### T7.1 — `.edgeRumScreen` modifier `[M2]`
-- `.onAppear` → emit `navigation` with `navigation.kind = "swiftui"`.
-- `.onDisappear` → emit `screen.duration`.
+- `.onAppear` → emit `navigation` with `navigation.kind = "swiftui"`,
+  `navigation.screen` (mirror of UIKit key), `navigation.type = "viewDidAppear"`.
+- `.onDisappear` → emit `screen.duration` as a performance metric
+  (routed via `recordPerformance`, not `recordEvent`) with the F6
+  UIKit attribute schema: `screen.name`, `screen.kind = "swiftui"`,
+  `screen.duration_ms` (Int), `value` (Double seconds). When the
+  disappear has no paired appear, the emit is a silent no-op.
+- Caller-supplied attributes are applied first; SDK-owned keys
+  overwrite so the kind discriminator cannot be hidden.
 
 **Acceptance.** Modifier on a SwiftUI view emits both events with consistent screen name.
 
 ##### T7.2 — `.edgeRumTrackTap` modifier `[M2]`
-- Overlay tap recognizer; emit `user.interaction` with `interaction.kind = "tap"`.
+- `.simultaneousGesture(TapGesture())` → emit `user.interaction`
+  with `interaction.kind = "tap"`. Caller attrs first, SDK-owned
+  keys last.
 
 **Acceptance.** Tapping the modified view fires exactly one `user.interaction` event.
 
 ##### T7.3 — Sample SwiftUI app `[M2]`
-- `Samples/EdgeRumSwiftUISampleApp/` exercising both modifiers.
+- `Samples/EdgeRumSwiftUISampleApp/` exercising both modifiers, built
+  via a checked-in `.xcodeproj` that resolves the SDK as a local
+  Swift Package at `../..`. `.github/workflows/ci.yml` runs
+  `xcodebuild ... -destination 'generic/platform=iOS Simulator'`
+  on every PR.
 
 **Acceptance.** App builds and runs on iOS 14 simulator.
 
@@ -1937,17 +1972,21 @@ emitting allowlisted events. **Status.** `v1.0`. **Refs.** §6.2.
 **Goal.** Auto-emit `user.interaction` for taps on `UIControl` / cell
 targets. **Status.** `v1.0`. **Refs.** §6.5.
 
-##### T9.1 — `UIWindow.sendEvent` swizzle `[M2]`
+##### T9.1 — `UIWindow.sendEvent` swizzle `[M2]` ✅
 - Inspect `UIEvent.allTouches`; resolve to `UIControl` or cell.
-- Emit with `interaction.kind = "tap"`, `interaction.target = class name`, `interaction.accessibility_id`.
+- Emit with `interaction.kind = "tap"`, `interaction.target = class name`, `interaction.target_id`.
 
-**Acceptance.** Tapping a button with `accessibilityIdentifier = "checkout"` emits `interaction.accessibility_id = "checkout"`.
+**Acceptance.** Tapping a button with `accessibilityIdentifier = "checkout"` emits `interaction.target_id = "checkout"`.
 
-##### T9.2 — Secure text field exclusion `[M2]`
+**Shipped in F9 as `Sources/EdgeRumCapture/InteractionCapture.swift` — base-class `UIWindow` swizzle, pure `decideEmission(for:currentScreen:)` core, target resolution that walks superviews preferring `UIControl` then `UITableViewCell` / `UICollectionViewCell`, and `interaction.screen` sourced from the existing F6 `UIViewControllerCapture.currentPreviousScreen()` pointer. Emit fires on `.ended` touches only so `.began` doesn't double-fire and `.cancelled` drags don't count. The PLAN's `interaction.accessibility_id` wording is renamed to `interaction.target_id` to match the §6.5 schema; the acceptance is the same identifier, just the key name is `target_id` per the canonical schema. Wired behind `config.captureTaps` in `EdgeRum.start(_:)`.**
+
+##### T9.2 — Secure text field exclusion `[M2]` ✅
 - Skip any view whose responder chain reaches an `isSecureTextEntry == true` field.
 - Never read `text` values.
 
 **Acceptance.** Tapping a `UITextField` with `isSecureTextEntry = true` emits no `user.interaction`.
+
+**Shipped in F9 as `InteractionCapture.responderChainContainsSecureField(startingAt:)` — walks the full `UIResponder` chain from the hit view upward; any link that's a `UITextField` with `isSecureTextEntry == true` short-circuits to `nil` before any attribute bag is built. The capture path never touches `.text` on any view. Covered by `InteractionCaptureTests` (direct hit, responder-chain hit, sentinel-value leak check) and an end-to-end wire conformance test in `Tests/EdgeRumContractTests/InteractionWireConformanceTests.swift`.**
 
 ---
 

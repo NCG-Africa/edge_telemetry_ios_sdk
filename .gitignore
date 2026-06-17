@@ -6,6 +6,11 @@
 DerivedData/
 xcuserdata/
 
+## Sample apps — un-ignore their checked-in project files so the
+## generic `*.xcodeproj/` rule above doesn't swallow them.
+!Samples/**/*.xcodeproj/
+!Samples/**/*.xcodeproj/**
+
 ## SwiftPM
 Package.resolved
 
