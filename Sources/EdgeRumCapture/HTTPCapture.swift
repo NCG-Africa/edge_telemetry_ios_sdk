@@ -43,6 +43,7 @@
 
 import Foundation
 import os.log
+import Security
 #if canImport(EdgeRumCore)
 import EdgeRumCore
 #endif
@@ -258,6 +259,39 @@ public enum HTTPCapture {
         recorder: Recording? = nil,
         config: HTTPCaptureConfig? = nil
     ) {
+        let view = metrics.map { MetricsView(from: $0) }
+        recordOutcomeWithView(
+            request: request,
+            response: response,
+            data: data,
+            view: view,
+            error: error,
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            taskDescription: taskDescription,
+            recorder: recorder,
+            config: config
+        )
+    }
+
+    /// Same pipeline as `recordOutcome` but takes the decomposed metrics
+    /// view directly. The production path goes via `recordOutcome` (which
+    /// wraps `URLSessionTaskMetrics`); tests drive this entry with a
+    /// `FakeTransactionMetrics` fixture so they can exercise multi-
+    /// transaction / TLS / cellular-fallback code paths without being
+    /// able to construct the framework-internal class. See ADR-013.
+    internal static func recordOutcomeWithView(
+        request: URLRequest,
+        response: URLResponse?,
+        data: Data?,
+        view: MetricsView?,
+        error: Error?,
+        startedAt: Date,
+        finishedAt: Date,
+        taskDescription: String?,
+        recorder: Recording? = nil,
+        config: HTTPCaptureConfig? = nil
+    ) {
         let liveRecorder = recorder ?? Recorder.shared
         guard liveRecorder.isEnabled else { return }
 
@@ -290,12 +324,12 @@ public enum HTTPCapture {
         if let http = response as? HTTPURLResponse {
             statusCode = http.statusCode
         }
-        if let metrics, let last = metrics.transactionMetrics.last {
+        if let last = view?.transactions.last {
             fromCache = last.resourceFetchType == .localCache
         }
 
-        let requestSize = computeRequestBytes(request, metrics: metrics)
-        let responseSize = computeResponseBytes(data: data, response: response, metrics: metrics)
+        let requestSize = computeRequestBytes(request, view: view)
+        let responseSize = computeResponseBytes(data: data, response: response, view: view)
 
         var attrs: [String: AttributeValue] = [
             "http.method": .string(method),
@@ -311,10 +345,11 @@ public enum HTTPCapture {
         if let error {
             attrs["http.error"] = .string(String(describing: error))
         }
+        applyHTTPMetricsEnrichment(into: &attrs, view: view)
 
         liveRecorder.recordEvent(name: "http.request", attributes: attrs)
 
-        if let metrics, let timing = ResourceTiming.from(metrics: metrics) {
+        if let view, let timing = ResourceTiming.from(view: view) {
             var metricAttrs: [String: AttributeValue] = [
                 "resource.url": .string(urlString),
                 "resource.host": .string(host),
@@ -322,10 +357,135 @@ public enum HTTPCapture {
                 "resource.connect_ms": .int(timing.connectMs),
                 "resource.tls_ms": .int(timing.tlsMs),
                 "resource.ttfb_ms": .int(timing.ttfbMs),
-                "resource.response_ms": .int(timing.responseMs)
+                "resource.download_ms": .int(timing.downloadMs),
+                "resource.redirect_count": .int(view.redirectCount),
+                "resource.transaction_count": .int(view.transactions.count)
             ]
+            if let totalMs = view.fetchStartToResponseEndMs {
+                metricAttrs["resource.fetch_start_to_response_end_ms"] = .int(totalMs)
+            }
+            if let proto = view.transactions.last.flatMap({ networkProtocolNormalised($0.networkProtocolName) }) {
+                metricAttrs["resource.protocol"] = .string(proto)
+            }
             metricAttrs["value"] = .double(Double(durationMs))
             liveRecorder.recordPerformance(name: "resource_timing", attributes: metricAttrs)
+        }
+    }
+
+    // MARK: F17 enrichment — http.request
+
+    /// Adds the F17 URLSession-metrics-derived attributes to the
+    /// `http.request` event. All TLS / connection fields come from the
+    /// LAST transaction (the response-delivering one); body-bytes-before-
+    /// encoding sums across all transactions.
+    ///
+    /// Each attribute is conditional: when the underlying field is nil or
+    /// the connection wasn't encrypted (TLS fields), the key is omitted
+    /// entirely — matching the pattern used for `http.error`.
+    internal static func applyHTTPMetricsEnrichment(
+        into attrs: inout [String: AttributeValue],
+        view: MetricsView?
+    ) {
+        guard let view else { return }
+
+        attrs["http.redirect_count"] = .int(view.redirectCount)
+
+        guard let last = view.transactions.last else { return }
+
+        if let tlsProtocol = tlsProtocolName(last.negotiatedTLSProtocolVersion) {
+            attrs["http.tls_protocol"] = .string(tlsProtocol)
+        }
+        if let tlsCipher = tlsCipherName(last.negotiatedTLSCipherSuite) {
+            attrs["http.tls_cipher"] = .string(tlsCipher)
+        }
+        attrs["http.reused_connection"] = .bool(last.isReusedConnection)
+        attrs["http.proxy_connection"] = .bool(last.isProxyConnection)
+        if let proto = networkProtocolNormalised(last.networkProtocolName) {
+            attrs["http.network_protocol"] = .string(proto)
+        }
+
+        let bytesBefore = view.transactions.reduce(Int64(0)) { acc, txn in
+            acc + max(0, txn.countOfRequestBodyBytesBeforeEncoding)
+        }
+        attrs["http.request_body_bytes_before_encoding"] = .int(Int(bytesBefore))
+
+        // T17.2: iOS 17+ multipath/cellular fallback. PLAN-iOS.md §16.4
+        // pins this to iOS 17+ even though `isMultipath` / `isCellular`
+        // exist since iOS 13 — keep the gate per the documented contract.
+        if #available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *) {
+            attrs["http.cellular_fallback"] = .bool(last.isMultipath && last.isCellular)
+        }
+    }
+
+    // MARK: F17 mapping helpers
+
+    /// Map an Apple `tls_protocol_version_t` raw value to the wire string
+    /// shape (`"1.0"`, `"1.1"`, `"1.2"`, `"1.3"`). Returns nil when the
+    /// transaction was not encrypted (input nil) or when the value is
+    /// unrecognised — keeps the key absent rather than emitting a bogus
+    /// value the backend can't filter on.
+    internal static func tlsProtocolName(_ value: tls_protocol_version_t?) -> String? {
+        guard let value else { return nil }
+        switch value.rawValue {
+        case 0x0301: return "1.0"
+        case 0x0302: return "1.1"
+        case 0x0303: return "1.2"
+        case 0x0304: return "1.3"
+        default: return nil
+        }
+    }
+
+    /// Map an Apple `tls_ciphersuite_t` raw value to the IANA cipher-suite
+    /// name. Covers the suites Apple's TLS stack actually negotiates on
+    /// iOS 14+; unknown values fall back to a hex string so the key is
+    /// always present when TLS is.
+    internal static func tlsCipherName(_ value: tls_ciphersuite_t?) -> String? {
+        guard let value else { return nil }
+        let raw = value.rawValue
+        switch raw {
+        // TLS 1.3 suites
+        case 0x1301: return "TLS_AES_128_GCM_SHA256"
+        case 0x1302: return "TLS_AES_256_GCM_SHA384"
+        case 0x1303: return "TLS_CHACHA20_POLY1305_SHA256"
+        // TLS 1.2 ECDHE-ECDSA
+        case 0xC02B: return "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        case 0xC02C: return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+        case 0xCCA9: return "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+        case 0xC023: return "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+        case 0xC024: return "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"
+        case 0xC009: return "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
+        case 0xC00A: return "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
+        // TLS 1.2 ECDHE-RSA
+        case 0xC02F: return "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        case 0xC030: return "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        case 0xCCA8: return "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+        case 0xC027: return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+        case 0xC028: return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
+        case 0xC013: return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+        case 0xC014: return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
+        // Static RSA (legacy)
+        case 0x009C: return "TLS_RSA_WITH_AES_128_GCM_SHA256"
+        case 0x009D: return "TLS_RSA_WITH_AES_256_GCM_SHA384"
+        case 0x002F: return "TLS_RSA_WITH_AES_128_CBC_SHA"
+        case 0x0035: return "TLS_RSA_WITH_AES_256_CBC_SHA"
+        default:
+            return String(format: "0x%04x", raw)
+        }
+    }
+
+    /// Normalise the ALPN protocol identifier to the wire shape used on
+    /// `http.network_protocol` / `resource.protocol`. ALPN ids are
+    /// lowercase per RFC 7301 (e.g. `h2`, `h3`, `http/1.1`); we collapse
+    /// `http/1.1` to `h1.1` for parity with the Android SDK. Returns nil
+    /// when no protocol was negotiated (e.g. cached / local resource).
+    internal static func networkProtocolNormalised(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        let lower = value.lowercased()
+        switch lower {
+        case "h2", "h3": return lower
+        case "http/1.1", "h1.1": return "h1.1"
+        case "http/1.0": return "h1.0"
+        default: return lower
         }
     }
 
@@ -333,11 +493,11 @@ public enum HTTPCapture {
 
     private static func computeRequestBytes(
         _ request: URLRequest,
-        metrics: URLSessionTaskMetrics?
+        view: MetricsView?
     ) -> Int64 {
-        if let metrics {
-            let total = metrics.transactionMetrics.reduce(Int64(0)) { acc, txn in
-                acc + Int64(txn.countOfRequestHeaderBytesSent) + Int64(txn.countOfRequestBodyBytesSent)
+        if let view {
+            let total = view.transactions.reduce(Int64(0)) { acc, txn in
+                acc + max(0, txn.countOfRequestHeaderBytesSent) + max(0, txn.countOfRequestBodyBytesSent)
             }
             if total > 0 { return total }
         }
@@ -350,11 +510,11 @@ public enum HTTPCapture {
     private static func computeResponseBytes(
         data: Data?,
         response: URLResponse?,
-        metrics: URLSessionTaskMetrics?
+        view: MetricsView?
     ) -> Int64 {
-        if let metrics {
-            let total = metrics.transactionMetrics.reduce(Int64(0)) { acc, txn in
-                acc + Int64(txn.countOfResponseHeaderBytesReceived) + Int64(txn.countOfResponseBodyBytesReceived)
+        if let view {
+            let total = view.transactions.reduce(Int64(0)) { acc, txn in
+                acc + max(0, txn.countOfResponseHeaderBytesReceived) + max(0, txn.countOfResponseBodyBytesReceived)
             }
             if total > 0 { return total }
         }
@@ -397,6 +557,80 @@ public enum HTTPCapture {
     #endif
 }
 
+// MARK: - Transaction metrics protocol seam (F17)
+
+/// Internal protocol mirroring the subset of
+/// `URLSessionTaskTransactionMetrics` fields F17 reads. Apple's class is
+/// framework-internal and cannot be subclassed or constructed in tests
+/// since iOS 13 deprecated its `init`. Tests substitute a struct
+/// (`FakeTransactionMetrics`) conforming to this protocol so the
+/// enrichment + derivation logic is exercised without network IO.
+///
+/// Mirror of the relevant public properties verified against the SDK
+/// header (`NSURLSession.h` in the iPhoneOS SDK).
+internal protocol TransactionMetricsLike {
+    var domainLookupStartDate: Date? { get }
+    var domainLookupEndDate: Date? { get }
+    var connectStartDate: Date? { get }
+    var connectEndDate: Date? { get }
+    var secureConnectionStartDate: Date? { get }
+    var secureConnectionEndDate: Date? { get }
+    var requestEndDate: Date? { get }
+    var responseStartDate: Date? { get }
+    var responseEndDate: Date? { get }
+    var fetchStartDate: Date? { get }
+
+    var countOfRequestHeaderBytesSent: Int64 { get }
+    var countOfRequestBodyBytesSent: Int64 { get }
+    var countOfRequestBodyBytesBeforeEncoding: Int64 { get }
+    var countOfResponseHeaderBytesReceived: Int64 { get }
+    var countOfResponseBodyBytesReceived: Int64 { get }
+
+    var negotiatedTLSProtocolVersion: tls_protocol_version_t? { get }
+    var negotiatedTLSCipherSuite: tls_ciphersuite_t? { get }
+    var isReusedConnection: Bool { get }
+    var isProxyConnection: Bool { get }
+    var networkProtocolName: String? { get }
+    var resourceFetchType: URLSessionTaskMetrics.ResourceFetchType { get }
+    var isMultipath: Bool { get }
+    var isCellular: Bool { get }
+}
+
+// Real Foundation type already exposes every property above with the
+// same name + type. Empty conformance is sufficient.
+extension URLSessionTaskTransactionMetrics: TransactionMetricsLike {}
+
+/// Aggregated view of `URLSessionTaskMetrics` decomposed into the fields
+/// F17 reads. Lets the recording sink + ResourceTiming derivation work
+/// against test fixtures and the real Foundation type uniformly.
+internal struct MetricsView {
+    let redirectCount: Int
+    let transactions: [TransactionMetricsLike]
+
+    init(redirectCount: Int, transactions: [TransactionMetricsLike]) {
+        self.redirectCount = redirectCount
+        self.transactions = transactions
+    }
+
+    init(from metrics: URLSessionTaskMetrics) {
+        self.redirectCount = metrics.redirectCount
+        self.transactions = metrics.transactionMetrics.map { $0 as TransactionMetricsLike }
+    }
+
+    /// First-transaction `fetchStartDate` → last-transaction
+    /// `responseEndDate`. Drives `resource.fetch_start_to_response_end_ms`
+    /// (T17.3 — total wall-clock across the redirect chain). Returns nil
+    /// when either bookend date is missing.
+    var fetchStartToResponseEndMs: Int? {
+        guard
+            let first = transactions.first?.fetchStartDate,
+            let end = transactions.last?.responseEndDate
+        else { return nil }
+        let delta = end.timeIntervalSince(first)
+        return Int(max(0, (delta * 1000.0).rounded()))
+    }
+}
+
 // MARK: - ResourceTiming derivation
 
 internal struct ResourceTiming {
@@ -404,23 +638,23 @@ internal struct ResourceTiming {
     let connectMs: Int
     let tlsMs: Int
     let ttfbMs: Int
-    let responseMs: Int
+    let downloadMs: Int
 
-    /// Derive timing from the LAST transaction metric (the one that
-    /// actually delivered the response). Returns `nil` when no
-    /// transaction is present.
-    static func from(metrics: URLSessionTaskMetrics) -> ResourceTiming? {
-        guard let txn = metrics.transactionMetrics.last else { return nil }
+    /// Derive timing from the LAST transaction (the one that actually
+    /// delivered the response). Returns nil when no transaction is
+    /// present.
+    static func from(view: MetricsView) -> ResourceTiming? {
+        guard let txn = view.transactions.last else { return nil }
         return ResourceTiming(
             dnsMs: msBetween(txn.domainLookupStartDate, txn.domainLookupEndDate),
             connectMs: msBetween(txn.connectStartDate, txn.connectEndDate),
             tlsMs: msBetween(txn.secureConnectionStartDate, txn.secureConnectionEndDate),
             ttfbMs: msBetween(txn.requestEndDate, txn.responseStartDate),
-            responseMs: msBetween(txn.responseStartDate, txn.responseEndDate)
+            downloadMs: msBetween(txn.responseStartDate, txn.responseEndDate)
         )
     }
 
-    private static func msBetween(_ start: Date?, _ end: Date?) -> Int {
+    internal static func msBetween(_ start: Date?, _ end: Date?) -> Int {
         guard let start, let end else { return 0 }
         let delta = end.timeIntervalSince(start)
         return Int(max(0, (delta * 1000.0).rounded()))

@@ -27,6 +27,7 @@
 
 import XCTest
 import Foundation
+import Security
 import EdgeRumCore
 @testable import EdgeRumCapture
 
@@ -102,15 +103,47 @@ private final class CaptureProbeRecorder: Recording, @unchecked Sendable {
     func setUser(_ user: RecorderUser) { _ = user }
 }
 
-// MARK: - URLSessionTaskMetrics synthesis
+// MARK: - URLSessionTaskMetrics synthesis (F17 — ADR-013)
 //
-// We can't construct `URLSessionTaskTransactionMetrics` directly —
-// it's a framework-internal class. The acceptance criterion is
-// "synthesize timings that flow through `ResourceTiming.from(...)`",
-// so we test the `msBetween` helper plus `ResourceTiming` shape
-// directly, and exercise the full recordOutcome pipeline with
-// `metrics == nil` to verify the http.request event still fires
-// without a companion resource_timing.
+// `URLSessionTaskTransactionMetrics` is framework-internal and has had
+// a deprecated `init` since iOS 13 — we cannot construct or subclass
+// it. F17 introduces the `TransactionMetricsLike` protocol in
+// `HTTPCapture.swift` precisely to make the enrichment + timing logic
+// testable: production code passes a real `URLSessionTaskMetrics`,
+// tests pass a `FakeTransactionMetrics` array wrapped in
+// `MetricsView`.
+//
+// Both paths funnel into the same internal entry,
+// `HTTPCapture.recordOutcomeWithView(...)`, so test coverage of the
+// enrichment is structurally identical to the production code path.
+
+struct FakeTransactionMetrics: TransactionMetricsLike {
+    var domainLookupStartDate: Date?
+    var domainLookupEndDate: Date?
+    var connectStartDate: Date?
+    var connectEndDate: Date?
+    var secureConnectionStartDate: Date?
+    var secureConnectionEndDate: Date?
+    var requestEndDate: Date?
+    var responseStartDate: Date?
+    var responseEndDate: Date?
+    var fetchStartDate: Date?
+
+    var countOfRequestHeaderBytesSent: Int64 = 0
+    var countOfRequestBodyBytesSent: Int64 = 0
+    var countOfRequestBodyBytesBeforeEncoding: Int64 = 0
+    var countOfResponseHeaderBytesReceived: Int64 = 0
+    var countOfResponseBodyBytesReceived: Int64 = 0
+
+    var negotiatedTLSProtocolVersion: tls_protocol_version_t?
+    var negotiatedTLSCipherSuite: tls_ciphersuite_t?
+    var isReusedConnection: Bool = false
+    var isProxyConnection: Bool = false
+    var networkProtocolName: String?
+    var resourceFetchType: URLSessionTaskMetrics.ResourceFetchType = .networkLoad
+    var isMultipath: Bool = false
+    var isCellular: Bool = false
+}
 
 // MARK: - Tests
 
@@ -561,6 +594,412 @@ final class HTTPCaptureTests: XCTestCase {
             return false
         }.count
         XCTAssertEqual(metricCount, 0, "No resource_timing metric should fire without metrics input")
+    }
+
+    // MARK: F17 — TLS protocol mapping (T17.1)
+
+    func test_tlsProtocolName_mapsAllRecognisedVersions() {
+        XCTAssertEqual(
+            HTTPCapture.tlsProtocolName(tls_protocol_version_t(rawValue: 0x0301)),
+            "1.0"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsProtocolName(tls_protocol_version_t(rawValue: 0x0302)),
+            "1.1"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsProtocolName(tls_protocol_version_t(rawValue: 0x0303)),
+            "1.2"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsProtocolName(tls_protocol_version_t(rawValue: 0x0304)),
+            "1.3"
+        )
+    }
+
+    func test_tlsProtocolName_returnsNilForNil() {
+        XCTAssertNil(HTTPCapture.tlsProtocolName(nil))
+    }
+
+    func test_tlsProtocolName_returnsNilForUnrecognisedRawValue() {
+        XCTAssertNil(
+            HTTPCapture.tlsProtocolName(tls_protocol_version_t(rawValue: 0xFFFF))
+        )
+    }
+
+    // MARK: F17 — TLS cipher suite mapping (T17.1)
+
+    func test_tlsCipherName_mapsTLS13Suites() {
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0x1301)),
+            "TLS_AES_128_GCM_SHA256"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0x1302)),
+            "TLS_AES_256_GCM_SHA384"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0x1303)),
+            "TLS_CHACHA20_POLY1305_SHA256"
+        )
+    }
+
+    func test_tlsCipherName_mapsCommonTLS12Suites() {
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0xC02F)),
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0xC02B)),
+            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        )
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0xCCA8)),
+            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+        )
+    }
+
+    func test_tlsCipherName_fallsBackToHexForUnknown() {
+        XCTAssertEqual(
+            HTTPCapture.tlsCipherName(tls_ciphersuite_t(rawValue: 0xABCD)),
+            "0xabcd"
+        )
+    }
+
+    func test_tlsCipherName_returnsNilForNil() {
+        XCTAssertNil(HTTPCapture.tlsCipherName(nil))
+    }
+
+    // MARK: F17 — networkProtocolNormalised (T17.1 + T17.3)
+
+    func test_networkProtocolNormalised_passesThroughH2H3() {
+        XCTAssertEqual(HTTPCapture.networkProtocolNormalised("h2"), "h2")
+        XCTAssertEqual(HTTPCapture.networkProtocolNormalised("h3"), "h3")
+    }
+
+    func test_networkProtocolNormalised_collapsesHTTP11() {
+        XCTAssertEqual(HTTPCapture.networkProtocolNormalised("http/1.1"), "h1.1")
+        XCTAssertEqual(HTTPCapture.networkProtocolNormalised("HTTP/1.1"), "h1.1")
+    }
+
+    func test_networkProtocolNormalised_collapsesHTTP10() {
+        XCTAssertEqual(HTTPCapture.networkProtocolNormalised("http/1.0"), "h1.0")
+    }
+
+    func test_networkProtocolNormalised_returnsNilForNilOrEmpty() {
+        XCTAssertNil(HTTPCapture.networkProtocolNormalised(nil))
+        XCTAssertNil(HTTPCapture.networkProtocolNormalised(""))
+    }
+
+    func test_networkProtocolNormalised_lowercasesUnknownToken() {
+        XCTAssertEqual(HTTPCapture.networkProtocolNormalised("SPDY/3"), "spdy/3")
+    }
+
+    // MARK: F17 — MetricsView.fetchStartToResponseEndMs (T17.3)
+
+    func test_metricsView_fetchStartToResponseEndMs_spansRedirectChain() {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txnA = FakeTransactionMetrics(
+            responseEndDate: t0.addingTimeInterval(0.150),
+            fetchStartDate: t0
+        )
+        let txnB = FakeTransactionMetrics(
+            responseEndDate: t0.addingTimeInterval(0.392),
+            fetchStartDate: t0.addingTimeInterval(0.160)
+        )
+        let view = MetricsView(redirectCount: 1, transactions: [txnA, txnB])
+        XCTAssertEqual(view.fetchStartToResponseEndMs, 392)
+    }
+
+    func test_metricsView_fetchStartToResponseEndMs_returnsNilWithoutBookends() {
+        let txn = FakeTransactionMetrics()
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+        XCTAssertNil(view.fetchStartToResponseEndMs)
+    }
+
+    func test_metricsView_fetchStartToResponseEndMs_clampsNegativeToZero() {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txn = FakeTransactionMetrics(
+            responseEndDate: t0,
+            fetchStartDate: t0.addingTimeInterval(0.5)
+        )
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+        XCTAssertEqual(view.fetchStartToResponseEndMs, 0)
+    }
+
+    // MARK: F17 — ResourceTiming.from(view:) (T17.3)
+
+    func test_resourceTiming_derivesAllFieldsFromLastTransaction() {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txn = FakeTransactionMetrics(
+            domainLookupStartDate: t0,
+            domainLookupEndDate: t0.addingTimeInterval(0.012),
+            connectStartDate: t0.addingTimeInterval(0.012),
+            connectEndDate: t0.addingTimeInterval(0.043),
+            secureConnectionStartDate: t0.addingTimeInterval(0.045),
+            secureConnectionEndDate: t0.addingTimeInterval(0.090),
+            requestEndDate: t0.addingTimeInterval(0.095),
+            responseStartDate: t0.addingTimeInterval(0.149),
+            responseEndDate: t0.addingTimeInterval(0.150)
+        )
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+        let timing = ResourceTiming.from(view: view)
+        XCTAssertNotNil(timing)
+        XCTAssertEqual(timing?.dnsMs, 12)
+        XCTAssertEqual(timing?.connectMs, 31)
+        XCTAssertEqual(timing?.tlsMs, 45)
+        XCTAssertEqual(timing?.ttfbMs, 54)
+        XCTAssertEqual(timing?.downloadMs, 1)
+    }
+
+    func test_resourceTiming_returnsNilForEmptyTransactions() {
+        let view = MetricsView(redirectCount: 0, transactions: [])
+        XCTAssertNil(ResourceTiming.from(view: view))
+    }
+
+    // MARK: F17 — recordOutcomeWithView end-to-end (T17.1 + T17.3)
+
+    func test_recordOutcomeWithView_emitsAllF17AttributesOnHTTPRequest() {
+        let url = URL(string: "https://api.example.com/v1/users")!
+        let request = URLRequest(url: url)
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil
+        )
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txn = FakeTransactionMetrics(
+            domainLookupStartDate: t0,
+            domainLookupEndDate: t0.addingTimeInterval(0.011),
+            connectStartDate: t0.addingTimeInterval(0.011),
+            connectEndDate: t0.addingTimeInterval(0.049),
+            secureConnectionStartDate: t0.addingTimeInterval(0.050),
+            secureConnectionEndDate: t0.addingTimeInterval(0.097),
+            requestEndDate: t0.addingTimeInterval(0.100),
+            responseStartDate: t0.addingTimeInterval(0.296),
+            responseEndDate: t0.addingTimeInterval(0.346),
+            fetchStartDate: t0,
+            countOfRequestBodyBytesBeforeEncoding: 128,
+            negotiatedTLSProtocolVersion: tls_protocol_version_t(rawValue: 0x0304),
+            negotiatedTLSCipherSuite: tls_ciphersuite_t(rawValue: 0x1301),
+            isReusedConnection: true,
+            isProxyConnection: false,
+            networkProtocolName: "h2"
+        )
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+
+        HTTPCapture.recordOutcomeWithView(
+            request: request,
+            response: response,
+            data: Data(count: 1234),
+            view: view,
+            error: nil,
+            startedAt: t0,
+            finishedAt: t0.addingTimeInterval(0.346),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        XCTAssertEqual(probe.calls.count, 2)
+        guard case .event(let evName, let evAttrs) = probe.calls[0] else {
+            XCTFail("Expected event"); return
+        }
+        XCTAssertEqual(evName, "http.request")
+        XCTAssertEqual(evAttrs["http.redirect_count"], .int(0))
+        XCTAssertEqual(evAttrs["http.tls_protocol"], .string("1.3"))
+        XCTAssertEqual(evAttrs["http.tls_cipher"], .string("TLS_AES_128_GCM_SHA256"))
+        XCTAssertEqual(evAttrs["http.reused_connection"], .bool(true))
+        XCTAssertEqual(evAttrs["http.proxy_connection"], .bool(false))
+        XCTAssertEqual(evAttrs["http.network_protocol"], .string("h2"))
+        XCTAssertEqual(evAttrs["http.request_body_bytes_before_encoding"], .int(128))
+
+        guard case .performance(let metricName, let metricAttrs) = probe.calls[1] else {
+            XCTFail("Expected performance"); return
+        }
+        XCTAssertEqual(metricName, "resource_timing")
+        XCTAssertEqual(metricAttrs["resource.dns_ms"], .int(11))
+        XCTAssertEqual(metricAttrs["resource.download_ms"], .int(50))
+        XCTAssertEqual(metricAttrs["resource.redirect_count"], .int(0))
+        XCTAssertEqual(metricAttrs["resource.transaction_count"], .int(1))
+        XCTAssertEqual(metricAttrs["resource.fetch_start_to_response_end_ms"], .int(346))
+        XCTAssertEqual(metricAttrs["resource.protocol"], .string("h2"))
+        XCTAssertNil(metricAttrs["resource.response_ms"], "F17 renamed response_ms → download_ms")
+    }
+
+    func test_recordOutcomeWithView_emitsMultiTransactionCountsForRedirectChain() {
+        let url = URL(string: "https://api.example.com/u")!
+        let request = URLRequest(url: url)
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil
+        )
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let redirect = FakeTransactionMetrics(
+            domainLookupStartDate: t0,
+            domainLookupEndDate: t0.addingTimeInterval(0.005),
+            responseEndDate: t0.addingTimeInterval(0.080),
+            fetchStartDate: t0,
+            countOfRequestBodyBytesBeforeEncoding: 32,
+            networkProtocolName: "http/1.1"
+        )
+        let final = FakeTransactionMetrics(
+            domainLookupStartDate: t0.addingTimeInterval(0.080),
+            domainLookupEndDate: t0.addingTimeInterval(0.090),
+            requestEndDate: t0.addingTimeInterval(0.100),
+            responseStartDate: t0.addingTimeInterval(0.250),
+            responseEndDate: t0.addingTimeInterval(0.300),
+            fetchStartDate: t0.addingTimeInterval(0.080),
+            countOfRequestBodyBytesBeforeEncoding: 32,
+            isReusedConnection: false,
+            networkProtocolName: "h2"
+        )
+        let view = MetricsView(redirectCount: 1, transactions: [redirect, final])
+
+        HTTPCapture.recordOutcomeWithView(
+            request: request,
+            response: response,
+            data: nil,
+            view: view,
+            error: nil,
+            startedAt: t0,
+            finishedAt: t0.addingTimeInterval(0.300),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        guard case .event(_, let evAttrs) = probe.calls[0] else {
+            XCTFail("Expected event"); return
+        }
+        XCTAssertEqual(evAttrs["http.redirect_count"], .int(1))
+        XCTAssertEqual(
+            evAttrs["http.request_body_bytes_before_encoding"], .int(64),
+            "Summed across both transactions"
+        )
+        // Final transaction wins for TLS/connection state.
+        XCTAssertEqual(evAttrs["http.network_protocol"], .string("h2"))
+
+        guard case .performance(_, let metricAttrs) = probe.calls[1] else {
+            XCTFail("Expected performance"); return
+        }
+        XCTAssertEqual(metricAttrs["resource.redirect_count"], .int(1))
+        XCTAssertEqual(metricAttrs["resource.transaction_count"], .int(2))
+        XCTAssertEqual(metricAttrs["resource.fetch_start_to_response_end_ms"], .int(300))
+    }
+
+    func test_recordOutcomeWithView_omitsTLSAttributesForCleartextConnection() {
+        let url = URL(string: "http://internal.example.com/u")!
+        let request = URLRequest(url: url)
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil
+        )
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txn = FakeTransactionMetrics(
+            requestEndDate: t0.addingTimeInterval(0.05),
+            responseStartDate: t0.addingTimeInterval(0.15),
+            responseEndDate: t0.addingTimeInterval(0.16),
+            fetchStartDate: t0,
+            networkProtocolName: "http/1.1"
+        )
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+
+        HTTPCapture.recordOutcomeWithView(
+            request: request,
+            response: response,
+            data: nil,
+            view: view,
+            error: nil,
+            startedAt: t0,
+            finishedAt: t0.addingTimeInterval(0.16),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        guard case .event(_, let evAttrs) = probe.calls[0] else {
+            XCTFail("Expected event"); return
+        }
+        XCTAssertNil(evAttrs["http.tls_protocol"], "TLS fields omitted for cleartext HTTP")
+        XCTAssertNil(evAttrs["http.tls_cipher"])
+        // But network_protocol still present.
+        XCTAssertEqual(evAttrs["http.network_protocol"], .string("h1.1"))
+    }
+
+    // MARK: F17 — T17.2 cellular_fallback (iOS 17+)
+
+    func test_recordOutcomeWithView_cellularFallbackPresentOnIOS17OrLater() {
+        let url = URL(string: "https://api.example.com/u")!
+        let request = URLRequest(url: url)
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil
+        )
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txn = FakeTransactionMetrics(
+            fetchStartDate: t0,
+            negotiatedTLSProtocolVersion: tls_protocol_version_t(rawValue: 0x0304),
+            networkProtocolName: "h2",
+            isMultipath: true,
+            isCellular: true
+        )
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+
+        HTTPCapture.recordOutcomeWithView(
+            request: request,
+            response: response,
+            data: nil,
+            view: view,
+            error: nil,
+            startedAt: t0,
+            finishedAt: t0.addingTimeInterval(0.1),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        guard case .event(_, let evAttrs) = probe.calls[0] else {
+            XCTFail("Expected event"); return
+        }
+        if #available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *) {
+            XCTAssertEqual(evAttrs["http.cellular_fallback"], .bool(true))
+        } else {
+            XCTAssertNil(evAttrs["http.cellular_fallback"])
+        }
+    }
+
+    func test_recordOutcomeWithView_cellularFallbackFalseWhenNotMultipathAndCellular() {
+        let url = URL(string: "https://api.example.com/u")!
+        let request = URLRequest(url: url)
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil
+        )
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000.0)
+        let txn = FakeTransactionMetrics(
+            fetchStartDate: t0,
+            isMultipath: false,
+            isCellular: true
+        )
+        let view = MetricsView(redirectCount: 0, transactions: [txn])
+
+        HTTPCapture.recordOutcomeWithView(
+            request: request,
+            response: response,
+            data: nil,
+            view: view,
+            error: nil,
+            startedAt: t0,
+            finishedAt: t0.addingTimeInterval(0.1),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        guard case .event(_, let evAttrs) = probe.calls[0] else {
+            XCTFail("Expected event"); return
+        }
+        if #available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *) {
+            XCTAssertEqual(
+                evAttrs["http.cellular_fallback"], .bool(false),
+                "False when not both multipath and cellular"
+            )
+        }
     }
 
     // MARK: configure() — round-trip
