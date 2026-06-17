@@ -33,8 +33,8 @@ struct CrashHomeScreen: View {
                         .buttonStyle(.borderedProminent)
                     Button("Crash with NSException", action: crashWithException)
                         .buttonStyle(.borderedProminent)
-                    Button("Trigger 10s hang (F15 preview)", action: triggerHang)
-                        .buttonStyle(.bordered)
+                    Button("Trigger 6 s main-thread hang (F15)", action: triggerHang)
+                        .buttonStyle(.borderedProminent)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -79,7 +79,11 @@ struct CrashHomeScreen: View {
 
     private func triggerHang() {
         // Sleeps the main thread past EdgeRumConfig.hangTimeout (default
-        // 5.0s). F15's hang detector will fire once it lands.
-        Thread.sleep(forTimeInterval: 10)
+        // 5.0s). F15's HangDetector will fire one `app.crash` event
+        // with `cause = "Hang"`, `crash.thread.main_stack` populated
+        // via the Mach-based snapshot, and `hang.duration_ms` ≥ 6000.
+        // The app stays alive afterwards — hangs are non-fatal
+        // (`crash.fatal = false`).
+        Thread.sleep(forTimeInterval: 6)
     }
 }

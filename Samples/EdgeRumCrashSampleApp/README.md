@@ -1,27 +1,28 @@
 # EdgeRum crash sample
 
-Manual-QA app for F14 native crash capture. Four buttons take the
-host process down via the crash classes the F14 PLCrashReporter
-integration catches (Mach signals + uncaught `NSException`) plus a
-long `Thread.sleep` for the F15 hang detector preview.
+Manual-QA app for F14 native crash capture **and** F15 hang
+detection. Four buttons exercise the crash classes the F14
+PLCrashReporter integration catches (Mach signals + uncaught
+`NSException`) plus a `Thread.sleep` long enough to trip the F15
+hang watchdog.
 
 ## What it covers
 
-| Button | Triggers | F14 path |
+| Button | Triggers | SDK path |
 |---|---|---|
-| `Crash with SIGSEGV` | Null-pointer write → `EXC_BAD_ACCESS` | Mach exception → PLCR signal record |
-| `Crash with SIGABRT (fatalError)` | `fatalError(_:)` | Mach exception → PLCR signal record |
-| `Crash with NSException` | `NSException.raise()` | PLCR uncaught-exception handler |
-| `Trigger 10s hang (F15 preview)` | `Thread.sleep(forTimeInterval: 10)` | F15 — not yet wired |
+| `Crash with SIGSEGV` | Null-pointer write → `EXC_BAD_ACCESS` | F14 — Mach exception → PLCR signal record |
+| `Crash with SIGABRT (fatalError)` | `fatalError(_:)` | F14 — Mach exception → PLCR signal record |
+| `Crash with NSException` | `NSException.raise()` | F14 — PLCR uncaught-exception handler |
+| `Trigger 6 s main-thread hang (F15)` | `Thread.sleep(forTimeInterval: 6)` on main | F15 — `CFRunLoopObserver` heartbeat stalls → `HangDetector` records one `app.crash` with `cause = "Hang"` |
 
-## Manual QA loop (PLAN-iOS §13.3)
+## Manual QA loop — F14 native crash (PLAN-iOS §13.3)
 
 1. Open the project in Xcode, pick an iOS Simulator or device,
    build, and Run.
 2. Note the active `session.id` on screen (also visible in
    Console.app — filter subsystem `com.edge.rum`, look for
    `session.started`).
-3. Tap one of the crash buttons; confirm the app terminates.
+3. Tap one of the **crash** buttons; confirm the app terminates.
 4. Relaunch the app.
 5. Verify the **first** emitted batch contains a single `app.crash`
    event carrying:
@@ -33,6 +34,27 @@ long `Thread.sleep` for the F15 hang detector preview.
    - `crash.report_format_version = "edgerum.crash.v1"`
    - `crash.report_json` that parses back to JSON (contains
      `threads`, `binary_images`, `format_version`)
+
+## Manual QA loop — F15 hang detection (PLAN-iOS §F15)
+
+1. Launch the app — the SDK starts with
+   `EdgeRumConfig.hangTimeout = 5.0` (default).
+2. Tap **`Trigger 6 s main-thread hang (F15)`**. The UI freezes
+   (taps stop registering) for ~6 seconds, then resumes.
+3. Within ~5 s of the hang ending, a single batch is POSTed
+   containing one `app.crash` event with:
+   - `eventName = "app.crash"`
+   - `cause = "Hang"` (NOT `"NativeCrash"`)
+   - `runtime = "native"`
+   - `crash.fatal = false` — hangs are non-fatal
+   - `hang.duration_ms` ≥ 5000
+   - `hang.threshold_ms = 5000`
+   - `crash.thread.main_stack` carrying a non-empty stack
+   - `session.id` matching the live session (the hang does NOT
+     terminate the app, so the session does not rotate)
+4. Tap the button again to confirm a second hang produces a
+   **second** distinct `app.crash` (one per stall window — the
+   watchdog does not double-fire during a single hang).
 
 > **Simulator caveat.** PLCrashReporter is configured with Mach
 > exception handling (`PLAN-iOS.md` §6.7). Xcode's debugger intercepts

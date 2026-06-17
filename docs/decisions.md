@@ -1010,3 +1010,123 @@ but doesn't define the wire shape that carries the dropped tail.
 - Backend ask (PLAN-iOS §13 "Backend asks" item 6 — the negotiated
   size cap): this ADR pins the soft cap at 200 KB. Tighten or relax
   in lockstep with backend telemetry.
+
+---
+
+## ADR-011 — F15 hang detection: hybrid CFRunLoopObserver heartbeat + Mach-based main-thread stack walk
+
+**Date:** 2026-06-17
+
+**Status:** Accepted.
+
+**Context.** F15 adds main-thread hang detection. The watchdog must
+record one `app.crash` event with `cause = "Hang"` when the host
+app's main runloop stalls for longer than
+`EdgeRumConfig.hangTimeout`. Two specification artefacts disagree on
+sub-details:
+
+1. **Attribute key for the captured stack.** PLAN-iOS.md §6.8 names
+   it `hang.stack`; the §F15/T15.2 acceptance criterion calls for
+   `crash.thread.main_stack`.
+2. **Heartbeat source.** §6.8 prescribes a hybrid
+   `CFRunLoopObserver` + dedicated `Thread`; T15.1 only mentions a
+   dedicated `Thread` "sampling main-runloop heartbeat".
+
+The main thread is, by definition, blocked when a hang fires, so a
+plain `Thread.callStackSymbols` dispatched to main won't return. We
+need to walk the stack of a *suspended* main thread from a
+background scheduler, using public APIs only (T15.2 — no
+`_pthread_*` private calls).
+
+**Decision.**
+
+1. **Use `crash.thread.main_stack`** (not `hang.stack`). This is the
+   explicit T15.2 acceptance criterion, matches the existing
+   `CrashReportEncoder` namespace (`Sources/EdgeRumCrash/
+   CrashReportEncoder.swift` lines 73-94), and lets future crash +
+   hang dashboards share a single column.
+2. **Hybrid heartbeat.** A `CFRunLoopObserver` on
+   `CFRunLoopGetMain()` (`.commonModes`,
+   `.entry | .beforeWaiting | .afterWaiting | .exit`) bumps an
+   atomic `UInt64` counter every time the main runloop turns. A
+   dedicated `HangWatchdogThread` (`.userInitiated` QoS) polls the
+   counter every 250 ms and fires the hang event when the counter
+   has not advanced for `hangTimeout` consecutive seconds. Pure
+   wall-clock sampling on its own can't distinguish "main is busy
+   but advancing" from "main is stuck".
+3. **Mach-based stack walk.** `MainThreadStackSnapshot.swift`
+   captures the main thread's Mach port at install time via
+   `pthread_mach_thread_np(pthread_self())` — a public, non-`_np`
+   POSIX call that returns a port whose lifetime is bound to the
+   pthread (no `mach_port_deallocate` needed). On detection the
+   watchdog thread runs:
+
+   `thread_suspend` → `thread_get_state` (ARM64 / x86_64) →
+   frame-pointer chain walk via `vm_read_overwrite` (safe — invalid
+   reads return `KERN_INVALID_ADDRESS` instead of trapping) → strip
+   PAC bits with a 48-bit mask → `dladdr` symbolicate → `thread_resume`.
+
+   Symbolication happens **after** resume so `dladdr` (which takes
+   dyld's lock) can't deadlock against the suspended main thread.
+   On any Mach failure, `capture()` returns `[]` and
+   `HangEventEncoder` substitutes a single placeholder frame
+   (`"<hang-stack-unavailable>"`) so the T15.2 "non-empty stack"
+   acceptance criterion still holds.
+4. **Threshold floor of 2 seconds.** Per PLAN-iOS.md §17 risk #5,
+   sub-2 s thresholds cause false positives on iPhone 8 / SE 2
+   hardware. `HangDetector.install(...)` clamps the host-supplied
+   `hangTimeout` to `max(2.0, requested)`.
+5. **No `Thread.callStackSymbols` from a dispatched main-thread
+   block.** A dispatched block can't run until main is unstuck — by
+   then the hang is already over and we'd be sampling the wrong
+   stack. Rejected outright.
+6. **MetricKit `MXHangDiagnostic` enrichment deferred.** §6.8
+   mentions MetricKit as a 24-hour-delayed augmentation. The F15
+   tasks (T15.1/T15.2) do not include it, and the daily MXMetric
+   payload arrives long after the live hang event has shipped.
+   Tracked as a v1.0+ follow-up.
+
+**Alternatives considered.**
+
+- **Plain `CADisplayLink` sampler.** Would only catch hangs longer
+  than one display frame and would itself be paused if the main
+  thread blocks for long enough — degrades exactly when we need
+  detection most.
+- **`backtrace(3)` from `execinfo.h`.** Walks the **current**
+  thread, not an arbitrary thread. Useless for cross-thread main
+  thread sampling.
+- **Signal-based snapshot.** Send a signal to the main thread,
+  capture stack in the handler. Async-signal-safe but the signal
+  handler can't run if main is fully blocked inside a kernel call,
+  and signal delivery on suspended threads is undefined.
+- **Use `KSCrash` / `SentrySDK` source directly.** Adds a
+  dependency we already chose not to take in F14.
+
+**Consequences.**
+
+- Three new files under `Sources/EdgeRumCrash/` —
+  `HangDetector.swift` (orchestrator + watchdog state machine),
+  `HangEventEncoder.swift` (pure attribute-bag encoder), and
+  `MainThreadStackSnapshot.swift` (Mach-based stack walker).
+- `EdgeRum.start(_:)` gains one `enableHangDetection`-gated block
+  that calls `HangDetector.install(threshold:debug:)` immediately
+  after the F14 `PLCrashIntegration.install(...)`. `EdgeRum.disable()`
+  calls `HangDetector.uninstall()` so a paused SDK has no live
+  timers.
+- Wire shape: `cause = "Hang"`, `runtime = "native"`,
+  `crash.fatal = false` (distinct from native crash's
+  `crash.fatal = true`), plus `hang.duration_ms`,
+  `hang.threshold_ms`, optional `hang.cpu_usage`, and
+  `crash.thread.main_stack`.
+- A 5th test file lands in `Tests/EdgeRumCrashTests/`
+  (`HangDetectorInstallTests`, `HangDetectorDetectionTests`,
+  `HangEventEncoderTests`, `MainThreadStackSnapshotTests`) plus a
+  contract test in `Tests/EdgeRumContractTests/
+  HangWireConformanceTests.swift`. Detection tests drive the
+  watchdog state machine directly with a `FixedClock` rather than
+  blocking the test runner's main thread for real seconds, so the
+  suite stays fast and deterministic.
+- Backend ask (PLAN-iOS §13 "Backend asks" — new): confirm crash
+  dashboards do not double-count `cause = "Hang"` rows as fatal
+  crashes. Backend should segment by `cause` (the two ride under
+  the same `eventName = "app.crash"`).
