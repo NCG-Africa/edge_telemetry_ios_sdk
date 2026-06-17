@@ -667,15 +667,18 @@ has a documented fallback: assume `frame.target_hz = 60` on iOS 14.
 
 ### 6.4 `page_load` analogue
 
-- **Source**: `UIApplication.didFinishLaunchingNotification` start time
-  → first `CADisplayLink` callback after the app is `.active`.
+- **Source**: SDK-observed launch instant (PageLoadCapture.launchStart,
+  touched eagerly from `EdgeRum.start(_:)` before any other startup
+  work) → first `CADisplayLink` callback after the app is `.active`.
 - **eventName**: `page_load`.
 - **Attributes**:
   - `page_load.duration_ms` (Int)
-  - `page_load.cold` (Bool)
-  - `page_load.prewarm` (Bool — from
+  - `page_load.cold_start` (Bool — `true` unless prewarmed)
+  - `page_load.prewarmed` (Bool — from
     `ProcessInfo.processInfo.environment["ActivePrewarm"] == "1"`,
-    iOS 15+; absent on iOS 14).
+    iOS 15+; absent on iOS 14)
+  - `page_load.source` (String — always `"displaylink"` for the v1.0
+    capture; v1.1 may augment with `"metrickit"` per §21.3)
 - Fired exactly once per process.
 
 ### 6.5 Tap / interaction capture

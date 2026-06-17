@@ -138,6 +138,13 @@ public struct EdgeRumConfig: Sendable {
     /// `network.unsatisfied_reason`. Default `true`.
     public var captureNetworkChanges: Bool = true
 
+    /// Capture a single `page_load` event per process — measured from
+    /// the SDK's earliest observable launch instant to the first
+    /// `CADisplayLink` tick after the app reaches `.active`. On iOS 15+
+    /// the event reports prewarmed launches via `page_load.prewarmed`.
+    /// Default `true`.
+    public var capturePageLoad: Bool = true
+
     // MARK: Diagnostics
 
     /// When `true`, the SDK logs verbose diagnostics via `os_log` and
