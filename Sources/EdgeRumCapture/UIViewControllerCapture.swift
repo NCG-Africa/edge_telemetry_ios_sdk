@@ -66,7 +66,7 @@ public enum UIViewControllerCapture {
     /// runtime guarantees that `method_exchangeImplementations` is
     /// atomic, but the surrounding "have I done this yet?" decision
     /// is not — so we serialise the whole install behind one lock.
-    private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -175,7 +175,7 @@ public enum UIViewControllerCapture {
 
     // MARK: Previous-screen pointer
 
-    private static let prevLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let prevLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -206,8 +206,13 @@ public enum UIViewControllerCapture {
             return (content, "swiftui")
         }
         // 2. accessibilityIdentifier wins for regular UIKit screens —
-        //    stable across renames.
-        if let aid = vc.accessibilityIdentifier, !aid.isEmpty {
+        //    stable across renames. The property lives on `UIView`
+        //    (the iOS 26 SDK dropped the implicit `UIViewController`
+        //    forwarding), so we read it through the controller's
+        //    backing view. `vc.view` lazily loads if needed, but
+        //    this swizzle runs from `viewDidAppear` — the view is
+        //    guaranteed loaded by then, so no side effects.
+        if let aid = vc.view?.accessibilityIdentifier, !aid.isEmpty {
             return (aid, "uikit")
         }
         // 3. Fallback: reflected type name.

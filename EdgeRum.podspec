@@ -31,7 +31,16 @@ Pod::Spec.new do |s|
                          :tag => s.version.to_s }
 
   s.ios.deployment_target = '14.0'
-  s.swift_versions        = ['5.10', '6.0']
+  # SwiftPM consumers build at language mode Swift 6 via
+  # `Package.swift`'s `swift-tools-version: 6.0`. CocoaPods consumers
+  # are deliberately pinned to Swift 5.10 because CLAUDE.md states
+  # "nothing on our public surface requires Swift 6 strict
+  # concurrency" — advertising 6.0 here makes Xcode promote every
+  # MainActor-isolation warning to an error under iOS 26 SDK, blocking
+  # `pod lib lint` on warnings the SDK is intentionally not fixing.
+  # Bump back to 6.0 once we cross the strict-concurrency audit (an
+  # F-future track).
+  s.swift_versions        = ['5.10']
   s.requires_arc          = true
   s.static_framework      = false
 

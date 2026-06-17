@@ -74,7 +74,7 @@ public enum InteractionCapture {
 
     /// Tiny once-token wrapping an `os_unfair_lock`. Matches the F6
     /// pattern in `UIViewControllerCapture`.
-    private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p

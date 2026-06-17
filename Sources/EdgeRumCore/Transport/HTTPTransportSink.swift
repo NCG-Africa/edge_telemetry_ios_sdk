@@ -181,16 +181,38 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             guard let self else { return false }
             // Block until the per-file POST resolves so the next file
             // doesn't fire concurrently — the drain has to be
-            // sequential per spec.
+            // sequential per spec. Sendable container is the Swift 6
+            // / strict-concurrency-safe alternative to a captured
+            // `var` mutated from inside the post callback.
             let semaphore = DispatchSemaphore(value: 0)
-            var ok = false
+            let outcomeBox = OutcomeBox()
             self.transport.post(payload) { outcome in
-                if case .success = outcome { ok = true }
+                if case .success = outcome { outcomeBox.markSuccess() }
                 semaphore.signal()
             }
             semaphore.wait()
+            let ok = outcomeBox.isSuccess
             if ok { self.recorder?.didAckBatch() }
             return ok
+        }
+    }
+
+    /// Sendable box for the success flag shared between the drain
+    /// callback and the post completion handler. Swift 6 strict
+    /// concurrency rejects mutating a captured `var` from inside the
+    /// completion closure even when a `DispatchSemaphore` is forcing
+    /// the writes to happen-before the reads.
+    private final class OutcomeBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _success = false
+
+        func markSuccess() {
+            lock.lock(); _success = true; lock.unlock()
+        }
+
+        var isSuccess: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return _success
         }
     }
 

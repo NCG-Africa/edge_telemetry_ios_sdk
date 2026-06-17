@@ -62,7 +62,7 @@ public enum PageLoadCapture {
     // observers) so the anchor is sampled as close to host-app launch
     // as the SDK can observe.
 
-    private static let _launchStartLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let _launchStartLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -94,7 +94,7 @@ public enum PageLoadCapture {
     // access; `_overridePrewarmedForTesting(_:)` lets the unit tests
     // drive both branches.
 
-    private static let _prewarmOverrideLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let _prewarmOverrideLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -125,7 +125,7 @@ public enum PageLoadCapture {
 
     // MARK: Install + emit tokens
 
-    private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -140,7 +140,7 @@ public enum PageLoadCapture {
         return _installed
     }
 
-    private static let emitLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let emitLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
