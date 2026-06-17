@@ -42,6 +42,14 @@ let package = Package(
         .package(
             url: "https://github.com/open-telemetry/opentelemetry-swift-core.git",
             from: "2.4.1"
+        ),
+        // F18 — DocC plugin so `swift package generate-documentation`
+        // works against the catalog at Sources/EdgeRum/EdgeRum.docc.
+        // The plugin is dev-only: it does not appear in consumer dep
+        // graphs because no target lists it as a regular dependency.
+        .package(
+            url: "https://github.com/apple/swift-docc-plugin.git",
+            from: "1.4.0"
         )
     ],
     targets: [

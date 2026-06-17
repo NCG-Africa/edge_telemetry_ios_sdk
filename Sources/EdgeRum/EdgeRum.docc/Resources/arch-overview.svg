@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  arch-overview.svg — single diagram surfaced in the DocC landing
+  page. Shows the public umbrella module on top and the four internal
+  modules underneath, plus the JSON wire arrow pointing at the
+  EdgeRum collector. No vendor logos, no colours that fail dark mode.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 720 460"
+     width="720" height="460"
+     role="img"
+     aria-labelledby="arch-overview-title arch-overview-desc">
+    <title id="arch-overview-title">EdgeRum architecture overview</title>
+    <desc id="arch-overview-desc">
+        Public umbrella module EdgeRum sits on top. Four internal modules —
+        EdgeRumCore, EdgeRumCapture, EdgeRumCrash, and EdgeRumOTelBridge —
+        sit underneath and are imported with @_implementationOnly. The
+        SDK ships JSON over HTTPS to the EdgeRum collector endpoint.
+    </desc>
+
+    <style>
+        text { font-family: -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif; fill: #1d1d1f; }
+        .module     { fill: #ffffff; stroke: #1d1d1f; stroke-width: 1.5; }
+        .module-pub { fill: #f3f4f6; stroke: #1d1d1f; stroke-width: 2; }
+        .module-ext { fill: #fafafa; stroke: #6e6e73; stroke-width: 1; stroke-dasharray: 4 3; }
+        .arrow      { stroke: #1d1d1f; stroke-width: 1.5; fill: none; }
+        .label-bold { font-weight: 600; font-size: 16px; }
+        .label-norm { font-weight: 400; font-size: 13px; fill: #515154; }
+        .heading    { font-weight: 600; font-size: 12px; fill: #6e6e73; letter-spacing: 0.5px; }
+    </style>
+
+    <text x="50" y="38" class="heading">PUBLIC SURFACE</text>
+
+    <!-- Public umbrella -->
+    <rect x="50" y="50" width="620" height="80" rx="10" class="module-pub"/>
+    <text x="70" y="80" class="label-bold">EdgeRum</text>
+    <text x="70" y="100" class="label-norm">
+        public namespace · start / identify / track / time / captureError · SwiftUI modifiers
+    </text>
+    <text x="70" y="118" class="label-norm">
+        AttributeValue (sealed enum — String / Int / Double / Bool)
+    </text>
+
+    <text x="50" y="168" class="heading">INTERNAL MODULES — @_implementationOnly</text>
+
+    <!-- Internal grid: 2x2 -->
+    <rect x="50"  y="180" width="295" height="90" rx="8" class="module"/>
+    <text x="70"  y="208" class="label-bold">EdgeRumCore</text>
+    <text x="70"  y="226" class="label-norm">Recorder facade · envelope builder · clock</text>
+    <text x="70"  y="244" class="label-norm">Identity · session · context · sampler</text>
+    <text x="70"  y="262" class="label-norm">Transport · offline queue · background uploader</text>
+
+    <rect x="375" y="180" width="295" height="90" rx="8" class="module"/>
+    <text x="395" y="208" class="label-bold">EdgeRumCapture</text>
+    <text x="395" y="226" class="label-norm">UIViewController + UIWindow swizzles</text>
+    <text x="395" y="244" class="label-norm">URLProtocol HTTP capture · NWPathMonitor</text>
+    <text x="395" y="262" class="label-norm">Frame / memory / long-task samplers</text>
+
+    <rect x="50"  y="285" width="295" height="80" rx="8" class="module"/>
+    <text x="70"  y="313" class="label-bold">EdgeRumCrash</text>
+    <text x="70"  y="331" class="label-norm">PLCrashReporter integration</text>
+    <text x="70"  y="349" class="label-norm">Hang watchdog · crash sidecar replay</text>
+
+    <rect x="375" y="285" width="295" height="80" rx="8" class="module-ext"/>
+    <text x="395" y="313" class="label-bold">EdgeRumOTelBridge</text>
+    <text x="395" y="331" class="label-norm">Optional OpenTelemetry adapter</text>
+    <text x="395" y="349" class="label-norm">Bridged inward — never re-exported</text>
+
+    <!-- Arrow down to backend -->
+    <text x="50" y="395" class="heading">JSON OVER HTTPS</text>
+    <line x1="360" y1="378" x2="360" y2="410" class="arrow"/>
+    <polygon points="356,410 364,410 360,420" fill="#1d1d1f"/>
+
+    <rect x="200" y="420" width="320" height="32" rx="6" class="module"/>
+    <text x="220" y="442" class="label-bold">POST /collector/telemetry</text>
+</svg>

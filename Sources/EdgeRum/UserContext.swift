@@ -31,6 +31,9 @@ public struct UserContext: Sendable, Hashable {
     /// Optional phone number.
     public var phone: String?
 
+    /// Build a `UserContext`. Every field is optional — pass only what
+    /// the host app actually knows about the user; the SDK never
+    /// fabricates values for missing fields.
     public init(
         id: String? = nil,
         name: String? = nil,
