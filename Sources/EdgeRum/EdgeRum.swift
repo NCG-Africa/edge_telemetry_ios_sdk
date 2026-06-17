@@ -210,6 +210,17 @@ public enum EdgeRum {
             debug: config.debug
         )
 
+        // F16 — install the context-enrichment observers (thermal,
+        // accessibility, NWPath extras, storage, locale) so the
+        // ContextProvider stays current without the Recorder having to
+        // re-snapshot on every event. Idempotent.
+        if let realRecorder = Recorder.shared as? Recorder {
+            ContextObservers.install(
+                provider: realRecorder.currentContextProvider,
+                debug: config.debug
+            )
+        }
+
         // F6 — install UIKit screen capture once. Idempotent and
         // main-thread-safe; on non-UIKit hosts (the macOS unit-test
         // runner) `install(...)` is a no-op so this call site stays

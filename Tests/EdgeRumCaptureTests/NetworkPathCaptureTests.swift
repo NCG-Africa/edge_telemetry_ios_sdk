@@ -107,6 +107,18 @@ private final class CaptureProbeRecorder: Recording, @unchecked Sendable {
 
 final class NetworkPathCaptureTests: XCTestCase {
 
+    override func setUp() {
+        // Reset BEFORE each test too — `EdgeRumAPITests` (runs
+        // alphabetically earlier) calls `EdgeRum.start(_:)` which
+        // installs `NetworkPathCapture`'s live `NWPathMonitor`; on
+        // CI macOS hosts the monitor fires its pathUpdateHandler
+        // immediately and seeds `lastFingerprint`. Without this reset
+        // the first dedupe-test emit would be silently absorbed.
+        super.setUp()
+        NetworkPathCapture._resetInstallFlagForTesting()
+        Recorder.resetShared()
+    }
+
     override func tearDown() {
         NetworkPathCapture._resetInstallFlagForTesting()
         Recorder.resetShared()
