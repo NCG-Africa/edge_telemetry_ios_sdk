@@ -13,21 +13,24 @@
 // attribute still carries something meaningful.
 //
 // Wire keys (CLAUDE.md):
-//   device.platform           = "ios"
-//   device.manufacturer       = "Apple"
-//   device.os                 = "ios"
-//   device.platform_version   — UIDevice.current.systemVersion
-//   device.model              — utsname identifier
-//   device.isVirtual          — simulator detect
-//   device.screenWidth/Height — UIScreen.main.nativeBounds (points × scale)
-//   device.pixelRatio         — UIScreen.main.scale
-//   device.batteryLevel       — UIDevice.batteryLevel (when monitoring)
-//   device.batteryCharging    — UIDevice.batteryState ∈ {.charging,.full}
+//   device.platform             = "ios"
+//   device.manufacturer         = "Apple"
+//   device.os                   = "ios"
+//   device.platform_version     — UIDevice.current.systemVersion
+//   device.model                — utsname identifier
+//   device.isVirtual            — simulator detect
+//   device.screenWidth/Height   — UIScreen.main.nativeBounds (points × scale)
+//   device.pixelRatio           — UIScreen.main.scale
+//   device.batteryLevel         — UIDevice.batteryLevel (when monitoring)
+//   device.batteryCharging      — UIDevice.batteryState ∈ {.charging,.full}
+//   device.locale               — Locale.current.identifier            (F16/T16.5)
+//   device.timezone             — TimeZone.current.identifier          (F16/T16.5)
+//   device.timezone_offset_min  — TimeZone.current.secondsFromGMT()/60 (F16/T16.5)
 //
 // Note: `device.id` is owned by `IdentityProvider` (F4) and merged
 // in alongside; this struct holds only the immutable / cheap reads.
 //
-// Refs: PLAN-iOS.md §7.5, §F3/T3.3.
+// Refs: PLAN-iOS.md §7.5, §F3/T3.3, §16.4 / F16; docs/data-flow.md §3.2.
 //
 
 import Foundation
@@ -48,6 +51,9 @@ public struct DeviceContext: Sendable, Hashable {
     public var pixelRatio: Double?
     public var batteryLevel: Double?
     public var batteryCharging: Bool?
+    public var locale: String?
+    public var timezone: String?
+    public var timezoneOffsetMin: Int?
 
     public init(
         platform: String = "ios",
@@ -60,7 +66,10 @@ public struct DeviceContext: Sendable, Hashable {
         screenHeight: Int? = nil,
         pixelRatio: Double? = nil,
         batteryLevel: Double? = nil,
-        batteryCharging: Bool? = nil
+        batteryCharging: Bool? = nil,
+        locale: String? = nil,
+        timezone: String? = nil,
+        timezoneOffsetMin: Int? = nil
     ) {
         self.platform = platform
         self.manufacturer = manufacturer
@@ -73,6 +82,9 @@ public struct DeviceContext: Sendable, Hashable {
         self.pixelRatio = pixelRatio
         self.batteryLevel = batteryLevel
         self.batteryCharging = batteryCharging
+        self.locale = locale
+        self.timezone = timezone
+        self.timezoneOffsetMin = timezoneOffsetMin
     }
 
     public static func snapshot() -> DeviceContext {
@@ -117,6 +129,8 @@ public struct DeviceContext: Sendable, Hashable {
             batteryCharging = nil
         }
 
+        let (localeId, tzId, tzOffset) = readLocaleAndTimezone()
+
         return DeviceContext(
             platformVersion: platformVersion,
             model: model,
@@ -125,12 +139,18 @@ public struct DeviceContext: Sendable, Hashable {
             screenHeight: h,
             pixelRatio: scale,
             batteryLevel: batteryLevel,
-            batteryCharging: batteryCharging
+            batteryCharging: batteryCharging,
+            locale: localeId,
+            timezone: tzId,
+            timezoneOffsetMin: tzOffset
         )
         #else
-        // Non-UIKit hosts (rare; test environments) — return only the
-        // constant identity keys. Tests can override fields directly.
-        return DeviceContext()
+        let (localeId, tzId, tzOffset) = readLocaleAndTimezone()
+        return DeviceContext(
+            locale: localeId,
+            timezone: tzId,
+            timezoneOffsetMin: tzOffset
+        )
         #endif
     }
 
@@ -146,7 +166,25 @@ public struct DeviceContext: Sendable, Hashable {
         bag.setIfPresent("device.pixelRatio", pixelRatio.map { .double($0) })
         bag.setIfPresent("device.batteryLevel", batteryLevel.map { .double($0) })
         bag.setIfPresent("device.batteryCharging", batteryCharging.map { .bool($0) })
+        bag.setIfPresent("device.locale", locale.map { .string($0) })
+        bag.setIfPresent("device.timezone", timezone.map { .string($0) })
+        bag.setIfPresent("device.timezone_offset_min", timezoneOffsetMin.map { .int($0) })
     }
+}
+
+/// Read `Locale.current.identifier`, `TimeZone.current.identifier`, and
+/// the GMT offset (minutes) for the F16/T16.5 wire keys. Returns
+/// `(nil, nil, nil)` only when the underlying values are empty, which
+/// is essentially impossible on a real device but defends the tests.
+internal func readLocaleAndTimezone() -> (String?, String?, Int?) {
+    let localeId = Locale.current.identifier
+    let tzId = TimeZone.current.identifier
+    let offsetMinutes = TimeZone.current.secondsFromGMT() / 60
+    return (
+        localeId.isEmpty ? nil : localeId,
+        tzId.isEmpty ? nil : tzId,
+        offsetMinutes
+    )
 }
 
 #if canImport(UIKit)

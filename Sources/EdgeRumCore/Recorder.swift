@@ -236,6 +236,16 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.currentDeviceIdentity().id
     }
 
+    /// Expose the held `ContextProvider` so the F16 `ContextObservers`
+    /// installer (and tests) can refresh individual context groups
+    /// without going through the Recorder API. Intentionally typed as
+    /// the concrete `ContextProvider` because that's the only
+    /// implementation; if alternative providers ever land this will
+    /// move behind a protocol.
+    public var currentContextProvider: ContextProvider {
+        context
+    }
+
     public func configure(_ config: RecorderConfig) {
         stateLock.lock()
         self._config = config
