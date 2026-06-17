@@ -903,3 +903,110 @@ questions are cadence, aggregation, and the placement of the
   `willResignActive` to save battery while suspended; the memory and
   long-task drivers stay armed (the runloop simply doesn't tick when
   the app is suspended, so they naturally idle).
+
+---
+
+## ADR-010 — F14 native crash payload: SDK-owned `crash.report_json` schema, sidecar identity override, top-30 stack truncation
+
+**Status.** Accepted, F14 (v1.0).
+
+**Context.** Native crashes — Mach signals and uncaught `NSException`s
+— have to travel as a single `app.crash` event on the same JSON wire
+the web and Android SDKs use. The wire contract forbids nested objects
+inside `attributes` (CLAUDE.md "EdgeTelemetryProcessor contract"), but
+a PLCrashReporter report is inherently nested: signal info, register
+dumps, per-thread backtraces, and a binary-image table. We need a way
+to ship the full report without violating the contract, and a stable
+way to identify "the report sent by this SDK version" so the backend's
+symbolication pipeline can route it deterministically. Separately:
+PLAN-iOS §F14/T14.4 caps stack truncation at top-30 frames per thread,
+but doesn't define the wire shape that carries the dropped tail.
+
+**Decision.**
+
+1. **Embed the full report as a single JSON-string attribute.** The
+   encoder (`Sources/EdgeRumCrash/CrashReportEncoder.swift`) builds a
+   Swift dictionary from the parsed `PLCrashReport`, serialises it via
+   `JSONSerialization` with `[.sortedKeys]`, and assigns the string to
+   `crash.report_json`. Backend re-parses on ingest. Round-trip is
+   lossless for primitives — and the wire stays primitives-only.
+2. **Stamp `crash.report_format_version = "edgerum.crash.v1"` on every
+   `app.crash` event** at the *attribute* level AND inside
+   `crash.report_json`. Bumps to the schema (adding fields, changing
+   field semantics, dropping fields) MUST bump this version and add an
+   ADR entry. The backend MAY validate the embedded JSON against the
+   declared version.
+3. **Replay event identity is the *crashed* session, not the live
+   one.** `PLCrashIntegration.replayIfNeeded` reads
+   `Library/Caches/edge-rum/last-session.json` (the F4 sidecar) and
+   folds `session.id`, `session.start_time`, `session.sequence`,
+   `device.id`, and `user.id` into the `app.crash` attribute bag
+   *before* handing it to `Recorder.recordEvent`. The Recorder's
+   `PayloadBuilder` uses event-wins merge semantics, so these override
+   the live `ContextProvider` snapshot at flush time.
+4. **Top-30 frames per thread, marker for the rest.** Frames beyond
+   the cap are dropped from the per-thread `stack` array and replaced
+   by a sibling `other_stacks = "…N more…"` string. The marker shape
+   (`omissionPrefix = "…"`, `omissionSuffix = " more…"`) is part of
+   the wire contract and is checked by
+   `Tests/EdgeRumCrashTests/CrashStackTruncatorTests`.
+5. **Event-size cap with deterministic strip order.** If the encoded
+   event would exceed `eventSizeCapBytes` (default 200 KB), the
+   encoder strips per-thread register dumps first; if still over,
+   drops `binary_images`. Both are detectable on the backend (an
+   `app.crash` event with `crash.report_json` but no registers / no
+   images means the cap kicked in). Stacks are never truncated past
+   the top-30 cap to satisfy the size budget — symbolication of the
+   crashed thread's top frames matters more than register state.
+6. **Mach exception handler.** `PLCrashReporterConfig` is constructed
+   with `signalHandlerType: .mach` and
+   `shouldRegisterUncaughtExceptionHandler: true`. The Mach path is
+   PLCR's own recommendation and catches more crash classes than the
+   BSD `sigaction(2)` path, at the cost of in-Simulator behaviour
+   (Apple's debugger intercepts Mach exceptions before PLCR sees
+   them). Manual QA of the crash sample app should happen on device.
+
+**Alternatives considered.**
+
+- **Multiple top-level attributes** (`crash.thread.0.stack`,
+  `crash.thread.1.stack`, …). Pollutes the attribute namespace,
+  doesn't bound payload size, and forces the backend to reassemble.
+- **Base64 of the raw PLCR protobuf.** Opaque to anything except a
+  symbolicator that already knows PLCR's binary format; impossible
+  to debug in a JSON log viewer.
+- **Drop the report entirely and ship only thread / register
+  summaries.** Defeats the point — the backend needs the full image
+  table for dSYM symbolication.
+- **Wire `app.crash` with `cause = "NativeCrash"` UNDER the new
+  session's identity** (post-rotation, post-replay). Counter-intuitive
+  on dashboards: a crash dashboard segmented by session would show
+  the crash under a session that started AFTER the crash, which means
+  every crash count would be off-by-one against any other RUM SDK.
+
+**Consequences.**
+
+- Five new files under `Sources/EdgeRumCrash/` —
+  `PLCrashIntegration.swift`, `PLCrashIntegrationConfig.swift`,
+  `CrashReportEncoder.swift`, `CrashStackTruncator.swift`,
+  `CrashSidecarReader.swift` — plus a test-only
+  `CrashFixtureGenerator.swift` that wraps PLCR's
+  `generateLiveReport()` so the encoder is unit-testable end-to-end
+  on the macOS test slice.
+- `EdgeRum.start(_:)` gains two `captureNativeCrashes`-gated blocks:
+  `PLCrashIntegration.replayIfNeeded(...)` *before*
+  `Recorder.shared.start(...)` (so the replayed event lands on the
+  prior session) and `PLCrashIntegration.install(...)` *after* every
+  other capture is wired.
+- `PLCrashIntegration` and `PLCrashIntegrationConfig` are `public` on
+  the internal `EdgeRumCrash` target — needed so the EdgeRum public
+  module can call them, but they DO NOT appear in EdgeRum's exported
+  symbol graph (the firewall check only scans EdgeRum). The
+  `CrashReporter` framework remains `@_implementationOnly` so no
+  PLCR type ever crosses the public module boundary.
+- A new test target `EdgeRumCrashTests` covers encoder, truncator,
+  sidecar reader, install idempotency, and replay end-to-end. Wire
+  conformance lives alongside the rest in
+  `Tests/EdgeRumContractTests/CrashWireConformanceTests.swift`.
+- Backend ask (PLAN-iOS §13 "Backend asks" item 6 — the negotiated
+  size cap): this ADR pins the soft cap at 200 KB. Tighten or relax
+  in lockstep with backend telemetry.

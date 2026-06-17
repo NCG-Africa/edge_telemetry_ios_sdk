@@ -126,6 +126,11 @@ let package = Package(
             name: "EdgeRumContractTests",
             dependencies: ["EdgeRum", "EdgeRumCore"],
             path: "Tests/EdgeRumContractTests"
+        ),
+        .testTarget(
+            name: "EdgeRumCrashTests",
+            dependencies: ["EdgeRum", "EdgeRumCore", "EdgeRumCrash"],
+            path: "Tests/EdgeRumCrashTests"
         )
     ],
     // Compile in Swift 5 language mode by default so consumers on Xcode 15
