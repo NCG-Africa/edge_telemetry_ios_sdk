@@ -67,26 +67,32 @@ public struct NetworkContext: Sendable, Hashable {
 /// Long-lived `NWPathMonitor` wrapper. Owned by the `ContextProvider`;
 /// invokes its callback on every path transition so the merged
 /// context bag stays current.
+///
+/// The callback receives both the wire-shape `NetworkContext` and the
+/// raw `NWPath` so call-sites that only need the wire snapshot can
+/// ignore the path arg, while F11's `NetworkPathCapture` can read
+/// `isExpensive` / `isConstrained` / `unsatisfiedReason` (iOS 14.2+)
+/// off the same transition without instantiating a second monitor.
 public final class NetworkPathObserver: @unchecked Sendable {
 
     private let monitor: NWPathMonitor
     private let queue: DispatchQueue
     private let lock = NSLock()
-    private var _onChange: ((NetworkContext) -> Void)?
+    private var _onChange: ((NetworkContext, NWPath) -> Void)?
 
     public init(queue: DispatchQueue = DispatchQueue(label: "edge.rum.network", qos: .utility)) {
         self.monitor = NWPathMonitor()
         self.queue = queue
     }
 
-    public func start(onChange: @escaping (NetworkContext) -> Void) {
+    public func start(onChange: @escaping (NetworkContext, NWPath) -> Void) {
         lock.lock(); _onChange = onChange; lock.unlock()
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
             self.lock.lock()
             let callback = self._onChange
             self.lock.unlock()
-            callback?(NetworkContext.from(path))
+            callback?(NetworkContext.from(path), path)
         }
         monitor.start(queue: queue)
     }

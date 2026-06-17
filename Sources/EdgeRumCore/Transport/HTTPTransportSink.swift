@@ -196,7 +196,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
 
     private func startPathObserver() {
         guard let pathObserver else { return }
-        pathObserver.start { [weak self] context in
+        pathObserver.start { [weak self] context, _ in
             guard let self else { return }
             let satisfied = context.type != .none
             self.pathObserverLock.lock()

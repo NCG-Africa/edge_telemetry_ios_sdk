@@ -125,6 +125,19 @@ public struct EdgeRumConfig: Sendable {
     /// detection (≥50 ms). Default `true`.
     public var captureRenderingPerformance: Bool = true
 
+    /// Capture app lifecycle transitions (`foregrounded` / `active` /
+    /// `inactive` / `backgrounded` / `will_terminate`) and emit a
+    /// session-finalize event on backgrounding so the in-memory buffer
+    /// is flushed before the OS suspends or kills the process.
+    /// Default `true`.
+    public var captureLifecycle: Bool = true
+
+    /// Capture network connectivity changes — emits one event per
+    /// transition carrying `network.type`, `network.effectiveType`,
+    /// `network.is_expensive`, `network.is_constrained`, and (iOS 14.2+)
+    /// `network.unsatisfied_reason`. Default `true`.
+    public var captureNetworkChanges: Bool = true
+
     // MARK: Diagnostics
 
     /// When `true`, the SDK logs verbose diagnostics via `os_log` and

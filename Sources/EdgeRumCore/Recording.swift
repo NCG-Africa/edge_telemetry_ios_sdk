@@ -58,6 +58,16 @@ public protocol Recording: AnyObject, Sendable {
     func recordError(domain: String, code: Int, message: String?, context: [String: AttributeValue])
 
     func setUser(_ user: RecorderUser)
+
+    /// Update the in-memory `NetworkContext` so subsequent events
+    /// carry the new `network.type` / `network.effectiveType`.
+    /// F11's `NetworkPathCapture` calls this on every NWPath transition.
+    func refreshNetworkContext(_ context: NetworkContext)
+
+    /// Forward an offline-queue drain request to the installed
+    /// transport. Called from `EdgeRum.enable()` and F11's
+    /// `didBecomeActive` lifecycle hook.
+    func drainOfflineQueue()
 }
 
 public extension Recording {
@@ -66,4 +76,14 @@ public extension Recording {
     func configure(_ config: RecorderConfig) {
         _ = config
     }
+
+    /// Default no-op so existing test probes don't have to adopt the
+    /// new requirement. The real `Recorder` overrides this.
+    func refreshNetworkContext(_ context: NetworkContext) {
+        _ = context
+    }
+
+    /// Default no-op so existing test probes don't have to adopt the
+    /// new requirement. The real `Recorder` overrides this.
+    func drainOfflineQueue() { }
 }
