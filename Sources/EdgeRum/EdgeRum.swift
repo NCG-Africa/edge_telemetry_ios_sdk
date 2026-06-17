@@ -225,6 +225,16 @@ public enum EdgeRum {
             MemorySampler.install(debug: config.debug)
             RunLoopObserverCapture.install(debug: config.debug)
         }
+
+        // F11 — install lifecycle + connectivity capture. Idempotent;
+        // each `install(...)` is a no-op on subsequent calls and on
+        // non-UIKit / non-Network hosts.
+        if config.captureLifecycle {
+            LifecycleCapture.install(debug: config.debug)
+        }
+        if config.captureNetworkChanges {
+            NetworkPathCapture.install(debug: config.debug)
+        }
     }
 
     /// Attach a host-app user profile to subsequent events. Calling

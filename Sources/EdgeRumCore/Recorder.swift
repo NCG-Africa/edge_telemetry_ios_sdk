@@ -425,13 +425,22 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
 
     /// Forward an offline-queue drain request to the installed
-    /// transport. Called from `EdgeRum.enable()` and (later) F11's
+    /// transport. Called from `EdgeRum.enable()` and F11's
     /// `didBecomeActive` lifecycle hook.
     public func drainOfflineQueue() {
         stateLock.lock()
         let currentTransport = transport
         stateLock.unlock()
         currentTransport.drainOfflineQueue()
+    }
+
+    /// Refresh the in-memory `NetworkContext` so subsequent events
+    /// carry the new `network.type` / `network.effectiveType` /
+    /// derived flags. F11's `NetworkPathCapture` calls this from its
+    /// `NWPathMonitor` callback before emitting the `network_change`
+    /// event so the event itself rides under the refreshed context.
+    public func refreshNetworkContext(_ network: NetworkContext) {
+        context.refreshNetwork(network)
     }
 
     /// Drain the buffer and stop. Equivalent to `stop()` plus the
