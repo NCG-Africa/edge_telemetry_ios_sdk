@@ -101,7 +101,7 @@ public enum HTTPCapture {
 
     // MARK: Once token
 
-    private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -120,7 +120,7 @@ public enum HTTPCapture {
 
     // MARK: Live config
 
-    private static let configLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let configLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -622,7 +622,7 @@ private final class EdgeRumMetricsDelegate: NSObject,
 
 internal extension URLSessionConfiguration {
 
-    private static let swizzleLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let swizzleLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p

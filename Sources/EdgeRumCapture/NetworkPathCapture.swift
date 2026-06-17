@@ -51,7 +51,7 @@ public enum NetworkPathCapture {
 
     // MARK: Once token
 
-    private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let installLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -81,7 +81,7 @@ public enum NetworkPathCapture {
         let unsatisfiedReason: String?
     }
 
-    private static let fingerprintLock: UnsafeMutablePointer<os_unfair_lock> = {
+    nonisolated(unsafe) private static let fingerprintLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         p.initialize(to: os_unfair_lock())
         return p
@@ -152,11 +152,14 @@ public enum NetworkPathCapture {
         // Cases by introduction:
         //   iOS 14.2 / macOS 11.0 : notAvailable, cellularDenied,
         //                            wifiDenied, localNetworkDenied
-        //   iOS 16.0 / macOS 14.0 : vpnInactive
-        // The vpnInactive availability check is split out so the
-        // exhaustive `switch` below can compile against the iOS-14.2
-        // SDK base.
-        if #available(iOS 16.0, macOS 14.0, *), reason == .vpnInactive {
+        //   iOS 17.0 / macOS 14.0 : vpnInactive
+        // The vpnInactive branch is split out so the exhaustive
+        // `switch` below stays compatible with the iOS-14.2 SDK
+        // case set. Xcode 26.3 / iOS 26 SDK raised `vpnInactive`'s
+        // availability from the previously-documented iOS 16 to
+        // iOS 17 — verified empirically against the Xcode 26 SDK
+        // declaration.
+        if #available(iOS 17.0, macOS 14.0, *), reason == .vpnInactive {
             return "vpn_inactive"
         }
         switch reason {
