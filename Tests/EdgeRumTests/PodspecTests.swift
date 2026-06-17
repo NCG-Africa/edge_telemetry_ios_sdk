@@ -35,9 +35,19 @@ final class PodspecTests: XCTestCase {
                       "iOS floor must stay at 14.0 — see PLAN-iOS.md §2.2 and ADR-001.")
     }
 
-    func testDeclaresSwift5And6() {
-        XCTAssertTrue(podspecSource.contains("'5.10'") && podspecSource.contains("'6.0'"),
-                      "Both Swift 5.10 (consumer floor) and Swift 6.0 (build toolchain) must be advertised.")
+    func testPodspecAdvertisesSwift5OnlyForCocoaPodsConsumers() {
+        // CocoaPods picks the highest matching `swift_versions` and
+        // sets SWIFT_VERSION accordingly. Advertising '6.0' here would
+        // promote every Swift 6 MainActor-isolation warning into an
+        // error under the iOS 26 SDK / Xcode 26.3+ — and CLAUDE.md
+        // explicitly says "nothing on our public surface requires
+        // Swift 6 strict concurrency". SwiftPM consumers still get
+        // language-mode 6 via Package.swift's `swift-tools-version`;
+        // this assertion governs only the CocoaPods channel.
+        XCTAssertTrue(podspecSource.contains("'5.10'"),
+                      "CocoaPods consumer floor is Swift 5.10.")
+        XCTAssertFalse(podspecSource.contains("'6.0'"),
+                       "CocoaPods channel must not advertise Swift 6 yet — strict-concurrency audit is an F-future track.")
     }
 
     func testDeclaresInternalSubspecs() {
