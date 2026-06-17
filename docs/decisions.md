@@ -1130,3 +1130,91 @@ background scheduler, using public APIs only (T15.2 — no
   dashboards do not double-count `cause = "Hang"` rows as fatal
   crashes. Backend should segment by `cause` (the two ride under
   the same `eventName = "app.crash"`).
+
+## ADR-012 — F16 context-enrichment observers live in `EdgeRumCore`, not `EdgeRumCapture`
+
+**Date:** 2026-06-17
+
+**Status:** Accepted.
+
+**Context.** F16 adds 16 new identity attributes (`device.thermal_state`,
+`device.low_power_mode`, the five `device.*` accessibility flags,
+`device.locale`/`timezone`/`timezone_offset_min`,
+`device.disk_free_mb`/`disk_total_mb`, `app.background_refresh`, and
+`network.expensive`/`constrained`/`interface`). Three new context
+structs (`PowerContext`, `AccessibilityContext`, `StorageContext`)
+join the existing identity groups merged by `ContextProvider`.
+
+Each new attribute must be refreshed when its underlying source
+changes — `ProcessInfo` thermal/power state notifications,
+`UIAccessibility.*DidChangeNotification` toggles, `NSLocale`'s region
+change, and a periodic disk-capacity poll. Two homes for those
+observers were viable:
+
+1. `Sources/EdgeRumCapture/ContextObservers.swift` — alongside the
+   existing F11 `LifecycleCapture` / `NetworkPathCapture` swizzles
+   and notification hooks.
+2. `Sources/EdgeRumCore/Context/ContextObservers.swift` — alongside
+   the snapshots they refresh.
+
+**Decision.** Land `ContextObservers.swift` in `EdgeRumCore`.
+
+**Rationale.**
+
+1. The observers neither swizzle anything nor emit any events. Their
+   single side-effect is `ContextProvider.refresh*(_:)`. Capture
+   modules touch the public-event pipeline; these observers do not.
+2. Keeping the observers next to the structs they refresh shortens
+   the cognitive distance between "where the attribute is defined"
+   and "where it is refreshed". A future contributor extending
+   `AccessibilityContext` reads exactly two files.
+3. `EdgeRumCapture` already depends on `EdgeRumCore`, not the other
+   way around. Putting the observers in `Core` keeps the dependency
+   graph one-directional and lets `EdgeRumCore`'s own tests exercise
+   the install path without pulling in `EdgeRumCapture` as a test
+   dep.
+4. The `LifecycleCapture` install pattern (os_unfair_lock-guarded
+   `_installed` flag + token array + `#if DEBUG` reset helper) is
+   copied verbatim — there's no novel mechanism in this file, only a
+   different home.
+
+**Implementation notes.**
+
+- Always-on per `EdgeRumConfig` consensus; no new public toggle. The
+  attributes ride alongside existing identity keys (battery, screen,
+  network type) which are also unconditional.
+- Storage refresh uses `DispatchSource.makeTimerSource(queue:)` with
+  a 5-minute schedule mirroring `MemorySampler.swift:240`. Suspend
+  on `willResignActive`, resume on `didBecomeActive` so we don't run
+  `statfs` while the app is backgrounded.
+- Wire keys snake_case (`device.thermal_state`, `device.low_power_mode`,
+  `device.timezone_offset_min`) to match the pre-existing
+  `app.package_name` / `session.start_time` convention rather than
+  the camelCase `device.screenWidth` legacy.
+
+**Consequences.**
+
+- Five new files under `Sources/EdgeRumCore/Context/` —
+  `PowerContext.swift`, `AccessibilityContext.swift`,
+  `StorageContext.swift`, `ContextObservers.swift`, plus extensions
+  to `DeviceContext.swift` and `NetworkContext.swift`.
+- `ContextProvider` gains three stored properties + three refresh
+  hooks + three read accessors. Existing tests that pass partial
+  `init(...)` arguments still compile because every new parameter
+  defaults to an empty struct.
+- `Recorder` gains one public computed property,
+  `currentContextProvider`, so `EdgeRum.start(_:)` can pass the live
+  provider to `ContextObservers.install(provider:debug:)` without
+  threading it through the `Recording` protocol (which would force
+  every existing test probe to adopt the new requirement).
+- Six new test files under `Tests/EdgeRumTests/` plus one
+  `F16ContextEnrichmentConformanceTests.swift` in the contract
+  suite. Adds ~25 test cases; full suite stays at <6 s wall-clock.
+- No new `eventName`. No transport change. No public-surface change
+  visible to consumers — the attributes appear automatically on
+  every event emitted after `EdgeRum.start(_:)` is called.
+- Pre-existing test isolation bug surfaced: `NetworkPathCaptureTests`
+  had no `setUp` reset, and earlier tests (e.g. `EdgeRumAPITests`
+  via `EdgeRum.start → NetworkPathCapture.install`) left a stale
+  `lastFingerprint`. F16 adds a `setUp` reset to that class
+  symmetrically with its `tearDown`.

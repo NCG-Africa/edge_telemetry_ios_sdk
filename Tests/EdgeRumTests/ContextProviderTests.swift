@@ -107,6 +107,100 @@ final class ContextProviderTests: XCTestCase {
         XCTAssertEqual(bag["session.sequence"], .int(42))
     }
 
+    // MARK: F16 enrichment groups
+
+    func testSnapshotIncludesPowerAccessibilityAndStorageWhenPresent() {
+        let p = ContextProvider(
+            app: AppContext(name: "Shop", packageName: "com.example.shop", version: "2.1.0", buildNumber: "412", environment: "production"),
+            device: DeviceContext(),
+            deviceIdentity: DeviceIdentitySnapshot(id: "device_1_aaaaaaaaaaaaaaaa_ios"),
+            network: NetworkContext(),
+            session: SessionContextSnapshot(id: "s", startTime: Date(timeIntervalSince1970: 0), sequence: 0),
+            user: UserContextSnapshot(id: "u"),
+            sdk: SdkContext(version: "1.0.0"),
+            power: PowerContext(thermalState: "fair", lowPowerMode: true),
+            accessibility: AccessibilityContext(
+                dynamicType: "AX1",
+                reduceMotion: true,
+                boldText: false,
+                voiceOver: true,
+                increaseContrast: false
+            ),
+            storage: StorageContext(
+                diskFreeMb: 1_024,
+                diskTotalMb: 65_536,
+                backgroundRefresh: "available"
+            )
+        )
+        let bag = p.snapshot()
+        // power.*
+        XCTAssertEqual(bag["device.thermal_state"], .string("fair"))
+        XCTAssertEqual(bag["device.low_power_mode"], .bool(true))
+        // accessibility.*
+        XCTAssertEqual(bag["device.dynamic_type"], .string("AX1"))
+        XCTAssertEqual(bag["device.reduce_motion"], .bool(true))
+        XCTAssertEqual(bag["device.bold_text"], .bool(false))
+        XCTAssertEqual(bag["device.voiceover"], .bool(true))
+        XCTAssertEqual(bag["device.increase_contrast"], .bool(false))
+        // storage.*
+        XCTAssertEqual(bag["device.disk_free_mb"], .int(1_024))
+        XCTAssertEqual(bag["device.disk_total_mb"], .int(65_536))
+        XCTAssertEqual(bag["app.background_refresh"], .string("available"))
+    }
+
+    func testRefreshPowerReplacesPowerKeys() {
+        let p = makeProvider()
+        XCTAssertNil(p.snapshot()["device.thermal_state"])
+        p.refreshPower(PowerContext(thermalState: "critical", lowPowerMode: true))
+        let bag = p.snapshot()
+        XCTAssertEqual(bag["device.thermal_state"], .string("critical"))
+        XCTAssertEqual(bag["device.low_power_mode"], .bool(true))
+    }
+
+    func testRefreshAccessibilityReplacesAccessibilityKeys() {
+        let p = makeProvider()
+        p.refreshAccessibility(AccessibilityContext(
+            dynamicType: "XXL",
+            reduceMotion: false,
+            boldText: true,
+            voiceOver: false,
+            increaseContrast: true
+        ))
+        let bag = p.snapshot()
+        XCTAssertEqual(bag["device.dynamic_type"], .string("XXL"))
+        XCTAssertEqual(bag["device.bold_text"], .bool(true))
+        XCTAssertEqual(bag["device.increase_contrast"], .bool(true))
+    }
+
+    func testRefreshStorageReplacesStorageKeys() {
+        let p = makeProvider()
+        p.refreshStorage(StorageContext(
+            diskFreeMb: 4_096,
+            diskTotalMb: 131_072,
+            backgroundRefresh: "denied"
+        ))
+        let bag = p.snapshot()
+        XCTAssertEqual(bag["device.disk_free_mb"], .int(4_096))
+        XCTAssertEqual(bag["device.disk_total_mb"], .int(131_072))
+        XCTAssertEqual(bag["app.background_refresh"], .string("denied"))
+    }
+
+    func testRefreshNetworkPreservesExtras() {
+        let p = makeProvider()
+        p.refreshNetwork(NetworkContext(
+            type: .cellular,
+            effectiveType: "cellular",
+            isExpensive: true,
+            isConstrained: true,
+            interface: "pdp_ip0"
+        ))
+        let bag = p.snapshot()
+        XCTAssertEqual(bag["network.type"], .string("cellular"))
+        XCTAssertEqual(bag["network.expensive"], .bool(true))
+        XCTAssertEqual(bag["network.constrained"], .bool(true))
+        XCTAssertEqual(bag["network.interface"], .string("pdp_ip0"))
+    }
+
     // MARK: Bundle.main / UIDevice parity (issue #38 acceptance)
 
     func testAppContextSnapshotReadsBundleMain() {
