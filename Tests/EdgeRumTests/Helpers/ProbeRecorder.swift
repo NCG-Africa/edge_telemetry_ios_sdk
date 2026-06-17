@@ -89,17 +89,6 @@ internal final class ProbeRecorder: Recording, @unchecked Sendable {
         lock.unlock()
     }
 
-    internal func recordError(
-        domain: String,
-        code: Int,
-        message: String?,
-        context: [String: AttributeValue]
-    ) {
-        lock.lock()
-        _calls.append(.error(domain: domain, code: code, message: message, context: context))
-        lock.unlock()
-    }
-
     internal func setUser(_ user: RecorderUser) {
         lock.lock()
         _calls.append(.setUser(user))

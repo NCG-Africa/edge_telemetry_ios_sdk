@@ -303,21 +303,32 @@ public enum EdgeRum {
     }
 
     /// Report a thrown `Error` as an `app.crash` event with
-    /// `cause = "AppError"`. The error's domain, code, and
-    /// localized description are flattened into wire attributes
-    /// automatically. Supply additional context with `context:`.
+    /// `cause = "AppError"`. The error's type, domain, code,
+    /// `localizedDescription`, and (for `NSError`) the primitive
+    /// entries of `userInfo` are flattened into wire attributes
+    /// automatically. A snapshot of the call-site stack — captured
+    /// here, synchronously, before any queue handoff — is attached
+    /// as `error.stack`. Supply additional caller context with
+    /// `context:`; those keys are prefixed `crash.context.` on the
+    /// wire so they never collide with the standard `error.*`
+    /// payload.
     public static func captureError(
         _ error: Error,
         context: [String: AttributeValue]? = nil
     ) {
         guard requireStarted("captureError") else { return }
-        let nsError = error as NSError
-        Recorder.shared.recordError(
-            domain: nsError.domain,
-            code: nsError.code,
-            message: nsError.localizedDescription,
-            context: context ?? [:]
+        // Call-site stack capture — must happen on the caller's
+        // thread before we hand off to the recorder's queue, else the
+        // frames leak into the queue's own thread.
+        let stack = Thread.callStackSymbols
+        let recorder = Recorder.shared
+        let attrs = AppErrorBuilder.build(
+            error: error,
+            context: context ?? [:],
+            stack: stack,
+            debug: recorder.debug
         )
+        recorder.recordEvent(name: "app.crash", attributes: attrs)
     }
 
     // MARK: Enable / disable

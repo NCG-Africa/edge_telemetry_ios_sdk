@@ -223,6 +223,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         return _enabled
     }
 
+    public var debug: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _config?.debug ?? false
+    }
+
     public var currentSessionId: String {
         context.currentSession().id
     }
@@ -365,25 +370,6 @@ public final class Recorder: Recording, @unchecked Sendable {
             attributes: AttributeBag(attributes)
         )
         enqueue(metric)
-    }
-
-    public func recordError(
-        domain: String,
-        code: Int,
-        message: String?,
-        context: [String: AttributeValue]
-    ) {
-        var attrs = context
-        attrs["cause"] = .string("AppError")
-        attrs["error.domain"] = .string(domain)
-        attrs["error.code"] = .int(code)
-        if let message {
-            attrs["error.message"] = .string(message)
-        }
-        // Errors bypass the sampler — they always land on the wire.
-        let event = Event.event(name: "app.crash", timestamp: clock.now, attributes: AttributeBag(attrs))
-        enqueue(event)
-        flush(reason: .immediate)
     }
 
     public func setUser(_ user: RecorderUser) {

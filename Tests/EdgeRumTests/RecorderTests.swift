@@ -99,18 +99,25 @@ final class RecorderTests: XCTestCase {
 
     // MARK: Immediate-flush triggers
 
-    func testErrorTriggersImmediateFlushAsAppCrash() {
+    func testAppCrashEventTriggersImmediateFlush() {
+        // F13: `EdgeRum.captureError` routes through
+        // `recordEvent(name: "app.crash", ...)`. The Recorder must
+        // treat that event name as an immediate-flush trigger so
+        // crash payloads never wait behind a `flushInterval` timer.
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordError(domain: "PaymentDomain", code: 42, message: "Card declined", context: ["payment.method": "card"])
+        recorder.recordEvent(name: "app.crash", attributes: [
+            "cause": "AppError",
+            "runtime": "swift",
+            "error.kind": "swift",
+            "error.type": "DemoError",
+            "error.message": "boom"
+        ])
         XCTAssertEqual(sink.envelopes.count, 1)
         XCTAssertEqual(sink.sends.first?.reason, .immediate)
         let event = sink.envelopes.first?.events.first
         XCTAssertEqual(event?.name, "app.crash")
         XCTAssertEqual(event?.attributes["cause"], .string("AppError"))
-        XCTAssertEqual(event?.attributes["error.domain"], .string("PaymentDomain"))
-        XCTAssertEqual(event?.attributes["error.code"], .int(42))
-        XCTAssertEqual(event?.attributes["error.message"], .string("Card declined"))
-        XCTAssertEqual(event?.attributes["payment.method"], .string("card"))
+        XCTAssertEqual(event?.attributes["error.kind"], .string("swift"))
     }
 
     func testSessionFinalizedTriggersImmediateFlush() {

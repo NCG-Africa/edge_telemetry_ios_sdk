@@ -22,6 +22,5 @@ public enum RecordedCall: Sendable, Equatable {
     case setEnabled(Bool)
     case event(name: String, attributes: [String: AttributeValue])
     case performance(name: String, attributes: [String: AttributeValue])
-    case error(domain: String, code: Int, message: String?, context: [String: AttributeValue])
     case setUser(RecorderUser)
 }

@@ -171,7 +171,12 @@ final class EdgeRumAPITests: XCTestCase {
 
     // MARK: - captureError
 
-    func testCaptureErrorFlattensNSError() {
+    func testCaptureErrorRoutesAppCrashEventToRecorder() {
+        // F13: the public `captureError` builds an `app.crash` event
+        // (cause = AppError) and hands the full attribute bag to the
+        // Recorder via `recordEvent`. We assert the routing here; the
+        // attribute-shape contract is exercised by
+        // `AppErrorBuilderTests` and the wire conformance test.
         EdgeRum.start(Self.validConfig())
         let err = NSError(
             domain: "PaymentDomain",
@@ -180,17 +185,47 @@ final class EdgeRumAPITests: XCTestCase {
         )
         EdgeRum.captureError(err, context: ["payment.method": "card"])
 
-        let errors = probe.calls.compactMap { call -> (String, Int, String?, [String: AttributeValue])? in
-            if case let .error(domain, code, message, context) = call {
-                return (domain, code, message, context)
+        let crashEvents = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .event(name, attributes) = call, name == "app.crash" {
+                return attributes
             }
             return nil
         }
-        XCTAssertEqual(errors.count, 1)
-        XCTAssertEqual(errors.first?.0, "PaymentDomain")
-        XCTAssertEqual(errors.first?.1, 42)
-        XCTAssertEqual(errors.first?.2, "Card declined")
-        XCTAssertEqual(errors.first?.3["payment.method"], .string("card"))
+        XCTAssertEqual(crashEvents.count, 1)
+        guard let attrs = crashEvents.first else {
+            return XCTFail("Expected an app.crash routing call")
+        }
+        XCTAssertEqual(attrs["cause"], .string("AppError"))
+        XCTAssertEqual(attrs["runtime"], .string("swift"))
+        XCTAssertEqual(attrs["error.kind"], .string("nserror"))
+        XCTAssertEqual(attrs["error.domain"], .string("PaymentDomain"))
+        XCTAssertEqual(attrs["error.code"], .int(42))
+        XCTAssertEqual(attrs["error.message"], .string("Card declined"))
+        XCTAssertEqual(attrs["crash.context.payment.method"], .string("card"))
+        XCTAssertNil(attrs["payment.method"],
+                     "Caller context must be prefixed `crash.context.`, never bare")
+        // `error.stack` should be captured at the call site.
+        if case let .string(stack) = attrs["error.stack"] {
+            XCTAssertFalse(stack.isEmpty, "error.stack must be captured at the call site")
+            XCTAssertTrue(stack.contains("testCaptureErrorRoutesAppCrashEventToRecorder")
+                          || stack.contains("EdgeRumTests"),
+                          "stack should include a frame from the calling test target")
+        } else {
+            XCTFail("error.stack missing or wrong type")
+        }
+    }
+
+    func testCaptureErrorWithSwiftErrorReportsKindSwift() {
+        struct DemoError: Error { let detail: String }
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.captureError(DemoError(detail: "nope"))
+        let kinds = probe.calls.compactMap { call -> AttributeValue? in
+            if case let .event(name, attributes) = call, name == "app.crash" {
+                return attributes["error.kind"]
+            }
+            return nil
+        }
+        XCTAssertEqual(kinds, [.string("swift")])
     }
 
     // MARK: - enable / disable
