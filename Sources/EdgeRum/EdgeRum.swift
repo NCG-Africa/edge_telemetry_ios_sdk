@@ -280,6 +280,18 @@ public enum EdgeRum {
                 debug: config.debug
             )
         }
+
+        // F15 — install the main-thread hang watchdog. Idempotent;
+        // the install hops to the main thread internally to attach
+        // the `CFRunLoopObserver`, and the watchdog `Thread` is the
+        // one we cancel from `disable()` so a paused SDK leaves no
+        // live timers behind.
+        if config.enableHangDetection, Recorder.shared is Recorder {
+            HangDetector.install(
+                threshold: config.hangTimeout,
+                debug: config.debug
+            )
+        }
     }
 
     /// Attach a host-app user profile to subsequent events. Calling
@@ -367,6 +379,12 @@ public enum EdgeRum {
     /// Use `enable()` to resume.
     public static func disable() {
         Recorder.shared.setEnabled(false)
+        // F15 — tear down the watchdog so a paused SDK has no live
+        // timers. `enable()` does NOT re-arm by design; `start(_:)`
+        // is the install boundary, mirroring the swizzle-installer
+        // rule (we cannot safely un-swizzle, so we cannot safely
+        // re-swizzle either).
+        HangDetector.uninstall()
     }
 
     /// Resume capture and emission after a `disable()` call. Also
