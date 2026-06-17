@@ -177,6 +177,14 @@ public enum EdgeRum {
             appBuild: config.appBuild,
             environmentName: config.environment?.rawValue
         ))
+        // F12 — anchor the launch-start instant as early as possible.
+        // The static let backing `launchStart` is lazily initialized
+        // on first reference; this call forces that initialization
+        // before anything else `EdgeRum.start(...)` does so the
+        // measured page-load duration starts as close to host-app
+        // launch as the SDK can observe.
+        PageLoadCapture.touchLaunchStart()
+
         Recorder.shared.start(
             apiKey: config.apiKey,
             endpoint: config.endpoint,
@@ -234,6 +242,13 @@ public enum EdgeRum {
         }
         if config.captureNetworkChanges {
             NetworkPathCapture.install(debug: config.debug)
+        }
+
+        // F12 — install the single-shot page-load capture. Idempotent;
+        // arms a CADisplayLink that fires once the app is `.active`
+        // and emits one `page_load` event per process.
+        if config.capturePageLoad {
+            PageLoadCapture.install(debug: config.debug)
         }
     }
 
