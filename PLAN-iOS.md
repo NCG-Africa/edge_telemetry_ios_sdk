@@ -1498,6 +1498,20 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
 10. **`device.batteryLevel = -1.0`** when battery monitoring is off
     (simulator). Forwarded as-is.
 
+11. **F17 `resource_timing` key rename.** The iOS SDK was previously
+    emitting `resource.response_ms` (undocumented). F17 renames the
+    key to `resource.download_ms` to match `docs/data-flow.md` § 10.2,
+    the Android SDK wire shape, and the example payload. The
+    derivation (`responseStartDate → responseEndDate`) is unchanged.
+    Confirm no internal dashboards or alerts are keyed on the old
+    name; if any are, coordinate the cutover before merge. See
+    ADR-013.
+
+12. **F17 `http.cellular_fallback` semantics.** Computed as
+    `isMultipath && isCellular` on the last transaction (iOS 17+
+    only). Confirm this matches the Android SDK's definition of
+    "cellular fallback under multipath".
+
 ---
 
 ## 15. Risks and open questions

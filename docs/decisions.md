@@ -1218,3 +1218,116 @@ observers were viable:
   via `EdgeRum.start → NetworkPathCapture.install`) left a stale
   `lastFingerprint`. F16 adds a `setUp` reset to that class
   symmetrically with its `tearDown`.
+
+---
+
+## ADR-013 — F17 URLSession enrichment: `TransactionMetricsLike` test seam + `resource.response_ms` rename
+
+**Date:** 2026-06-17
+
+**Status:** Accepted.
+
+**Context.** F17 enriches the `http.request` event with seven
+URLSessionTaskMetrics-derived attributes (TLS protocol, cipher,
+reused/proxy connection, network protocol, redirect count, bytes
+before encoding) plus an iOS 17+ `http.cellular_fallback`, and adds
+three multi-transaction attributes to the `resource_timing` metric
+(`redirect_count`, `transaction_count`,
+`fetch_start_to_response_end_ms`). It also closes a schema-alignment
+gap: `docs/data-flow.md` § 10.2 documents `resource.download_ms` and
+`resource.protocol`, but the existing F8 code emits
+`resource.response_ms` and never emits `resource.protocol`.
+
+Two design tensions surfaced during planning:
+
+1. `URLSessionTaskTransactionMetrics` is framework-internal: its
+   designated initialiser has been deprecated since iOS 13, and the
+   type cannot be subclassed. The existing F8 unit tests acknowledge
+   this (`HTTPCaptureTests.swift:105-113`) and skip multi-transaction
+   coverage. F17's correctness — especially the redirect-chain
+   summing and the per-transaction TLS/connection reads — is not
+   verifiable without a fixture.
+2. The `resource.response_ms` → `resource.download_ms` rename is a
+   wire-breaking change for any dashboard already keyed on the old
+   name. The schema dictionary, the example payload, and the Android
+   SDK all use `download_ms`, so the divergence is on the iOS side.
+
+**Decision.**
+
+1. Introduce an internal protocol
+   `TransactionMetricsLike` in `Sources/EdgeRumCapture/HTTPCapture.swift`
+   mirroring the public properties of
+   `URLSessionTaskTransactionMetrics` that F17 reads. Add an empty
+   extension making the real Foundation type conform. The recording
+   sink, the byte counters, and `ResourceTiming.from(...)` operate
+   against `MetricsView` (a struct holding `redirectCount` +
+   `[TransactionMetricsLike]`) — not against `URLSessionTaskMetrics`
+   directly. Production code calls a thin wrapper
+   `recordOutcome(metrics:...)` that builds a view from the real
+   `URLSessionTaskMetrics`; tests call `recordOutcomeWithView(view:...)`
+   with a `FakeTransactionMetrics` array. No `#if DEBUG`.
+2. Land the `resource.response_ms` → `resource.download_ms` rename
+   and the new `resource.protocol` key in this same PR. Both are
+   documented in `docs/data-flow.md` § 10.2 as `v1.0` — the iOS SDK
+   was emitting an undocumented key. Call the rename out explicitly
+   in PR body and `PLAN-iOS.md` § "Backend asks" so the backend team
+   can coordinate any dashboard updates before merge.
+
+**Rationale.**
+
+1. The protocol seam is the same pattern Datadog, Sentry, and Bugsnag
+   use for `URLSessionTaskTransactionMetrics`-driven tests. The
+   alternative — wrapping `URLSessionTaskMetrics()` via the
+   deprecated init and trying to mutate read-only properties — fails
+   at runtime on iOS 13+.
+2. `MetricsView` carries `redirectCount` alongside the transactions
+   so the multi-transaction enrichment doesn't need to thread the
+   outer `URLSessionTaskMetrics` through the pipeline.
+3. The rename is genuinely additive on the wire if the backend
+   schema lists `resource.download_ms` (which it does). The risk is
+   isolated to dashboards / consumers that snapshotted the
+   pre-F17 iOS shape. The backend asks entry pins this for review.
+4. `resource.protocol` complements `http.network_protocol` and uses
+   the same normalisation helper (`networkProtocolNormalised`) so
+   both keys stay in lockstep.
+
+**Implementation notes.**
+
+- TLS protocol values are read from
+  `URLSessionTaskTransactionMetrics.negotiatedTLSProtocolVersion`
+  (Swift surface: `tls_protocol_version_t?`, from
+  `<Security/SecProtocolTypes.h>`). We import `Security` in
+  `HTTPCapture.swift` for that and `tls_ciphersuite_t`.
+- The cipher-suite map covers Apple's TLS 1.3 + ECDHE TLS 1.2
+  suites. Unknown numerics fall back to a hex string
+  (`String(format: "0x%04x", rawValue)`) so the key is always present
+  when TLS is — backend can distinguish "no TLS" (key absent) from
+  "TLS with unknown cipher" (key present, hex value).
+- `http.cellular_fallback` is computed as `isMultipath && isCellular`
+  on the last transaction. Both properties exist since iOS 13, but
+  PLAN-iOS.md § 16.4 pins the gate at iOS 17+ — honour the
+  documented contract.
+- The TLS bool semantics (`reused_connection`, `proxy_connection`,
+  `cellular_fallback`) come from the last transaction (the response-
+  delivering one); the bytes-before-encoding count sums across all
+  transactions (so a redirect-chain upload accounts for every
+  request body sent). Documented inline alongside
+  `applyHTTPMetricsEnrichment`.
+
+**Consequences.**
+
+- `HTTPCapture.swift` grows ~150 lines (protocol + view + helpers +
+  enrichment). No new public-surface symbols.
+- 18 new unit tests in `HTTPCaptureTests.swift` covering TLS protocol
+  mapping, cipher mapping, network protocol normalisation,
+  multi-transaction redirect chains, cellular_fallback gating, and
+  the end-to-end enrichment shape.
+- 1 new contract test (`testHTTPRequestRedirectChainEmitsTransactionCount`)
+  pinning the F17 attributes through the real Recorder + envelope.
+- Existing `testResourceTimingProducesWireValidMetric` is updated to
+  use `resource.download_ms` (with an `XCTAssertNil` guard on
+  `resource.response_ms` so the rename can't regress silently).
+- `PLAN-iOS.md` § 14 adds a Backend asks entry calling out the rename
+  for backend team review prior to merge.
+- No new `eventName`. No new `metricName`. No transport change. No
+  public API change.
