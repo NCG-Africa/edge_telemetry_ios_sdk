@@ -74,6 +74,14 @@ public enum UIViewControllerCapture {
 
     nonisolated(unsafe) private static var _installed: Bool = false
 
+    /// Process-wide latch. `method_exchangeImplementations` is its
+    /// own inverse — calling it a second time on the same pair
+    /// undoes the swizzle. `_installed` can be cleared by test
+    /// helpers (`_resetInstallFlagForTesting`), so we track the
+    /// IMP-swap state separately and refuse to swap twice in one
+    /// process lifetime. Never reset.
+    nonisolated(unsafe) private static var _hasSwizzledIMPs: Bool = false
+
     /// `true` once `install(...)` has performed the IMP swap. Read by
     /// tests and by the `EdgeRum.start()` opt-out path. Module-internal
     /// — never used by consumers.
@@ -116,16 +124,22 @@ public enum UIViewControllerCapture {
             os_unfair_lock_unlock(installLock)
             return
         }
-        swizzle(
-            base: UIViewController.self,
-            original: #selector(UIViewController.viewDidAppear(_:)),
-            swizzled: #selector(UIViewController.edgerum_swizzled_viewDidAppear(_:))
-        )
-        swizzle(
-            base: UIViewController.self,
-            original: #selector(UIViewController.viewWillDisappear(_:)),
-            swizzled: #selector(UIViewController.edgerum_swizzled_viewWillDisappear(_:))
-        )
+        // Only do the IMP swap once per process lifetime.
+        // `_resetInstallFlagForTesting()` clears `_installed` for the
+        // opt-out test, but the underlying swizzle stays in place.
+        if !_hasSwizzledIMPs {
+            swizzle(
+                base: UIViewController.self,
+                original: #selector(UIViewController.viewDidAppear(_:)),
+                swizzled: #selector(UIViewController.edgerum_swizzled_viewDidAppear(_:))
+            )
+            swizzle(
+                base: UIViewController.self,
+                original: #selector(UIViewController.viewWillDisappear(_:)),
+                swizzled: #selector(UIViewController.edgerum_swizzled_viewWillDisappear(_:))
+            )
+            _hasSwizzledIMPs = true
+        }
         _installed = true
         os_unfair_lock_unlock(installLock)
         if debug {

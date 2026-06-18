@@ -33,6 +33,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         config.environment = .development
         config.debug = true
         EdgeRum.start(config)
+
+        // F19 / T19.7 — kick the 30 Hz event generator when the
+        // performance UI test launches us.
+        if isPerformanceUITestRun() {
+            PerformanceHarness.shared.start()
+        }
         return true
     }
 

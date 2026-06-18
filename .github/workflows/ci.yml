@@ -96,6 +96,135 @@ jobs:
         run: ./Tools/fetch-plcrashreporter.sh
       - name: swift test --enable-code-coverage
         run: swift test --enable-code-coverage
+      - name: EdgeRumCore coverage gate (≥80%)
+        # F19/T19.1 — fails if EdgeRumCore line coverage drops below
+        # the §13.1 acceptance bar.
+        run: ./Tools/check-edge-rum-core-coverage.sh
+
+  test-device-matrix:
+    # F19 / T19.6 — Run the SwiftPM test bundle across three iOS
+    # Simulator slices on every PR so each merge proves green on a
+    # device floor, a mid runtime, and the newest installed runtime.
+    # §13.7 spec'd the literal triple `iPhone SE 2 / 14.5, iPhone 11 /
+    # 16.4, iPhone 15 Pro / 17.4`. Those runtimes are no longer
+    # installable on macos-15 by default; `Tools/pick-simulator-slice.sh`
+    # picks the closest available iPhone + runtime per slot.
+    name: matrix test (${{ matrix.slot }})
+    runs-on: macos-15
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [min, mid, new]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode (latest stable)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Show toolchain + simulators
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+          xcrun simctl list devices available iPhone | head -40
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: Pick simulator for slot ${{ matrix.slot }}
+        id: pick
+        run: ./Tools/pick-simulator-slice.sh --slot ${{ matrix.slot }} --allow-any-device
+      - name: Boot ${{ steps.pick.outputs.device_name }} (${{ steps.pick.outputs.runtime }})
+        run: |
+          xcrun simctl boot "${{ steps.pick.outputs.udid }}" || true
+      - name: xcodebuild test (EdgeRum-Package)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme EdgeRum-Package \
+            -destination "${{ steps.pick.outputs.destination }}" \
+            -enableCodeCoverage YES \
+            -derivedDataPath build/dd-matrix-${{ matrix.slot }} \
+            -resultBundlePath build/results-matrix-${{ matrix.slot }}.xcresult \
+            test | xcpretty || exit ${PIPESTATUS[0]}
+
+  crash-ui-test:
+    # F19 / T19.5 — drives the EdgeRumCrashSampleApp XCUI replay test.
+    # The test exercises the launch + crash flow on simulator; the
+    # PLCR-replay assertions self-skip on simulator (see the test
+    # file for the explanation). Promote `EDGE_RUM_FORCE_REPLAY_ASSERT`
+    # on a physical-device runner when one becomes available.
+    name: crash UI test (simulator)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode (latest stable)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Generate sample .xcodeproj files
+        run: ./Tools/gen-sample-xcodeproj.sh
+      - name: Pick a newest-slot simulator
+        id: pick
+        run: ./Tools/pick-simulator-slice.sh --slot new --allow-any-device
+      - name: xcodebuild test (EdgeRumCrashSampleApp scheme)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Samples/EdgeRumCrashSampleApp/EdgeRumCrashSampleApp.xcodeproj \
+            -scheme EdgeRumCrashSampleApp \
+            -destination "${{ steps.pick.outputs.destination }}" \
+            -derivedDataPath build/dd-crash-uitest \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            test | xcpretty || exit ${PIPESTATUS[0]}
+
+  perf-budget:
+    # F19 / T19.7 — `XCTMetric.cpu` / `.memory` / `.applicationLaunch`
+    # against the EdgeRumSampleApp. Allowed to fail-soft until the
+    # simulator ceilings (set in EdgeRumSampleAppPerformanceUITests)
+    # stabilise; promote to a required gate once budgets hold across
+    # ten consecutive green runs.
+    name: performance budget (simulator, advisory)
+    runs-on: macos-15
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode (latest stable)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Generate sample .xcodeproj files
+        run: ./Tools/gen-sample-xcodeproj.sh
+      - name: Pick a newest-slot simulator
+        id: pick
+        run: ./Tools/pick-simulator-slice.sh --slot new --allow-any-device
+      - name: xcodebuild test (EdgeRumSampleApp perf scheme)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Samples/EdgeRumSampleApp/EdgeRumSampleApp.xcodeproj \
+            -scheme EdgeRumSampleApp \
+            -destination "${{ steps.pick.outputs.destination }}" \
+            -only-testing:EdgeRumSampleAppPerformanceUITests \
+            -derivedDataPath build/dd-perf \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            test | xcpretty || exit ${PIPESTATUS[0]}
 
   audit:
     name: supported-iOS audit + terminology firewall

@@ -187,15 +187,18 @@ final class RunLoopObserverCaptureTests: XCTestCase {
     }
 
     func test_install_concurrentCallsAreSafe() {
-        let group = DispatchGroup()
+        // Pump the main runloop while waiting — `install()` does a
+        // `DispatchQueue.main.sync` hop on background callers; blocking
+        // main with `DispatchGroup.wait` would deadlock.
+        let exp = expectation(description: "16 concurrent installs converge")
+        exp.expectedFulfillmentCount = 16
         for _ in 0..<16 {
-            group.enter()
             DispatchQueue.global().async {
                 RunLoopObserverCapture.install(debug: false)
-                group.leave()
+                exp.fulfill()
             }
         }
-        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
+        wait(for: [exp], timeout: 30)
         XCTAssertTrue(RunLoopObserverCapture.isInstalled)
     }
 

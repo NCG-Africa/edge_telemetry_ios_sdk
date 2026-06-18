@@ -78,3 +78,34 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SUPPORTS_MACCATALYST: NO
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
+
+  EdgeRumSampleAppPerformanceUITests:
+    # F19 / T19.7 — XCUI target carrying `XCTMetric` perf budget tests
+    # against the EdgeRumSampleApp host. Wired into CI's `perf-budget`
+    # job as a fail-soft signal until simulator ceilings stabilise.
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: EdgeRumSampleAppPerformanceUITests
+    dependencies:
+      - target: EdgeRumSampleApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.edge.rum.samples.uikit.perfuitests
+        TEST_TARGET_NAME: EdgeRumSampleApp
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  EdgeRumSampleApp:
+    # Explicit scheme so xcodebuild test invocations from CI bundle
+    # the app target with both the standard UI tests (none yet) and
+    # the performance UI tests.
+    build:
+      targets:
+        EdgeRumSampleApp: all
+        EdgeRumSampleAppPerformanceUITests: [test]
+    test:
+      targets:
+        - EdgeRumSampleAppPerformanceUITests
+      gatherCoverageData: false

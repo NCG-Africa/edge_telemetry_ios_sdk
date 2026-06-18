@@ -5,7 +5,11 @@ import XCTest
 /// `README.md` into a tmpdir, mutate one of them, and assert the script
 /// agrees / disagrees as expected.
 ///
+/// macOS-host only — `Foundation.Process` is not available on iOS.
+/// The script under test is a CI helper that runs on the build host.
+///
 /// Refs: F1/T1.5 (issue #6), PLAN-iOS.md §12.5.
+#if os(macOS)
 final class SupportedIOSScriptTests: XCTestCase {
 
     func testPassesWhenAllSourcesAgree() throws {
@@ -170,3 +174,4 @@ final class SupportedIOSScriptTests: XCTestCase {
                       userInfo: [NSLocalizedDescriptionKey: "Could not locate repo root from \(file)"])
     }
 }
+#endif

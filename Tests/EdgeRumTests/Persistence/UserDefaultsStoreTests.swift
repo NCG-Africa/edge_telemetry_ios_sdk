@@ -64,6 +64,24 @@ final class UserDefaultsStoreSuiteTests: XCTestCase {
         let storeB = UserDefaultsStore(suiteName: suite)
         XCTAssertEqual(storeB.string(forKey: "key"), "persisted")
     }
+
+    func testRealStoreRoundTripsDataAndRemoves() {
+        let store = UserDefaultsStore(suiteName: suite)
+        let payload = Data([0x10, 0x20, 0x30])
+        store.set(payload, forKey: "blob")
+        XCTAssertEqual(store.data(forKey: "blob"), payload)
+        store.removeObject(forKey: "blob")
+        XCTAssertNil(store.data(forKey: "blob"))
+    }
+
+    func testInitWithExistingDefaultsBypassesSuiteCreation() {
+        let raw = UserDefaults(suiteName: suite)!
+        let store = UserDefaultsStore(defaults: raw)
+        XCTAssertFalse(store.usingFallback,
+                       "explicit defaults injection should never set the fallback flag")
+        store.set("via-init-defaults", forKey: "key")
+        XCTAssertEqual(raw.string(forKey: "key"), "via-init-defaults")
+    }
 }
 
 final class EdgeRumStorageConstantsTests: XCTestCase {
