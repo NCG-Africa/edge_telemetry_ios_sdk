@@ -387,8 +387,6 @@ final class RecipeBackgroundFlushAppDelegate: UIResponder, UIApplicationDelegate
 Every batch is a JSON `telemetry_batch` envelope. A complete reference
 batch — `navigation`, `screen.duration`, `http.request`, and two
 metrics — lives at [`docs/payload-example.jsonc`](docs/payload-example.jsonc).
-The schema for every attribute is in
-[`docs/payload-schema.json`](docs/payload-schema.json).
 
 Excerpt:
 
