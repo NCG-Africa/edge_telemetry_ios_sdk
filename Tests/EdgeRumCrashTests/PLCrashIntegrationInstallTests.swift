@@ -5,6 +5,15 @@
 // call (hot-reload, double-start, etc.) must be a no-op so we don't
 // stack two Mach exception servers on top of each other.
 //
+// These tests go through the internal `_install` seam with a stub
+// enable closure rather than the public entry point. The real
+// `enable` registers PLCrashReporter's Mach exception server +
+// uncaught NSException handler in-process, which hangs the xctest
+// runner on sandboxed/hardened-runtime macOS CI hosts and burned the
+// full 6h GitHub Actions ceiling on the F18 run. The single-shot
+// guard we actually care about lives in `_install`, not in the
+// real `enable`, so a stub is the right level to test at.
+//
 // Refs: PLAN-iOS.md §F14/T14.1; CLAUDE.md "Touching swizzles?"
 // checklist (install once on main thread, guard with Once token).
 //
@@ -25,32 +34,40 @@ final class PLCrashIntegrationInstallTests: XCTestCase {
     }
 
     func testInstallIsIdempotent() {
-        // First call should succeed (PLCR registers handlers); second
-        // and third calls must short-circuit without throwing or
-        // hitting PLCR a second time. We can't observe the
-        // single-shot guard from outside the module, but tripping it
-        // a second time would cause Mach to refuse the registration
-        // and previously surface a noisy os_log entry — neither of
-        // which crashes the host. The contract here is "doesn't
-        // crash, doesn't throw".
         let baseDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("edgerum-install-\(UUID().uuidString)",
                                    isDirectory: true)
         defer { try? FileManager.default.removeItem(at: baseDir) }
 
+        var enableCount = 0
+        let stub: (PLCrashIntegrationConfig, Bool) -> Void = { _, _ in
+            enableCount += 1
+        }
+
         let config = PLCrashIntegrationConfig(basePath: baseDir)
-        PLCrashIntegration.install(config: config, debug: false)
-        PLCrashIntegration.install(config: config, debug: false)
-        PLCrashIntegration.install(config: config, debug: false)
-        // If we got here, the guard short-circuited.
+        PLCrashIntegration._install(config: config, debug: false, enable: stub)
+        PLCrashIntegration._install(config: config, debug: false, enable: stub)
+        PLCrashIntegration._install(config: config, debug: false, enable: stub)
+
+        XCTAssertEqual(
+            enableCount, 1,
+            "single-shot guard must short-circuit subsequent install() calls"
+        )
     }
 
     func testInstallDoesNotCrashWithMissingBasePath() {
         // `nil` basePath should fall through to PLCR's own defaults
         // (a directory under the app's caches). The guard still
-        // engages on the first call regardless.
+        // engages on the first call regardless. We only assert
+        // here that the guard accepts a nil-basePath config and
+        // dispatches to enable exactly once.
         var config = PLCrashIntegrationConfig()
         config.basePath = nil
-        PLCrashIntegration.install(config: config, debug: false)
+
+        var enableCount = 0
+        PLCrashIntegration._install(config: config, debug: false) { _, _ in
+            enableCount += 1
+        }
+        XCTAssertEqual(enableCount, 1)
     }
 }

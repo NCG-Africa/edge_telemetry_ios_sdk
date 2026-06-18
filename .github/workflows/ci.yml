@@ -45,6 +45,11 @@ jobs:
   build:
     name: swift build (release)
     runs-on: macos-15
+    # Backstop only — historical green runs finish in 3-5 min. A 30 min
+    # ceiling caps a future hang (e.g. PLCR's Mach exception server
+    # blocking under XCTest, which burned the full 6h GitHub default on
+    # F18) at a cost we can absorb.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -80,6 +85,7 @@ jobs:
   test:
     name: swift test
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -94,6 +100,7 @@ jobs:
   audit:
     name: supported-iOS audit + terminology firewall
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -116,6 +123,7 @@ jobs:
   pod-lint:
     name: pod lib lint
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -144,6 +152,7 @@ jobs:
   sample-build:
     name: xcodebuild ${{ matrix.sample }} (iOS simulator)
     runs-on: macos-15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -203,6 +212,7 @@ jobs:
   docs:
     name: doc-quality (README snippets, DocC, link & coverage checks)
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)

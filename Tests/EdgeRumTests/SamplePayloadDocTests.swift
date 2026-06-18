@@ -103,15 +103,7 @@ final class SamplePayloadDocTests: XCTestCase {
         let raw = try loadRawJSONCText()
         let stripped = raw
             .components(separatedBy: "\n")
-            .map { line -> String in
-                // Quick-and-dirty comment trimmer — looks for `//` outside
-                // of any string. Our payload-example.jsonc has no `//`
-                // inside string literals so we can be naive here.
-                if let range = line.range(of: "//") {
-                    return String(line[..<range.lowerBound])
-                }
-                return line
-            }
+            .map(Self.stripLineComment)
             .joined(separator: "\n")
 
         guard let data = stripped.data(using: .utf8) else {
@@ -122,6 +114,33 @@ final class SamplePayloadDocTests: XCTestCase {
             )
         }
         return try JSONSerialization.jsonObject(with: data, options: [])
+    }
+
+    /// Trim trailing `// …` line comments while leaving `//` that sits
+    /// inside a JSON string literal alone — e.g. `"http.url": "https://…"`.
+    /// The previous version was a naïve `range(of: "//")` that truncated
+    /// any URL value at the protocol separator and broke parse.
+    private static func stripLineComment(_ line: String) -> String {
+        var inString = false
+        var escape = false
+        var i = line.startIndex
+        while i < line.endIndex {
+            let c = line[i]
+            if escape {
+                escape = false
+            } else if c == "\\" {
+                escape = true
+            } else if c == "\"" {
+                inString.toggle()
+            } else if !inString,
+                      c == "/",
+                      line.index(after: i) < line.endIndex,
+                      line[line.index(after: i)] == "/" {
+                return String(line[..<i])
+            }
+            i = line.index(after: i)
+        }
+        return line
     }
 
     private static func loadRawJSONCText() throws -> String {
