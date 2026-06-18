@@ -204,15 +204,22 @@ final class UIViewControllerCaptureTests: XCTestCase {
     }
 
     func test_install_concurrentCallsAreSafe() {
-        let group = DispatchGroup()
+        // `install()` bounces to the main thread via
+        // `DispatchQueue.main.sync` — if the test blocks main with
+        // `DispatchGroup.wait`, the dispatched blocks can never run
+        // and the group deadlocks. `XCTestExpectation` + `wait(for:)`
+        // pumps the main run loop while waiting so the sync hops
+        // resolve and 32 concurrent installs converge through the
+        // shared lock.
+        let exp = expectation(description: "32 concurrent installs converge")
+        exp.expectedFulfillmentCount = 32
         for _ in 0..<32 {
-            group.enter()
             DispatchQueue.global().async {
                 UIViewControllerCapture.install(debug: false)
-                group.leave()
+                exp.fulfill()
             }
         }
-        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
+        wait(for: [exp], timeout: 30)
         XCTAssertTrue(UIViewControllerCapture.isInstalled)
     }
 
@@ -289,7 +296,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         let vc = UIViewController()
-        vc.accessibilityIdentifier = "Cart"
+        vc.view.accessibilityIdentifier = "Cart"
         vc.viewDidAppear(false)
 
         guard case let .event(_, attrs) = probe.calls.first else {
@@ -356,9 +363,9 @@ final class UIViewControllerCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         let a = UIViewController()
-        a.accessibilityIdentifier = "ScreenA"
+        a.view.accessibilityIdentifier = "ScreenA"
         let b = UIViewController()
-        b.accessibilityIdentifier = "ScreenB"
+        b.view.accessibilityIdentifier = "ScreenB"
 
         a.viewDidAppear(false)
         a.viewWillDisappear(false)
@@ -383,7 +390,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         UIViewControllerCapture._resetPreviousScreenForTesting()
 
         let vc = UIViewController()
-        vc.accessibilityIdentifier = "Home"
+        vc.view.accessibilityIdentifier = "Home"
         vc.viewDidAppear(false)
 
         guard case let .event(_, attrs) = probe.calls.first else {
@@ -403,7 +410,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         let vc = UIViewController()
-        vc.accessibilityIdentifier = "DwellTest"
+        vc.view.accessibilityIdentifier = "DwellTest"
 
         vc.viewDidAppear(false)
         clock.advance(by: 4.3)
@@ -448,7 +455,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         let vc = UIViewController()
-        vc.accessibilityIdentifier = "Quiet"
+        vc.view.accessibilityIdentifier = "Quiet"
         vc.viewDidAppear(false)
         vc.viewWillDisappear(false)
 
@@ -460,7 +467,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         let vc = UIViewController()
-        vc.accessibilityIdentifier = "Toggle"
+        vc.view.accessibilityIdentifier = "Toggle"
         vc.viewDidAppear(false) // recorded
         probe.setEnabled(false)
         vc.viewWillDisappear(false) // dropped because disabled

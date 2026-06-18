@@ -348,15 +348,18 @@ final class PageLoadCaptureTests: XCTestCase {
     }
 
     func test_install_concurrent_callsAreSafe() {
-        let group = DispatchGroup()
+        // Pump the main runloop while waiting — `install()` does a
+        // `DispatchQueue.main.sync` hop on background callers; blocking
+        // main with `DispatchGroup.wait` would deadlock.
+        let exp = expectation(description: "32 concurrent installs converge")
+        exp.expectedFulfillmentCount = 32
         for _ in 0..<32 {
-            group.enter()
             DispatchQueue.global().async {
                 PageLoadCapture.install(debug: false)
-                group.leave()
+                exp.fulfill()
             }
         }
-        XCTAssertEqual(group.wait(timeout: .now() + 5.0), .success)
+        wait(for: [exp], timeout: 30)
         XCTAssertTrue(PageLoadCapture.isInstalled)
     }
 

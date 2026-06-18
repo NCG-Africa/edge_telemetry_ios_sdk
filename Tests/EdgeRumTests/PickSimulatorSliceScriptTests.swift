@@ -7,10 +7,16 @@
 // The happy path is exercised on every CI run by the `test-device-
 // matrix` job (PLAN-iOS.md §13.7).
 //
+// macOS-host only — `Foundation.Process` (the test's shell-out hook)
+// is not available on iOS or tvOS. The script under test is itself
+// a macOS-only build helper, so iOS-side coverage would have nothing
+// to assert.
+//
 // Refs: F19/T19.6.
 
 import XCTest
 
+#if os(macOS)
 final class PickSimulatorSliceScriptTests: XCTestCase {
 
     func testRejectsMissingSlot() throws {
@@ -97,3 +103,4 @@ final class PickSimulatorSliceScriptTests: XCTestCase {
             .deletingLastPathComponent()  // repo root
     }
 }
+#endif

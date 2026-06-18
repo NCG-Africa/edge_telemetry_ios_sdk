@@ -4,7 +4,12 @@ import XCTest
 /// `EdgeRumVersionPlugin`. These tests exec the script in a sandbox
 /// directory so they cannot affect the real repo state.
 ///
+/// macOS-host only — `Foundation.Process` is not available on iOS.
+/// The script under test is a build-time helper executed by SwiftPM
+/// on the developer's Mac, not the device.
+///
 /// Refs: F1/T1.3 (issue #4).
+#if os(macOS)
 final class GenVersionScriptTests: XCTestCase {
 
     func testGeneratesSwiftFileFromValidVersion() throws {
@@ -128,3 +133,4 @@ final class GenVersionScriptTests: XCTestCase {
                       userInfo: [NSLocalizedDescriptionKey: "Could not locate Tools/gen-version.sh from \(file)"])
     }
 }
+#endif

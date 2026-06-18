@@ -9,7 +9,11 @@ import XCTest
 /// short-circuits with a warning when no `.build/` is present —
 /// the source/README/docs grep paths still run and we assert on those.
 ///
+/// macOS-host only — `Foundation.Process` is not available on iOS.
+/// The script under test is a macOS-only build helper.
+///
 /// Refs: PLAN-iOS.md §F2/T2.7, CLAUDE.md Rule 1.
+#if os(macOS)
 final class FirewallCheckScriptTests: XCTestCase {
 
     func testCleanSandboxPasses() throws {
@@ -190,3 +194,4 @@ final class FirewallCheckScriptTests: XCTestCase {
         )
     }
 }
+#endif
