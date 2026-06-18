@@ -64,6 +64,12 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # F19/T19.5 — `UITestListener` binds an HTTP listener on
+        # 127.0.0.1 during UI tests; ATS requires this opt-in to
+        # allow plain HTTP loopback traffic. The flag has no effect
+        # for outbound HTTPS calls in normal QA runs.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.edge.rum.samples.crash
@@ -71,3 +77,34 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SUPPORTS_MACCATALYST: NO
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
+
+  EdgeRumCrashUITests:
+    # F19 / T19.5 — XCUI target that asserts the replayed `app.crash`
+    # event carries the previous session's identity. Driven by the
+    # in-process `UITestListener` registered when the host app sees
+    # `EDGE_RUM_UITEST=1` in its environment.
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: EdgeRumCrashUITests
+    dependencies:
+      - target: EdgeRumCrashSampleApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.edge.rum.samples.crash.uitests
+        TEST_TARGET_NAME: EdgeRumCrashSampleApp
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  EdgeRumCrashSampleApp:
+    # Explicit scheme so xcodebuild test invocations from CI bundle
+    # the app target and the UI test target together.
+    build:
+      targets:
+        EdgeRumCrashSampleApp: all
+        EdgeRumCrashUITests: [test]
+    test:
+      targets:
+        - EdgeRumCrashUITests
+      gatherCoverageData: false

@@ -29,9 +29,28 @@ import EdgeRum
 struct EdgeRumCrashSampleApp: App {
 
     init() {
+        // F19 / T19.5 — When the UI test harness boots us with
+        // `EDGE_RUM_UITEST=1`, stand up an in-process HTTP listener
+        // on a random localhost port and aim the SDK at it. The
+        // listener captures replayed `app.crash` payloads and mirrors
+        // their identity into UserDefaults; the on-screen labels in
+        // `CrashHomeScreen` surface the result to XCUI. Outside of UI
+        // tests this path is dead code.
+        let uitestEndpoint: URL? = {
+            guard isCrashUITestRun() else { return nil }
+            CrashUITestStorage.reset()
+            UITestListener.shared.start()
+            guard let port = UITestListener.shared.waitForPort() else {
+                NSLog("UITestListener never bound a port — UI test will fail")
+                return nil
+            }
+            return URL(string: "http://127.0.0.1:\(port)/collector")
+        }()
+
         var config = EdgeRumConfig(
             apiKey: "edge_sample_replace_me",
-            endpoint: URL(string: "https://localhost/collector")!
+            endpoint: uitestEndpoint
+                ?? URL(string: "https://localhost/collector")!
         )
         config.appName = "EdgeRumCrashSample"
         config.appVersion = "1.0.0"
@@ -43,6 +62,14 @@ struct EdgeRumCrashSampleApp: App {
         // captureNativeCrashes defaults to `true`; pinned here so the
         // sample stays self-documenting.
         config.captureNativeCrashes = true
+
+        // Make the replayed `app.crash` event flush as soon as it's
+        // recorded so the UI test loop completes in well under a
+        // second.
+        if isCrashUITestRun() {
+            config.batchSize = 1
+            config.flushInterval = 0.2
+        }
         EdgeRum.start(config)
     }
 
