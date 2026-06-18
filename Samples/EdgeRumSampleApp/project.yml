@@ -1,0 +1,80 @@
+# Samples/EdgeRumSampleApp/project.yml
+#
+# XcodeGen spec for the F18 UIKit sample app. The other two samples
+# (SwiftUI, Crash) ship hand-crafted .xcodeproj files; this one is
+# generated so the diff a future iOS engineer needs to read is
+# project.yml, not 1k+ lines of pbxproj.
+#
+# Regenerate locally with:
+#
+#   ./Tools/gen-sample-xcodeproj.sh
+#
+# CI runs the same script before xcodebuild.
+#
+# Refs: PLAN-iOS.md §12.3 (sample apps); GitHub: yonaskolb/XcodeGen.
+
+name: EdgeRumSampleApp
+options:
+  deploymentTarget:
+    iOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+packages:
+  EdgeRum:
+    # Pull the SDK from the local working copy two directories up so
+    # the sample always builds against the current branch, not a
+    # released artefact.
+    path: "../.."
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  EdgeRumSampleApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: EdgeRumSampleApp
+    dependencies:
+      - package: EdgeRum
+        product: EdgeRum
+    info:
+      path: EdgeRumSampleApp/Info.plist
+      properties:
+        CFBundleDisplayName: EdgeRum Sample
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        UILaunchStoryboardName: ""
+        UIRequiredDeviceCapabilities:
+          - armv7
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: "Default Configuration"
+                UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.edge.rum.samples.uikit
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO

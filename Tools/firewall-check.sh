@@ -49,6 +49,14 @@ BANNED_TOKENS=(
     "telemetry"
 )
 
+# Wire-mandated literals whose token text overlaps the banned list. The
+# backend's outer envelope discriminator is the literal string
+# `telemetry_batch` and the collector path is `/collector/telemetry`.
+# Both names are part of the cross-platform wire contract (CLAUDE.md
+# "EdgeTelemetryProcessor contract") and intentionally appear verbatim
+# in consumer-facing docs that describe what the SDK sends.
+WIRE_LITERAL_ALLOWLIST='telemetry_batch|/collector/telemetry'
+
 # Markdown files under docs/ that intentionally discuss SDK internals
 # and are allowed to use banned terms. Paths relative to REPO_ROOT.
 INTERNAL_DOCS=(
@@ -146,13 +154,24 @@ if [[ -d "${PUBLIC_SWIFT_DIR}" ]]; then
 fi
 
 # Step 3 — README.md.
+#
+# Before per-token matching we strip the canonical GitHub URL slug
+# `edge_telemetry_ios_sdk` (consumers copy-paste it verbatim) and the
+# wire-mandated literals (`telemetry_batch`, `/collector/telemetry`)
+# from the line. Whatever remains is checked against the banned list.
 if [[ -f "${REPO_ROOT}/README.md" ]]; then
     while IFS= read -r match; do
         [[ -z "${match}" ]] && continue
         lineno="${match%%:*}"
         content="${match#*:}"
+        cleaned="${content//edge_telemetry_ios_sdk/}"
+        cleaned="${cleaned//telemetry_batch/}"
+        cleaned="${cleaned//\/collector\/telemetry/}"
+        if ! echo "${cleaned}" | grep -iqE "(${PATTERN})"; then
+            continue
+        fi
         for token in "${BANNED_TOKENS[@]}"; do
-            if echo "${content}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
+            if echo "${cleaned}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
                 report "${token}" "README.md:${lineno}" "$(echo "${content}" | tr -d '\t' | cut -c1-160)"
                 break
             fi
@@ -181,14 +200,58 @@ if [[ -d "${REPO_ROOT}/docs" ]]; then
             [[ -z "${match}" ]] && continue
             lineno="${match%%:*}"
             content="${match#*:}"
+            # Strip wire-mandated literals and the repo URL slug before
+            # the per-token sweep — the rest of the line still gets
+            # checked. A line containing only those is reduced to noise
+            # and falls through cleanly.
+            cleaned="${content//edge_telemetry_ios_sdk/}"
+        cleaned="${cleaned//telemetry_batch/}"
+        cleaned="${cleaned//\/collector\/telemetry/}"
+            if ! echo "${cleaned}" | grep -iqE "(${PATTERN})"; then
+                continue
+            fi
             for token in "${BANNED_TOKENS[@]}"; do
-                if echo "${content}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
+                if echo "${cleaned}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
                     report "${token}" "${rel}:${lineno}" "$(echo "${content}" | tr -d '\t' | cut -c1-160)"
                     break
                 fi
             done
         done < <(grep -nE "(${PATTERN})" "${md}" -i || true)
     done < <(find "${REPO_ROOT}/docs" -type f -name '*.md')
+fi
+
+# Step 5 — DocC catalog markdown under Sources/EdgeRum/EdgeRum.docc/.
+#
+# Same banned-term rules as the README. The DocC catalog is the
+# Xcode-native API reference, so it shares the public-surface contract
+# with the umbrella module's `///` doc comments. Repository-URL lines
+# get the same allowlist as the README.
+DOCC_DIR="${REPO_ROOT}/Sources/EdgeRum/EdgeRum.docc"
+if [[ -d "${DOCC_DIR}" ]]; then
+    while IFS= read -r md; do
+        rel="${md#${REPO_ROOT}/}"
+        while IFS= read -r match; do
+            [[ -z "${match}" ]] && continue
+            lineno="${match%%:*}"
+            content="${match#*:}"
+            # Strip wire-mandated literals and the repo URL slug before
+            # the per-token sweep — the rest of the line still gets
+            # checked. A line containing only those is reduced to noise
+            # and falls through cleanly.
+            cleaned="${content//edge_telemetry_ios_sdk/}"
+        cleaned="${cleaned//telemetry_batch/}"
+        cleaned="${cleaned//\/collector\/telemetry/}"
+            if ! echo "${cleaned}" | grep -iqE "(${PATTERN})"; then
+                continue
+            fi
+            for token in "${BANNED_TOKENS[@]}"; do
+                if echo "${cleaned}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
+                    report "${token}" "${rel}:${lineno}" "$(echo "${content}" | tr -d '\t' | cut -c1-160)"
+                    break
+                fi
+            done
+        done < <(grep -nE "(${PATTERN})" "${md}" -i || true)
+    done < <(find "${DOCC_DIR}" -type f -name '*.md')
 fi
 
 if (( fail_count > 0 )); then

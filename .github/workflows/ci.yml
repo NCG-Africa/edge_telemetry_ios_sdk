@@ -11,8 +11,13 @@
 #   audit        — `Tools/check-supported-ios.sh` (iOS-floor consistency) +
 #                  `Tools/firewall-check.sh` (Rule 1 — terminology firewall).
 #   pod-lint     — `pod lib lint EdgeRum.podspec --allow-warnings`.
-#   sample-build — `xcodebuild` against the F7 SwiftUI sample app under
-#                  Samples/EdgeRumSwiftUISampleApp/.
+#   sample-build — `xcodebuild` matrix over the three sample apps under
+#                  Samples/ (UIKit, SwiftUI, Crash). UIKit's .xcodeproj is
+#                  regenerated from project.yml via XcodeGen each run.
+#   docs         — `Tools/extract-readme-code.sh` (compile README + DocC
+#                  snippets), `Tools/check-doc-coverage.sh` (every public
+#                  symbol carries a /// comment), `Tools/check-links.sh`
+#                  (lychee link check), DocC build with -warnings-as-errors.
 #
 # All jobs run on a macos-15 runner with the default Xcode 16 toolchain
 # and auto-invoke Tools/fetch-plcrashreporter.sh so the .binaryTarget
@@ -40,6 +45,11 @@ jobs:
   build:
     name: swift build (release)
     runs-on: macos-15
+    # Backstop only — historical green runs finish in 3-5 min. A 30 min
+    # ceiling caps a future hang (e.g. PLCR's Mach exception server
+    # blocking under XCTest, which burned the full 6h GitHub default on
+    # F18) at a cost we can absorb.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -75,6 +85,7 @@ jobs:
   test:
     name: swift test
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -89,6 +100,7 @@ jobs:
   audit:
     name: supported-iOS audit + terminology firewall
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -111,6 +123,7 @@ jobs:
   pod-lint:
     name: pod lib lint
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -137,8 +150,22 @@ jobs:
         run: pod lib lint EdgeRum.podspec --allow-warnings --verbose
 
   sample-build:
-    name: xcodebuild SwiftUI sample (iOS simulator)
+    name: xcodebuild ${{ matrix.sample }} (iOS simulator)
     runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sample: EdgeRumSampleApp
+            project: Samples/EdgeRumSampleApp/EdgeRumSampleApp.xcodeproj
+            generates_project: true
+          - sample: EdgeRumSwiftUISampleApp
+            project: Samples/EdgeRumSwiftUISampleApp/EdgeRumSwiftUISampleApp.xcodeproj
+            generates_project: false
+          - sample: EdgeRumCrashSampleApp
+            project: Samples/EdgeRumCrashSampleApp/EdgeRumCrashSampleApp.xcodeproj
+            generates_project: true
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
@@ -149,12 +176,24 @@ jobs:
         # Surface what's available before the build so destination-not-found
         # errors are diagnosable from the log alone.
         run: xcrun simctl list devices available | head -40
+      - name: Install XcodeGen (UIKit sample only)
+        # The UIKit sample's project is generated from project.yml via
+        # XcodeGen; the other two samples ship hand-crafted .xcodeproj
+        # files. Skip the brew step on those jobs to save runtime.
+        if: matrix.generates_project
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Generate UIKit sample .xcodeproj
+        if: matrix.generates_project
+        run: ./Tools/gen-sample-xcodeproj.sh
       - name: Fetch PLCrashReporter
-        # The sample app links against the local SwiftPM package at
+        # The sample apps link against the local SwiftPM package at
         # ../.., so the same binary-target dependency the SDK needs has
         # to be in place before xcodebuild resolves the package graph.
         run: ./Tools/fetch-plcrashreporter.sh
-      - name: xcodebuild — F7 SwiftUI sample
+      - name: xcodebuild — ${{ matrix.sample }}
         # Generic-simulator destination keeps us off concrete iOS
         # runtime IDs the macos-15 image may or may not ship with.
         # Code signing is force-disabled because we never install the
@@ -162,10 +201,56 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild \
-            -project Samples/EdgeRumSwiftUISampleApp/EdgeRumSwiftUISampleApp.xcodeproj \
-            -scheme EdgeRumSwiftUISampleApp \
+            -project '${{ matrix.project }}' \
+            -scheme '${{ matrix.sample }}' \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/dd-sample \
+            -derivedDataPath build/dd-sample-${{ matrix.sample }} \
             -skipPackagePluginValidation \
             CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
             build | xcpretty || exit ${PIPESTATUS[0]}
+
+  docs:
+    name: doc-quality (README snippets, DocC, link & coverage checks)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode (latest stable)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Fetch PLCrashReporter
+        # `swift build` and `swift package dump-symbol-graph` both need
+        # the binary target resolved before the package graph evaluates.
+        run: ./Tools/fetch-plcrashreporter.sh
+      - name: swift build (modules required by snippet parse)
+        # extract-readme-code.sh re-builds EdgeRum to produce .swiftmodule
+        # files for the snippet parse step. Pre-warming the cache here
+        # makes the next step run incrementally instead of from scratch.
+        run: swift build --product EdgeRum
+      - name: Compile README + DocC snippets
+        run: ./Tools/extract-readme-code.sh
+      - name: Doc-coverage (every public symbol has a /// block)
+        run: ./Tools/check-doc-coverage.sh
+      - name: Build DocC catalog (warnings as errors)
+        # The swift-docc-plugin dependency in Package.swift exposes the
+        # `generate-documentation` subcommand. `--warnings-as-errors`
+        # is what turns a malformed Topics list, a missing Recipe link,
+        # or an undocumented public symbol into a CI failure.
+        run: |
+          set -o pipefail
+          swift package \
+            --allow-writing-to-directory build/docc \
+            generate-documentation \
+            --target EdgeRum \
+            --output-path build/docc \
+            --disable-indexing \
+            --warnings-as-errors | xcpretty || exit ${PIPESTATUS[0]}
+      - name: Install lychee + check links
+        # check-links.sh self-installs lychee via brew on macOS runners
+        # so this step is just the invocation.
+        run: ./Tools/check-links.sh

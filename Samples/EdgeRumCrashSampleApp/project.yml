@@ -1,0 +1,73 @@
+# Samples/EdgeRumCrashSampleApp/project.yml
+#
+# XcodeGen spec for the F14 PLCrashReporter manual-QA sample. Generated
+# (rather than hand-crafted pbxproj) so the diff a future engineer reads
+# is project.yml, matching the UIKit sample pattern. The SwiftUI sample
+# is the only one that still ships a checked-in .xcodeproj.
+#
+# Regenerate locally with:
+#
+#   ./Tools/gen-sample-xcodeproj.sh
+#
+# CI runs the same script before xcodebuild.
+#
+# Refs: PLAN-iOS.md §12.3 (sample apps); GitHub: yonaskolb/XcodeGen.
+
+name: EdgeRumCrashSampleApp
+options:
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+packages:
+  EdgeRum:
+    # Pull the SDK from the local working copy two directories up so
+    # the sample always builds against the current branch, not a
+    # released artefact.
+    path: "../.."
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  EdgeRumCrashSampleApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: EdgeRumCrashSampleApp
+    dependencies:
+      - package: EdgeRum
+        product: EdgeRum
+    info:
+      path: EdgeRumCrashSampleApp/Info.plist
+      properties:
+        CFBundleDisplayName: EdgeRum Crash Sample
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.edge.rum.samples.crash
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO

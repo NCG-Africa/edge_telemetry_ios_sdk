@@ -62,6 +62,18 @@ public enum PLCrashIntegration {
         config: PLCrashIntegrationConfig,
         debug: Bool
     ) {
+        _install(config: config, debug: debug, enable: defaultEnable)
+    }
+
+    /// Internal seam: same idempotency guard as the public entry
+    /// point, but lets tests inject a no-op `enable` so they can
+    /// verify the single-shot behaviour without registering Mach
+    /// exception handlers (which hangs under XCTest on CI runners).
+    internal static func _install(
+        config: PLCrashIntegrationConfig,
+        debug: Bool,
+        enable: (PLCrashIntegrationConfig, Bool) -> Void
+    ) {
         installLock.lock()
         if installed {
             installLock.unlock()
@@ -69,7 +81,10 @@ public enum PLCrashIntegration {
         }
         installed = true
         installLock.unlock()
+        enable(config, debug)
+    }
 
+    private static let defaultEnable: (PLCrashIntegrationConfig, Bool) -> Void = { config, debug in
         #if canImport(CrashReporter)
         guard let reporter = makeReporter(config: config) else {
             if debug {
