@@ -26,13 +26,16 @@ SG_STDERR="$(mktemp -t edge-rum-doc-symgraph-err.XXXXXX)"
 # shellcheck disable=SC2064
 trap "rm -f \"${SG_STDERR}\"" EXIT
 
-if ! swift package dump-symbol-graph \
+# `swift package dump-symbol-graph` has no `--target` flag — it dumps
+# every target in the package graph. On Xcode 26.x the extractor tries
+# to emit a graph for the test bundle too and fails
+# (`Couldn't load module 'EdgeRumPackageTests' …`), returning non-zero
+# even though EdgeRum.symbols.json *was* produced. We tolerate the
+# non-zero and verify the file we actually need below; the captured
+# stderr is replayed only if EdgeRum.symbols.json is absent.
+swift package dump-symbol-graph \
         --minimum-access-level public \
-        >/dev/null 2> "${SG_STDERR}"; then
-    echo "check-doc-coverage: symbol-graph generation failed:" >&2
-    sed 's/^/  /' "${SG_STDERR}" >&2
-    exit 1
-fi
+        >/dev/null 2> "${SG_STDERR}" || true
 
 SYMBOL_JSON="$(find "${REPO_ROOT}/.build" \
     -type f \
@@ -41,6 +44,10 @@ SYMBOL_JSON="$(find "${REPO_ROOT}/.build" \
 
 if [[ -z "${SYMBOL_JSON}" || ! -f "${SYMBOL_JSON}" ]]; then
     echo "check-doc-coverage: no EdgeRum.symbols.json produced" >&2
+    if [[ -s "${SG_STDERR}" ]]; then
+        echo "check-doc-coverage: symbol-graph stderr was:" >&2
+        sed 's/^/  /' "${SG_STDERR}" >&2
+    fi
     exit 1
 fi
 

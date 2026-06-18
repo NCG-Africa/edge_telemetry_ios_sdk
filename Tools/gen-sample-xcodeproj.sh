@@ -2,25 +2,22 @@
 #
 # Tools/gen-sample-xcodeproj.sh
 #
-# Generate Samples/EdgeRumSampleApp/EdgeRumSampleApp.xcodeproj from
-# its project.yml via XcodeGen. The other two samples (SwiftUI, Crash)
-# ship hand-crafted .xcodeproj files; this one is generated so the diff
-# a future iOS engineer needs to read is project.yml, not pbxproj.
+# Generate the XcodeGen-managed sample .xcodeproj files (UIKit and
+# Crash) from their project.yml. The SwiftUI sample is the only one
+# that still ships a checked-in .xcodeproj — both generated samples
+# keep the diff a future engineer reads as project.yml, not 1k+ lines
+# of pbxproj.
 #
-# Refs: PLAN-iOS.md §12.3 (sample apps); Samples/EdgeRumSampleApp/project.yml.
+# Refs: PLAN-iOS.md §12.3 (sample apps); Samples/*/project.yml.
 
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-SAMPLE_DIR="${REPO_ROOT}/Samples/EdgeRumSampleApp"
-SPEC="${SAMPLE_DIR}/project.yml"
 
 fail() {
     echo "gen-sample-xcodeproj: $1" >&2
     exit 1
 }
-
-[[ -f "${SPEC}" ]] || fail "missing project.yml at ${SPEC}"
 
 if ! command -v xcodegen >/dev/null 2>&1; then
     cat >&2 <<'MSG'
@@ -36,7 +33,14 @@ MSG
     exit 1
 fi
 
-cd "${SAMPLE_DIR}"
-xcodegen generate --spec "${SPEC}" --project "${SAMPLE_DIR}"
+regenerate() {
+    local sample="$1"
+    local sample_dir="${REPO_ROOT}/Samples/${sample}"
+    local spec="${sample_dir}/project.yml"
+    [[ -f "${spec}" ]] || fail "missing project.yml at ${spec}"
+    (cd "${sample_dir}" && xcodegen generate --spec "${spec}" --project "${sample_dir}")
+    echo "gen-sample-xcodeproj: regenerated ${sample_dir}/${sample}.xcodeproj"
+}
 
-echo "gen-sample-xcodeproj: regenerated ${SAMPLE_DIR}/EdgeRumSampleApp.xcodeproj"
+regenerate EdgeRumSampleApp
+regenerate EdgeRumCrashSampleApp

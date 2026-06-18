@@ -165,7 +165,7 @@ jobs:
             generates_project: false
           - sample: EdgeRumCrashSampleApp
             project: Samples/EdgeRumCrashSampleApp/EdgeRumCrashSampleApp.xcodeproj
-            generates_project: false
+            generates_project: true
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode (latest stable)
