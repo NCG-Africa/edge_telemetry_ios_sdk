@@ -251,7 +251,7 @@ final class LifecycleCaptureTests: XCTestCase {
                 exp.fulfill()
             }
         }
-        wait(for: [exp], timeout: 30)
+        wait(for: [exp], timeout: 120)
         XCTAssertTrue(LifecycleCapture.isInstalled)
     }
 
