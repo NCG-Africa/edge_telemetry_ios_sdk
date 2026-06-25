@@ -5,6 +5,8 @@
 [![Supported iOS](https://img.shields.io/badge/iOS-14.0%2B-blue.svg)](#supported-ios)
 [![License](https://img.shields.io/badge/license-TBD-lightgrey.svg)](#contributing-and-license)
 [![CI](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/actions/workflows/ci.yml)
+[![Swift](https://img.shields.io/badge/Swift-5.10%20%7C%206-orange.svg)](https://swift.org)
+[![Coverage](https://img.shields.io/badge/EdgeRumCore%20coverage-%E2%89%A580%25%20gated-brightgreen.svg)](Tools/check-edge-rum-core-coverage.sh)
 
 `edge-rum-ios` is the native iOS Real User Monitoring SDK — performance
 data, errors, native crashes, hangs, network requests, and user
@@ -24,6 +26,60 @@ satisfies App Review out of the box.
 The floor is enforced by [`Tools/check-supported-ios.sh`](Tools/check-supported-ios.sh),
 which cross-checks `Package.swift`, `EdgeRum.podspec`, `PLAN-iOS.md`,
 and this README on every PR.
+
+## Testing, coverage & CI
+
+Every change is gated by the CI pipeline in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). The badge at the top of
+this README reflects the current build status of `main`; click it for the live
+run history, per-job logs, and downloadable artifacts.
+
+### Running the tests
+
+```bash
+swift test --enable-code-coverage
+```
+
+The suite spans four test targets:
+
+| Target | What it covers |
+|--------|----------------|
+| `EdgeRumTests` | Unit tests for the public API, config, IDs, sessions. |
+| `EdgeRumCaptureTests` | Capture swizzles and samplers. |
+| `EdgeRumContractTests` | Wire conformance — envelope shape, identity attributes, golden-batch snapshot. |
+| `EdgeRumCrashTests` | Crash and hang capture, replay-on-next-launch. |
+
+CI runs this bundle on every PR via `swift test`, and again across a three-slot
+iOS Simulator matrix (`min` / `mid` / `new`) plus a crash UI test, so each merge
+proves green on a device floor, a mid runtime, and the newest installed runtime.
+
+### Coverage report
+
+`EdgeRumCore` line coverage is gated at **≥ 80 %** on every PR by the `test`
+job. Reproduce the number — and print the per-file `llvm-cov` report — locally:
+
+```bash
+swift test --enable-code-coverage
+./Tools/check-edge-rum-core-coverage.sh --reuse-build
+```
+
+The gate lives in
+[`Tools/check-edge-rum-core-coverage.sh`](Tools/check-edge-rum-core-coverage.sh)
+(threshold overridable via `EDGE_RUM_CORE_COVERAGE_MIN`).
+
+### CI jobs
+
+| Job | What it proves |
+|-----|----------------|
+| `build` | `swift build -c release` + `xcodebuild` for iOS device and simulator. |
+| `test` | `swift test --enable-code-coverage` + the ≥ 80 % `EdgeRumCore` coverage gate. |
+| `matrix test (min/mid/new)` | The test bundle across three iOS Simulator slices. |
+| `crash UI test` | Drives the crash sample app's launch + crash replay flow. |
+| `performance budget` | CPU / memory / launch budgets (advisory). |
+| `audit` | Supported-iOS floor consistency + the terminology firewall. |
+| `pod lib lint` | CocoaPods podspec validation. |
+| `sample-build` | Builds all three sample apps (UIKit, SwiftUI, Crash). |
+| `doc-quality` | README/DocC snippet compile, doc-coverage, link check, DocC build. |
 
 ## Install
 

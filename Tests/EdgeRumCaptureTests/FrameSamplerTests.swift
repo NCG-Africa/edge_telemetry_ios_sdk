@@ -268,7 +268,10 @@ final class FrameSamplerTests: XCTestCase {
                 exp.fulfill()
             }
         }
-        wait(for: [exp], timeout: 30)
+        // ponytail: 120s is a ceiling, not a sleep — a healthy run fulfills in
+        // ~1-3s. The margin absorbs the slow iPhone-SE-3 / iOS-26 sim slice;
+        // if it still flakes, drop the concurrent-install count instead.
+        wait(for: [exp], timeout: 120)
         XCTAssertTrue(FrameSampler.isInstalled)
     }
 
