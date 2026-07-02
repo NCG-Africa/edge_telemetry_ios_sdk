@@ -31,8 +31,32 @@ permissions:
   contents: write          # required for softprops/action-gh-release
 
 jobs:
+  # Belt-and-suspenders pre-publish gate (ADR-015). The release PR
+  # already passed ci.yml before merge, but a terminology leak or wire
+  # regression in a *public* artifact is expensive to walk back, so we
+  # re-run the two cheapest high-value checks before building anything.
+  verify:
+    name: pre-publish gate
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+
+      - name: Terminology firewall (Rule 1)
+        run: ./Tools/firewall-check.sh
+
+      - name: Wire contract + golden tests
+        run: swift test
+
   xcframework:
     name: build xcframework
+    needs: verify
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -83,30 +107,46 @@ jobs:
             build/EdgeRum.xcframework.zip.sha256
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Attach XCFramework to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          # GITHUB_REF_NAME is the tag (vX.Y.Z) at this point.
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
+          # The release itself is created by release-please when the
+          # release PR merges (it carries the generated CHANGELOG notes).
+          # softprops upserts by tag: here we only attach the built
+          # artifacts, leaving those notes intact. If the tag was pushed
+          # by hand (no release-please), this creates the release with
+          # GitHub's default notes. The per-release SHA-256 for
+          # .binaryTarget(url:checksum:) ships as the attached
+          # EdgeRum.xcframework.zip.sha256 asset.
           fail_on_unmatched_files: true
-          body: |
-            ## EdgeRum ${{ github.ref_name }}
-
-            **SwiftPM `.binaryTarget(url:checksum:)`**:
-
-            ```swift
-            .binaryTarget(
-                name: "EdgeRum",
-                url: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/EdgeRum.xcframework.zip",
-                checksum: "${{ steps.checksum.outputs.checksum }}"
-            )
-            ```
-
-            **CocoaPods**: `pod 'EdgeRum', '${{ github.ref_name }}'`
-
-            Built from `${{ github.sha }}`. See `CHANGELOG.md` for details.
           files: |
             build/EdgeRum.xcframework.zip
             build/EdgeRum.xcframework.zip.sha256
+
+  cocoapods:
+    name: publish to CocoaPods trunk
+    needs: xcframework
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+
+      # The podspec's .binaryTarget dependency (PLCrashReporter) must be
+      # on disk for `pod trunk push` to lint the spec before pushing.
+      - name: Fetch PLCrashReporter
+        run: ./Tools/fetch-plcrashreporter.sh
+
+      - name: pod trunk push
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          if [ -z "${COCOAPODS_TRUNK_TOKEN}" ]; then
+            echo "::warning::COCOAPODS_TRUNK_TOKEN not set — skipping CocoaPods trunk push. Set the secret to publish the pod."
+            exit 0
+          fi
+          pod trunk push EdgeRum.podspec --allow-warnings --synchronous
