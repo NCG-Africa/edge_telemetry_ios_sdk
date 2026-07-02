@@ -11,6 +11,9 @@ xcuserdata/
 !Samples/**/*.xcodeproj/
 !Samples/**/*.xcodeproj/**
 
+## Local secrets — real API keys for sample apps. Never commit.
+Secrets.local.xcconfig
+
 ## SwiftPM
 Package.resolved
 
