@@ -81,6 +81,22 @@ The gate lives in
 | `sample-build` | Builds all three sample apps (UIKit, SwiftUI, Crash). |
 | `doc-quality` | README/DocC snippet compile, doc-coverage, link check, DocC build. |
 
+## Get an API key
+
+EdgeRum sends data to the Edge collector backend, which authenticates
+every batch with a per-tenant API key (the value passed as
+`EdgeRumConfig.apiKey`, sent as the `X-API-Key` header — it always
+starts with `edge_`).
+
+Keys are issued by NCG. **Reach out to NCG** to request one for your
+app; you'll receive the `edge_…` key and the collector endpoint to use.
+Until then the SDK runs against a placeholder key and the backend
+returns `401`, so no data is stored.
+
+> Never commit a real key. In the sample apps the key is injected at
+> build time from a gitignored `Secrets.local.xcconfig` — see
+> `Samples/EdgeRumSampleApp/Secrets.xcconfig` for the pattern.
+
 ## Install
 
 EdgeRum ships through three channels — pick the one that matches your

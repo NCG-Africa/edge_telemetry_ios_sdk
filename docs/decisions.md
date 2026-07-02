@@ -1331,3 +1331,134 @@ Two design tensions surfaced during planning:
   for backend team review prior to merge.
 - No new `eventName`. No new `metricName`. No transport change. No
   public API change.
+
+---
+
+## ADR-014 — Distribution model: public open-source SDK, SPM + CocoaPods, keys issued by NCG
+
+**Date:** 2026-07-02
+
+**Status:** Accepted.
+
+**Context.** The SDK is built and device-tested; the next step is
+getting it into third-party apps "across the board". The backend
+(EdgeTelemetryProcessor) is proprietary and gates ingestion on a
+per-tenant `edge_` API key, so the *client* SDK can be open without
+exposing anything the backend doesn't already protect (the Sentry /
+PostHog model: open client, proprietary backend). We needed to decide
+audience, repo visibility, which package channels to actually staff,
+and how a developer obtains a key.
+
+**Decision.**
+
+1. **Audience / visibility.** The repo (`NCG-Africa/edge_telemetry_ios_sdk`)
+   goes **public**. Anyone can add the package; ingestion stays gated
+   by the `edge_` key.
+2. **Channels staffed at 1.0:**
+   - **SwiftPM from source** — primary. Public git + a SemVer tag is
+     all a consumer needs. `Package.swift` already builds `EdgeRum`
+     from source (only PLCrashReporter is a `.binaryTarget`), so there
+     is **no `binaryTarget` checksum chicken-and-egg** in our own
+     manifest.
+   - **CocoaPods trunk** — secondary, for enterprise shops still on
+     CocoaPods. `EdgeRum.podspec` already exists (the `EdgeRumOTelBridge`
+     target is intentionally omitted — see the podspec header; CocoaPods
+     consumers get the same public surface, minus the architectural-
+     insurance bridge).
+   - **XCFramework zip** — optional GitHub-Release download for
+     closed-source consumers who prefer a binary. Nobody is *forced*
+     onto `.binaryTarget(url:checksum:)`.
+3. **Secret hygiene (blocking prerequisite to going public).** No real
+   API key may live in the repo or its history. Sample apps commit only
+   `edge_REPLACE_ME`; a real key is injected via an untracked,
+   gitignored `Secrets.xcconfig` or an env var read at launch. Before
+   the repo is flipped public, run a full-history secret scan
+   (`gitleaks` / `trufflehog`) and **rotate any key that was ever
+   committed**. The two live keys used during device testing this
+   session stay uncommitted.
+4. **Key onboarding.** No self-serve portal exists — developers obtain
+   an `edge_` key by **reaching out to NCG**. The README documents this
+   contact path. A self-serve signup portal is the future backend work
+   that unlocks true at-scale adoption; it is **out of scope for this
+   repo** and tracked as the #1 cross-team dependency.
+
+**Alternatives considered.**
+
+- *Named-client / binary-only distribution (no repo access).* Rejected:
+  contradicts the "across the board" goal and adds signing/packaging
+  toil for every consumer.
+- *SPM-source only (drop CocoaPods + XCFramework).* Lazier, but locks
+  out CocoaPods-only enterprise shops, which are still common in iOS.
+- *Self-serve key portal at launch.* Desirable but does not exist and
+  is backend-owned; blocking public launch on it is unnecessary since
+  manual issuance unblocks early adopters today.
+
+**Consequences.**
+
+- Repo visibility flip is gated on the secret scan + key rotation.
+- `AppDelegate.swift` in the sample must move its key to a gitignored
+  override before any commit that could reach `main`.
+- `release.yml` must gain a `pod trunk push` step (needs a
+  `COCOAPODS_TRUNK_TOKEN` repo secret) to actually staff the CocoaPods
+  channel — today it only cuts the GitHub Release.
+- README "Install" gains a "Get an API key — contact NCG" step so the
+  quickstart leads somewhere real.
+
+---
+
+## ADR-015 — Release pipeline: release-please automation, stable-only with beta on-demand
+
+**Date:** 2026-07-02
+
+**Status:** Accepted.
+
+**Context.** The second half of the ask is "a pipeline that lets us
+quickly deploy and update new features." `release.yml` already fires on
+a manual `v*` tag, verifies `tag == VERSION`, builds the XCFramework,
+computes the SHA-256, and cuts a GitHub Release. What was undecided is
+how a *merged feature* becomes a *published release*, and whether a
+maintained prerelease channel is needed.
+
+**Decision.**
+
+1. **release-please drives versioning.** Conventional-commit messages
+   (`feat:`, `fix:`, `feat!:`) feed the release-please GitHub Action,
+   which bumps the `VERSION` file, updates `CHANGELOG.md`, and opens a
+   "chore: release X.Y.Z" PR. Merging that PR pushes the `vX.Y.Z` tag,
+   which fires the existing `release.yml`. This preserves the
+   `tag == VERSION` guard (release-please edits `VERSION` inside the
+   Release PR) and removes all manual bump/tag/changelog toil.
+2. **Stable-only cadence; beta on-demand.** After `1.0.0`, cut normal
+   SemVer releases that SPM `from:` serves automatically. A prerelease
+   lane (`1.x.0-beta.N` off a `release-1.x` branch, opt-in via an exact
+   SPM pin) is spun up **only** when a specific risky feature needs
+   field-testing — not maintained as a standing second channel.
+3. **Release publishes only from green commits.** Because the Release
+   PR passes normal `ci.yml` before merge, the tagged commit is already
+   green. `release.yml` additionally re-runs the firewall-check +
+   contract/golden tests as a pre-publish belt-and-suspenders, since a
+   terminology leak or wire regression in a *public* artifact is
+   expensive to walk back.
+
+**Alternatives considered.**
+
+- *Keep manual tagging.* Simplest, no new tooling, but a human bump +
+  hand-written CHANGELOG on every release; slows the "quickly deploy"
+  goal.
+- *Release-on-merge to main.* Maximum velocity, but every merge becomes
+  a public version bump with no batching — too noisy/risky for an
+  external SDK.
+- *Maintained beta + stable dual channel.* Only justified with a real
+  bleeding-edge cohort; doubles release surface and SPM beta opt-in is
+  clunky. Deferred under YAGNI.
+
+**Consequences.**
+
+- Add `.github/workflows/release-please.yml` + a release-please config
+  pinning the `VERSION` file as an extra managed file and mapping
+  `v`-prefixed tags.
+- Adopt Conventional Commits (document in `CONTRIBUTING.md`; optionally
+  enforce with a commit-lint CI check).
+- `release.yml` gains the pre-publish test gate and the `pod trunk push`
+  step from ADR-014.
+- `CHANGELOG.md` becomes release-please-managed; hand edits stop.
