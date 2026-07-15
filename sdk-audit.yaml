@@ -1,0 +1,506 @@
+repo: unknown/edge-rum-ios          # git org not in repo; pod name "EdgeRum", podspec homepage unknown
+component_type: sdk
+platform: ios
+language: Swift (Swift 5.10 source / swift-tools 6.0 toolchain)
+current_version: 1.0.0-alpha.1      # VERSION file + .release-please-manifest.json + CHANGELOG + podspec (all agree)
+build_variants: >
+  Two SwiftPM library products — EdgeRum (dynamic) and EdgeRumStatic (static)
+  (Package.swift:27-37); XCFramework (iphoneos, iphonesimulator, maccatalyst per
+  release.yml). CocoaPods pod omits the EdgeRumOTelBridge target (EdgeRum.podspec:6-14).
+registry: cocoapods (trunk) + spm (git) + XCFramework via GitHub Releases
+
+# ============================================================================
+# 1. Events emitted  (wire names verbatim)
+# Emission verbs: Recorder.recordEvent -> wire type "event"; Recorder.recordPerformance
+# -> wire type "metric". Encoding: EventEnvelope.swift:66-93 — "event" uses key
+# `eventName`, "metric" uses key `metricName` + optional scalar `value`.
+# Only event-SPECIFIC keys listed; common identity attrs are in section 2.
+# ============================================================================
+events:
+  - name: session.started
+    trigger: EdgeRum.start() (fresh session) and idle-rotation (>30min); bypasses sampler (forced-emit)
+    evidence: Recorder.swift:289 recordEvent("session.started"); rotation Recorder.swift:518
+    payload_fields:
+      - {field: session.rotation, type: string, unit: none, always_present: false}  # "idle" only on idle-rotation path
+
+  - name: session.finalized
+    trigger: EdgeRum.stop()/shutdown, UIApplication.willResignActive & willTerminate, idle-rotation. Immediate flush. Forced-emit.
+    evidence: Recorder.swift:306; LifecycleCapture.swift:134 emitSessionFinalized(); rotation Recorder.swift:514
+    payload_fields:
+      - {field: session.id, type: string, unit: none, always_present: false}       # prior-session identity, rotation path only
+      - {field: session.start_time, type: string, unit: none, always_present: false}
+      - {field: session.sequence, type: int, unit: none, always_present: false}
+      - {field: session.rotation, type: string, unit: none, always_present: false} # "idle"
+
+  - name: app_lifecycle
+    trigger: NotificationCenter on 5 UIApplication states (willResignActive/didEnterBackground/willEnterForeground/didBecomeActive/willTerminate). config.captureLifecycle.
+    evidence: LifecycleCapture.swift:121 emit(state:)
+    payload_fields:
+      - {field: lifecycle.state, type: string, unit: none, always_present: true}          # inactive|backgrounded|foregrounded|active|will_terminate
+      - {field: lifecycle.previous_state, type: string, unit: none, always_present: true}  # "unknown" until first
+
+  - name: page_load
+    trigger: Once per process; CADisplayLink first active tick vs launchStart. config.capturePageLoad.
+    evidence: PageLoadCapture.swift:224
+    payload_fields:
+      - {field: page_load.duration_ms, type: int, unit: ms, always_present: true}
+      - {field: page_load.cold_start, type: bool, unit: none, always_present: true}   # == !prewarmed
+      - {field: page_load.prewarmed, type: bool, unit: none, always_present: true}    # iOS15+ ActivePrewarm=="1"
+      - {field: page_load.source, type: string, unit: none, always_present: true}     # "displaylink"
+
+  - name: navigation
+    trigger: >
+      THREE emitters, DIFFERENT key sets: (a) UIKit viewDidAppear swizzle
+      (config.captureScreens, incl. UIHostingController->kind "swiftui");
+      (b) public EdgeRum.trackScreen(); (c) SwiftUI .edgeRumScreen() onAppear.
+    evidence: UIViewControllerCapture.swift:309; EdgeRum.swift:340; ViewModifiers.swift:54
+    payload_fields:
+      - {field: navigation.screen, type: string, unit: none, always_present: false}         # UIKit + SwiftUI-modifier paths
+      - {field: navigation.kind, type: string, unit: none, always_present: false}           # "uikit"|"swiftui"; NOT set by trackScreen()
+      - {field: navigation.type, type: string, unit: none, always_present: false}           # "viewDidAppear"; NOT set by trackScreen()
+      - {field: navigation.previous_screen, type: string, unit: none, always_present: false} # UIKit path, omitted when none
+      - {field: navigation.name, type: string, unit: none, always_present: false}           # trackScreen() path only (NOT navigation.screen)
+
+  - name: screen.duration
+    type_note: metric (metricName == "screen.duration")
+    trigger: UIKit viewWillDisappear swizzle (paired appear) and SwiftUI .edgeRumScreen() onDisappear.
+    evidence: UIViewControllerCapture.swift:337; ViewModifiers.swift:81
+    payload_fields:
+      - {field: screen.name, type: string, unit: none, always_present: true}
+      - {field: screen.kind, type: string, unit: none, always_present: true}       # "uikit"|"swiftui"
+      - {field: screen.duration_ms, type: int, unit: ms, always_present: true}
+      - {field: value, type: double, unit: s, always_present: true}                # headline metric scalar = dwell seconds
+
+  - name: http.request
+    trigger: EdgeRumURLProtocol + URLSessionConfiguration.protocolClasses swizzle; on task completion. config.captureHTTP. Filtered by internal-header/ignoreUrls/sanitizeUrl.
+    evidence: HTTPCapture.swift:350
+    payload_fields:
+      - {field: http.method, type: string, unit: none, always_present: true}
+      - {field: http.url, type: string, unit: none, always_present: true}           # full absoluteString incl. query unless sanitizeUrl set
+      - {field: http.host, type: string, unit: none, always_present: true}
+      - {field: http.path, type: string, unit: none, always_present: true}
+      - {field: http.status_code, type: int, unit: none, always_present: true}      # 0 when no HTTPURLResponse
+      - {field: http.duration_ms, type: int, unit: ms, always_present: true}
+      - {field: http.request_size, type: int, unit: bytes, always_present: true}
+      - {field: http.response_size, type: int, unit: bytes, always_present: true}
+      - {field: http.from_cache, type: bool, unit: none, always_present: true}
+      - {field: http.error, type: string, unit: none, always_present: false}        # omitted unless error; String(describing:error)
+      # F17 enrichment (only when URLSessionTaskMetrics view present):
+      - {field: http.redirect_count, type: int, unit: none, always_present: false}
+      - {field: http.tls_protocol, type: string, unit: none, always_present: false}
+      - {field: http.tls_cipher, type: string, unit: none, always_present: false}
+      - {field: http.reused_connection, type: bool, unit: none, always_present: false}
+      - {field: http.proxy_connection, type: bool, unit: none, always_present: false}
+      - {field: http.network_protocol, type: string, unit: none, always_present: false}
+      - {field: http.request_body_bytes_before_encoding, type: int, unit: bytes, always_present: false}
+      - {field: http.cellular_fallback, type: bool, unit: none, always_present: false}  # iOS17+
+
+  - name: resource_timing
+    type_note: metric (metricName == "resource_timing")
+    trigger: Same http path, only when metrics view present with >=1 transaction (from last transaction).
+    evidence: HTTPCapture.swift:371
+    payload_fields:
+      - {field: resource.url, type: string, unit: none, always_present: true}
+      - {field: resource.host, type: string, unit: none, always_present: true}
+      - {field: resource.dns_ms, type: int, unit: ms, always_present: true}
+      - {field: resource.connect_ms, type: int, unit: ms, always_present: true}
+      - {field: resource.tls_ms, type: int, unit: ms, always_present: true}
+      - {field: resource.ttfb_ms, type: int, unit: ms, always_present: true}
+      - {field: resource.download_ms, type: int, unit: ms, always_present: true}
+      - {field: resource.redirect_count, type: int, unit: none, always_present: true}
+      - {field: resource.transaction_count, type: int, unit: none, always_present: true}
+      - {field: resource.fetch_start_to_response_end_ms, type: int, unit: ms, always_present: false}
+      - {field: resource.protocol, type: string, unit: none, always_present: false}
+      - {field: value, type: double, unit: ms, always_present: true}
+
+  - name: user.interaction
+    trigger: >
+      TWO emitters, DIFFERENT key sets: (a) UIKit UIWindow.sendEvent swizzle, one per
+      touch reaching .ended (config.captureTaps; DROPPED if responder chain has a secure
+      text field); (b) SwiftUI .edgeRumTrackTap() simultaneousGesture.
+    evidence: InteractionCapture.swift:180; ViewModifiers.swift:98
+    payload_fields:
+      - {field: interaction.kind, type: string, unit: none, always_present: true}          # "tap"
+      - {field: interaction.target, type: string, unit: none, always_present: false}        # UIKit: type(of: target)
+      - {field: interaction.target_id, type: string, unit: none, always_present: false}     # UIKit: a11y id / UIButton title
+      - {field: interaction.screen, type: string, unit: none, always_present: false}        # UIKit
+      - {field: interaction.name, type: string, unit: none, always_present: false}          # SwiftUI path only
+
+  - name: network_change
+    trigger: NWPathMonitor transition; deduped on (type,effectiveType,expensive,constrained,unsatisfiedReason). config.captureNetworkChanges. Forced-emit (bypasses sampler).
+    evidence: NetworkPathCapture.swift:242
+    payload_fields:
+      - {field: network.type, type: string, unit: none, always_present: true}          # overrides common ctx key
+      - {field: network.effectiveType, type: string, unit: none, always_present: true} # overrides common ctx key
+      - {field: network.is_expensive, type: bool, unit: none, always_present: true}
+      - {field: network.is_constrained, type: bool, unit: none, always_present: true}
+      - {field: network.unsatisfied_reason, type: string, unit: none, always_present: false}
+
+  - name: user.profile.update
+    trigger: EdgeRum.identify(UserContext). Attaches host id/name/email/phone; does NOT change generated user.id.
+    evidence: Recorder.swift:385-395 setUser()
+    payload_fields:
+      - {field: user.name, type: string, unit: none, always_present: false}
+      - {field: user.email, type: string, unit: none, always_present: false}
+      - {field: user.phone, type: string, unit: none, always_present: false}
+      - {field: user.external_id, type: string, unit: none, always_present: false}   # host-supplied UserContext.id
+
+  - name: custom_event
+    trigger: EdgeRum.track(name, attributes). Original name carried as event.name attribute.
+    evidence: EdgeRum.swift:330
+    payload_fields:
+      - {field: event.name, type: string, unit: none, always_present: true}          # user-supplied name
+      - {field: "<caller attributes>", type: any-primitive, unit: none, always_present: false}
+
+  - name: app.crash
+    trigger: >
+      THREE causes, discriminated by `cause`: (a) "AppError" — EdgeRum.captureError()
+      (immediate flush); (b) "NativeCrash" — PLCrashReporter Mach signal (SIGSEGV/SIGABRT/
+      SIGBUS/SIGILL) or NSException, REPLAYED on next launch; (c) "Hang" — main-thread
+      hang watchdog. NativeCrash replay OVERWRITES common session/device/user identity
+      with the CRASHED session's (from sidecar). Forced-emit.
+    evidence: AppErrorBuilder.swift + EdgeRum.swift:384; PLCrashIntegration.swift:174 + CrashReportEncoder.swift; HangDetector.swift:334 + HangEventEncoder.swift
+    payload_fields:
+      - {field: cause, type: string, unit: none, always_present: true}               # AppError|NativeCrash|Hang
+      - {field: runtime, type: string, unit: none, always_present: true}             # swift|native
+      - {field: crash.fatal, type: bool, unit: none, always_present: false}          # native/hang paths
+      # cause=AppError:
+      - {field: error.type, type: string, unit: none, always_present: false}
+      - {field: error.message, type: string, unit: none, always_present: false}      # localizedDescription — PII risk (§5)
+      - {field: error.kind, type: string, unit: none, always_present: false}         # nserror|swift
+      - {field: error.domain, type: string, unit: none, always_present: false}
+      - {field: error.code, type: int, unit: none, always_present: false}
+      - {field: "error.userInfo.<key>", type: any-primitive, unit: none, always_present: false}
+      - {field: error.stack, type: string, unit: none, always_present: false}        # \n-joined, truncated 4096 UTF-8 bytes
+      - {field: "crash.context.<key>", type: any-primitive, unit: none, always_present: false}
+      # cause=NativeCrash:
+      - {field: crash.report_format_version, type: string, unit: none, always_present: false}  # "edgerum.crash.v1"
+      - {field: crash.signal, type: string, unit: none, always_present: false}
+      - {field: crash.signal_code, type: string, unit: none, always_present: false}
+      - {field: crash.exception_name, type: string, unit: none, always_present: false}
+      - {field: crash.exception_reason, type: string, unit: none, always_present: false}       # PII risk
+      - {field: crash.timestamp, type: string, unit: none, always_present: false}              # ISO8601
+      - {field: crash.os_version, type: string, unit: none, always_present: false}
+      - {field: crash.binary_uuid, type: string, unit: none, always_present: false}
+      - {field: crash.binary_name, type: string, unit: none, always_present: false}
+      - {field: crash.report_json, type: string, unit: none, always_present: false}            # JSON-stringified full report; addresses NOT symbolicated; top-30 frames/thread
+      # cause=Hang:
+      - {field: hang.duration_ms, type: double, unit: ms, always_present: false}
+      - {field: hang.threshold_ms, type: double, unit: ms, always_present: false}
+      - {field: hang.cpu_usage, type: double, unit: ratio, always_present: false}              # ALWAYS omitted in prod (cpuProvider nil)
+      - {field: crash.thread.main_stack, type: string, unit: none, always_present: false}      # top-30 frames
+
+  - name: frame_render_time
+    type_note: metric
+    trigger: CADisplayLink; per-tick deltas aggregated, flushed ~1s. config.captureRenderingPerformance.
+    evidence: FrameSampler.swift:221
+    payload_fields:
+      - {field: frame.max_ms, type: double, unit: ms, always_present: true}
+      - {field: frame.p95_ms, type: double, unit: ms, always_present: true}
+      - {field: frame.dropped_count, type: int, unit: none, always_present: true}
+      - {field: frame.target_hz, type: int, unit: hz, always_present: true}
+      - {field: frame.source, type: string, unit: none, always_present: true}       # "displaylink"
+      - {field: frame.sample_count, type: int, unit: none, always_present: true}
+      - {field: value, type: double, unit: ms, always_present: true}                # == max_ms
+
+  - name: memory_usage
+    type_note: metric
+    trigger: DispatchSourceTimer every 10s (pressure normal) + memory-pressure source. config.captureRenderingPerformance.
+    evidence: MemorySampler.swift:151
+    payload_fields:
+      - {field: memory.resident_kb, type: int, unit: kb, always_present: true}
+      - {field: memory.virtual_kb, type: int, unit: kb, always_present: true}
+      - {field: memory.footprint_kb, type: int, unit: kb, always_present: true}
+      - {field: memory.pressure, type: string, unit: none, always_present: true}    # normal|warning|critical
+      - {field: value, type: double, unit: kb, always_present: true}                # == resident_kb
+
+  - name: long_task
+    type_note: metric
+    trigger: CFRunLoopObserver on main runloop; wake->sleep interval >= 50ms. config.captureRenderingPerformance.
+    evidence: RunLoopObserverCapture.swift:132
+    payload_fields:
+      - {field: value, type: double, unit: ms, always_present: true}
+      - {field: long_task.threshold_ms, type: double, unit: ms, always_present: true}  # 50.0
+      - {field: long_task.stack, type: string, unit: none, always_present: true}       # truncated 4096 UTF-8 bytes
+
+  - name: "<user-supplied>"
+    type_note: metric (metricName == the EdgeRum.time() argument, verbatim)
+    trigger: EdgeRum.time(name).end(attributes). Idempotent.
+    evidence: RumTimer.swift:62
+    payload_fields:
+      - {field: duration_ms, type: int, unit: ms, always_present: true}
+      - {field: "<caller attributes>", type: any-primitive, unit: none, always_present: false}
+
+# ============================================================================
+# 2. Common attributes  (merged into EVERY event via ContextProvider.snapshot,
+# PayloadBuilder merges context first, event attrs win on conflict)
+# Evidence: Sources/EdgeRumCore/Context/*.swift write(into:); ContextProvider.swift:70-84
+# NOTE: groups power/accessibility/storage are BEYOND the 6 documented in CLAUDE.md.
+# ============================================================================
+common_attributes:
+  # app (AppContext) — all setIfPresent (omitted when nil)
+  - {field: app.name, type: string, unit: none, always_present: false, evidence: AppContext.swift}
+  - {field: app.package_name, type: string, unit: none, always_present: false, evidence: AppContext.swift}   # NOT app.package
+  - {field: app.version, type: string, unit: none, always_present: false, evidence: AppContext.swift}
+  - {field: app.build_number, type: string, unit: none, always_present: false, evidence: AppContext.swift}
+  - {field: app.environment, type: string, unit: none, always_present: false, evidence: AppContext.swift}
+  - {field: app.background_refresh, type: string, unit: none, always_present: false, evidence: StorageContext.swift}  # NOTE string, not bool
+  # device identity + hardware (DeviceContext, SdkContext for device.id)
+  - {field: device.id, type: string, unit: none, always_present: true, evidence: "SdkContext.swift:53 (device_<epochMs>_<16hex>_ios)"}
+  - {field: device.platform, type: string, unit: none, always_present: true, evidence: DeviceContext.swift}  # "ios"
+  - {field: device.manufacturer, type: string, unit: none, always_present: true, evidence: DeviceContext.swift}  # "Apple"
+  - {field: device.os, type: string, unit: none, always_present: true, evidence: DeviceContext.swift}  # "ios"
+  - {field: device.platform_version, type: string, unit: none, always_present: false, evidence: DeviceContext.swift}  # NOT device.osVersion
+  - {field: device.model, type: string, unit: none, always_present: false, evidence: DeviceContext.swift}
+  - {field: device.isVirtual, type: bool, unit: none, always_present: true, evidence: DeviceContext.swift}
+  - {field: device.screenWidth, type: int, unit: none, always_present: false, evidence: DeviceContext.swift}
+  - {field: device.screenHeight, type: int, unit: none, always_present: false, evidence: DeviceContext.swift}
+  - {field: device.pixelRatio, type: double, unit: none, always_present: false, evidence: DeviceContext.swift}
+  - {field: device.batteryLevel, type: double, unit: none, always_present: false, evidence: DeviceContext.swift}
+  - {field: device.batteryCharging, type: bool, unit: none, always_present: false, evidence: DeviceContext.swift}
+  - {field: device.locale, type: string, unit: none, always_present: false, evidence: "DeviceContext.swift (beyond CLAUDE.md)"}
+  - {field: device.timezone, type: string, unit: none, always_present: false, evidence: "DeviceContext.swift (beyond CLAUDE.md)"}
+  - {field: device.timezone_offset_min, type: int, unit: minutes, always_present: false, evidence: "DeviceContext.swift (beyond CLAUDE.md)"}
+  # F16 power/storage enrichment (undocumented in CLAUDE.md)
+  - {field: device.thermal_state, type: string, unit: none, always_present: false, evidence: "PowerContext.swift (beyond CLAUDE.md)"}
+  - {field: device.low_power_mode, type: bool, unit: none, always_present: false, evidence: "PowerContext.swift (beyond CLAUDE.md)"}
+  - {field: device.disk_free_mb, type: int, unit: mb, always_present: false, evidence: "StorageContext.swift (beyond CLAUDE.md)"}
+  - {field: device.disk_total_mb, type: int, unit: mb, always_present: false, evidence: "StorageContext.swift (beyond CLAUDE.md)"}
+  # F16 accessibility enrichment (undocumented in CLAUDE.md)
+  - {field: device.dynamic_type, type: string, unit: none, always_present: false, evidence: "AccessibilityContext.swift (beyond CLAUDE.md)"}
+  - {field: device.reduce_motion, type: bool, unit: none, always_present: false, evidence: "AccessibilityContext.swift (beyond CLAUDE.md)"}
+  - {field: device.bold_text, type: bool, unit: none, always_present: false, evidence: "AccessibilityContext.swift (beyond CLAUDE.md)"}
+  - {field: device.voiceover, type: bool, unit: none, always_present: false, evidence: "AccessibilityContext.swift (beyond CLAUDE.md)"}
+  - {field: device.increase_contrast, type: bool, unit: none, always_present: false, evidence: "AccessibilityContext.swift (beyond CLAUDE.md)"}
+  # network (NetworkContext)
+  - {field: network.type, type: string, unit: none, always_present: true, evidence: NetworkContext.swift}
+  - {field: network.effectiveType, type: string, unit: none, always_present: true, evidence: "NetworkContext.swift — cellular is coarse 'cellular', TODO for CT radio type"}
+  - {field: network.expensive, type: bool, unit: none, always_present: true, evidence: NetworkContext.swift}
+  - {field: network.constrained, type: bool, unit: none, always_present: true, evidence: NetworkContext.swift}
+  - {field: network.interface, type: string, unit: none, always_present: false, evidence: NetworkContext.swift}
+  # session (SessionContextSnapshot)
+  - {field: session.id, type: string, unit: none, always_present: true, evidence: "SessionContext.swift (session_<epochMs>_<16hex>_ios)"}
+  - {field: session.start_time, type: string, unit: none, always_present: true, evidence: SessionContext.swift}  # ISO8601; NOT session.startTime
+  - {field: session.sequence, type: int, unit: none, always_present: true, evidence: "SessionContext.swift — increments on transport ACK"}
+  # user (UserContextSnapshot)
+  - {field: user.id, type: string, unit: none, always_present: true, evidence: "UserContextSnapshot.swift (user_<epochMs>_<16hex>, no _ios)"}
+  - {field: user.name, type: string, unit: none, always_present: false, evidence: UserContextSnapshot.swift}
+  - {field: user.email, type: string, unit: none, always_present: false, evidence: UserContextSnapshot.swift}
+  - {field: user.phone, type: string, unit: none, always_present: false, evidence: UserContextSnapshot.swift}
+  # sdk (SdkContext)
+  - {field: sdk.version, type: string, unit: none, always_present: true, evidence: SdkContext.swift}
+  - {field: sdk.platform, type: string, unit: none, always_present: true, evidence: SdkContext.swift}  # "ios-native"
+
+# ============================================================================
+# 3. Session logic
+# ============================================================================
+session:
+  start_rule: >
+    SessionManager.touch(): reuse existing if (now - lastActiveAt) < idleRotationInterval,
+    else create new. First session created lazily on first touch after start().
+    EdgeRum.start() forces a fresh session (SessionContext.swift:93-106; Recorder.swift:284).
+  idle_timeout: "1800s (30 min) — SessionManager.idleRotationInterval, SessionContext.swift:71. lastActiveAt updated on touch() and incrementSequence()."
+  max_duration: "none found — rotation is idle-based only, no absolute session-length cap"
+  background_behavior: >
+    willResignActive -> session.finalized + immediate flush; idle-rotation emits
+    finalized->started pair; didBecomeActive -> drainOfflineQueue. No periodic timer flush.
+  id_format: >
+    Custom (NOT uuid v4): "session_<epochMs>_<16 lowercase hex>_ios". 8 bytes from
+    SecRandomCopyBytes formatted %02x (arc4random_buf fallback). SessionContext.swift:138-165.
+    Validated on load by regex ^session_\d+_[0-9a-f]{16}_ios$ (IdentityFormat.swift:31-33);
+    mismatch -> transparent regeneration.
+
+# ============================================================================
+# 4. Transport
+# ============================================================================
+transport:
+  endpoint_path: "config.endpoint.appendingPathComponent(\"collector/telemetry\"); POST. BatchTransport.swift:47,143-145"
+  serialization: "json — JSONEncoder outputFormatting=[] (HTTPTransportSink.swift:234-238); Content-Type: application/json"
+  compression: "none — raw JSON body, no Content-Encoding, no gzip anywhere in transport path"
+  headers:
+    X-API-Key: "<config.apiKey> (validated to start with edge_)"
+    Content-Type: application/json
+    User-Agent: "EdgeRum-iOS/<sdkVersion> (<deviceModel>; iOS <osVersion>)"
+    X-Edge-Rum-Internal: "1"        # + task.taskDescription = edge-rum-internal (self-filter)
+    Authorization: not set
+    evidence: BatchTransport.swift:104-107,147-153; BackgroundUploader.swift:103-106
+  batching:
+    flush_interval: "5.0s DEFAULT STORED BUT NOT IMPLEMENTED — FlushReason.timer exists (TransportSink.swift:16) but is never emitted; no Timer/DispatchSourceTimer schedules a periodic flush. Only flush callers: batchSize, immediate (session.finalized/app.crash), shutdown. (Recorder.swift:307,351,446,528,541)"
+    max_batch_size: "30 (EdgeRumConfig.batchSize / RecorderConfig; Recorder.swift:536)"
+    flush_on_background: "true, but ONLY via willResignActive->session.finalized immediate flush. didEnterBackground emits event with no flush. No periodic background flush."
+  retry:
+    strategy: "Static backoff schedule [0,2,8,30]s (RetryPolicy.defaultSchedule:39); attempt 1-indexed, delay = schedule[attempt] for next try. Retry-After header (delta-seconds or HTTP-date) overrides schedule, capped 60s (RetryPolicy.swift:39-98)."
+    max_attempts: "4 online (attempts 1-3 retried; attempt>=4 -> offline queue)"
+    drop_policy: "After final online failure -> NOT dropped, pushed to OfflineQueue (disk). Hard drop ONLY for non-retryable 4xx (400-499 except 429) -> .drop, logged when debug. Retried statuses: 0, 429, 503, and other 5xx normalized to 503. (RetryPolicy.swift:77-115; HTTPTransportSink.swift:147-149,165-173)"
+  offline:
+    persistence: "file-backed FIFO — one JSON envelope per file at Library/Caches/edge-rum/queue/<epochMs>-<seq>.json (OfflineQueue.swift:54-65,117)"
+    caps: "maxQueueSize default 200 FILES (== envelopes, not events, not bytes; each file <= batchSize events). Eviction oldest-first (trimToCapLocked, OfflineQueue.swift:81,202-209). Drain sequential; success deletes file, failure aborts drain. Corrupt files removed. Drain triggers: 2xx success, NWPathMonitor->satisfied, enable()/didBecomeActive."
+  sampling_or_throttling: >
+    Per-session probabilistic sampler is the ONLY drop mechanism. ONE coin flip at
+    construction, stable for session lifetime: included = entropy() < clamped(sampleRate),
+    entropy from SecRandomCopyBytes(8) top-53-bits (Sampler.swift:35-44). Default
+    sampleRate 1.0 -> included always true. Re-rolled on configure() and session rotation.
+    Forced-emit allowlist bypasses sampling: session.started, session.finalized, app.crash,
+    network_change (Sampler.swift:23-28). METRICS have NO forced-emit — all metrics follow
+    the per-session decision (Sampler.swift:58-61), so at sampleRate<1 an excluded session
+    emits NO frame/memory/long_task/resource/http metrics. rotation-hook synthetic events
+    (recordEventInternal) bypass the sampler entirely.
+    NO rate limiting, NO dedup (except network_change fingerprint dedupe + unknown-eventName
+    allowlist drop + ignoreUrls drop), NO aggregation/rollup found after exhaustive search of
+    recorder/sampler/queue/send paths. In-memory Recorder._buffer is UNBOUNDED (no cap/drop;
+    only batchSize triggers flush).
+
+# ============================================================================
+# 5. Privacy & data handling
+# ============================================================================
+privacy:
+  ip_handling: >
+    No client-side IP collection is IMPLEMENTED. config.resolveLocation (default false) and
+    config.locationProviderUrl (default https://ipapi.co/json/) exist ONLY in EdgeRumConfig +
+    docc — NO code reads resolveLocation, no URLSession call to ipapi.co, no LocationResolver
+    type. Only a host-set literal config.location string reaches the envelope. Device IP still
+    reaches the collector as an inherent property of the HTTPS POST, but nothing IP-related is
+    added client-side. (EdgeRumConfig.swift:67-72; EdgeRum.swift:176)
+  url_sanitization: >
+    NONE by default — http.url is the full absoluteString INCLUDING query + fragment. Stripping
+    only if host supplies config.sanitizeUrl ((URL)->URL, applied to http + resource_timing) or
+    config.ignoreUrls ([NSRegularExpression], a match drops the whole http.request event).
+    (HTTPCapture.swift:305-315)
+  user_identifiers: >
+    All auto-generated, no consent gate. device.id (Keychain, kSecClassGenericPassword,
+    AccessibleAfterFirstUnlockThisDeviceOnly, UserDefaults fallback on Keychain failure);
+    user.id (UserDefaults suite com.edge.rum.session, anonymous, not iCloud); session.id
+    (same suite). identify() adds user.external_id/name/email/phone but does NOT replace user.id.
+    No IDFA/ATT/AdSupport. (KeychainStore.swift; IdentityProvider.swift:104-178)
+  pii_risks: >
+    error.message (= NSError.localizedDescription / String(describing: error)), error.domain,
+    error.userInfo.<key> (all primitives verbatim), error.stack, crash.context.<key> (caller
+    verbatim), crash.exception_reason (NSException reason verbatim), and content inside
+    crash.report_json — all sent UNREDACTED. http.url carries full query string by default.
+    user.name/email/phone sent verbatim when identify() called. Crash sidecar mirrors identity
+    to Library/Caches/edge-rum/last-session.json.
+
+# ============================================================================
+# 6. Public API surface
+# ============================================================================
+api:
+  init_config_options:
+    - "apiKey: String (required, no default)"
+    - "endpoint: URL (required, no default)"
+    - "appName: String? = nil"
+    - "appVersion: String? = nil"
+    - "appPackage: String? = nil"
+    - "appBuild: String? = nil"
+    - "environment: Environment? = nil"
+    - "location: String? = nil"
+    - "resolveLocation: Bool = false        # UNWIRED (see privacy.ip_handling)"
+    - "locationProviderUrl: URL? = https://ipapi.co/json/   # UNWIRED"
+    - "sampleRate: Double = 1.0"
+    - "ignoreUrls: [NSRegularExpression] = []"
+    - "maxQueueSize: Int = 200"
+    - "flushInterval: TimeInterval = 5.0    # STORED BUT UNUSED (no timer flush)"
+    - "batchSize: Int = 30"
+    - "sanitizeUrl: (@Sendable (URL) -> URL)? = nil"
+    - "captureNativeCrashes: Bool = true"
+    - "enableHangDetection: Bool = true"
+    - "hangTimeout: TimeInterval = 5.0"
+    - "captureScreens: Bool = true"
+    - "captureHTTP: Bool = true"
+    - "captureTaps: Bool = true"
+    - "captureRenderingPerformance: Bool = true"
+    - "captureLifecycle: Bool = true         # NOT in CLAUDE.md config block (stale doc)"
+    - "captureNetworkChanges: Bool = true    # NOT in CLAUDE.md config block"
+    - "capturePageLoad: Bool = true          # NOT in CLAUDE.md config block"
+    - "debug: Bool = false"
+    - "init(apiKey: String, endpoint: URL)"
+  custom_event_api: "static func track(_ name: String, attributes: [String: AttributeValue]? = nil) -> eventName custom_event"
+  user_id_api: "static func identify(_ user: UserContext)  where UserContext(id:name:email:phone: all String?)"
+  other_public_methods:
+    - "static func start(_ config: EdgeRumConfig)"
+    - "static func trackScreen(_ name: String, attributes: [String: AttributeValue]? = nil)  -> eventName navigation"
+    - "static func time(_ name: String) -> RumTimer   (RumTimer.end(attributes:) / .cancel(), idempotent)"
+    - "static func captureError(_ error: Error, context: [String: AttributeValue]? = nil)  -> app.crash cause=AppError"
+    - "static func disable()"
+    - "static func enable()"
+    - "static func handleBackgroundEvents(identifier: String, completion: @Sendable @escaping () -> Void)"
+    - "static var sessionId: String { get }"
+    - "static var deviceId: String { get }"
+    - "static var isEnabled: Bool { get }"
+    - "static let sdkVersion: String"
+    - "SwiftUI: View.edgeRumScreen(_:attributes:) -> some View; View.edgeRumTrackTap(_:attributes:) -> some View"
+
+# ============================================================================
+# 7. Feature checklist
+# ============================================================================
+features:
+  session-tracking: {status: done, evidence: "SessionContext.swift, Recorder.swift:284-311", notes: "30-min idle rotation; sequence increments on ACK not per-event"}
+  view-tracking: {status: done, evidence: "UIViewControllerCapture.swift (UIKit swizzle), ViewModifiers.swift (SwiftUI)", notes: "navigation + screen.duration; UIHostingController detected"}
+  error-capture: {status: done, evidence: "EdgeRum.captureError + AppErrorBuilder.swift", notes: "app.crash cause=AppError; message unredacted (PII)"}
+  crash-capture: {status: done, evidence: "PLCrashIntegration.swift (Mach signal + NSException, replay-on-launch)", notes: "app.crash cause=NativeCrash; addresses not symbolicated"}
+  network-capture: {status: done, evidence: "HTTPCapture.swift (URLProtocol + metrics delegate)", notes: "http.request + resource_timing; no default URL sanitization"}
+  custom-events: {status: done, evidence: "EdgeRum.track (custom_event), EdgeRum.time (RumTimer metric)", notes: ""}
+  web-vitals: {status: na, evidence: "no LCP/FCP/CLS/INP/TTFB emitters (grep)", notes: "iOS has no Web Vitals analogue per CLAUDE.md"}
+  app-start: {status: done, evidence: "PageLoadCapture.swift:224", notes: "page_load once/process; cold_start + prewarmed"}
+  anr-detection: {status: na, evidence: "iOS term is hang; see hang-detection", notes: "ANR is Android-only"}
+  hang-detection: {status: done, evidence: "HangDetector.swift:334 + HangEventEncoder.swift", notes: "app.crash cause=Hang; hang.cpu_usage always omitted in prod (cpuProvider nil)"}
+  frame-stats: {status: done, evidence: "FrameSampler.swift:221 (CADisplayLink)", notes: "frame_render_time metric ~1s window"}
+  batching: {status: partial, evidence: "Recorder.enqueue batchSize flush (Recorder.swift:532-543)", notes: "size-triggered only; flushInterval timer NOT implemented"}
+  offline-persistence: {status: done, evidence: "OfflineQueue.swift (file FIFO under Caches/edge-rum/queue)", notes: "cap 200 FILES not events; oldest-first eviction"}
+  retry-backoff: {status: done, evidence: "RetryPolicy.swift:39-115", notes: "[0,2,8,30]s, Retry-After honored cap 60s, 4-attempt then offline"}
+  no-sampling-guarantee: {status: partial, evidence: "Sampler.swift", notes: "default sampleRate 1.0 = no drop; but sampleRate<1 drops per-session incl. ALL metrics (metrics have no forced-emit). Not a hard guarantee."}
+
+# ============================================================================
+# 9. All repos
+# ============================================================================
+inconsistencies_and_surprises: >
+  1. flushInterval (5.0s) is a documented+stored config but NO timer implements it —
+     FlushReason.timer is never emitted; flushes are batchSize/immediate/shutdown only.
+     Events sit in an unbounded in-memory buffer until 30 accumulate or an immediate-flush
+     event fires. (Recorder.swift, TransportSink.swift:16)
+  2. resolveLocation / locationProviderUrl (ipapi.co) are unwired — the config surface
+     exists but no code performs geo lookup or sends device IP client-side.
+  3. Undocumented common attributes vs CLAUDE.md: device.locale/timezone/timezone_offset_min,
+     device.thermal_state/low_power_mode, device.disk_free_mb/disk_total_mb, app.background_refresh,
+     device.dynamic_type/reduce_motion/bold_text/voiceover/increase_contrast, network.interface
+     (F16 power/accessibility/storage enrichment groups). app.background_refresh is a STRING not bool.
+  4. Same eventName, different key sets: "navigation" has 3 emitters (UIKit uses navigation.screen/
+     kind/type + previous_screen; trackScreen uses navigation.name only; SwiftUI uses screen/kind/type).
+     "user.interaction" 2 emitters (UIKit target/target_id/screen vs SwiftUI name). Backend routing by
+     eventName will see inconsistent attribute shapes.
+  5. metricName items reuse dotted event-style names (screen.duration, resource_timing) but ride the
+     wire "metric" discriminator with metricName key + optional scalar `value`.
+  6. Offline cap is FILES (envelopes) not events despite "events" wording in docs — real event ceiling
+     ~ maxQueueSize * batchSize (~6000). No byte cap. In-memory buffer has no cap at all.
+  7. PII sent unredacted: error.message/domain/userInfo, crash.exception_reason, http.url query string
+     by default; no built-in scrubbing.
+  8. session.sequence increments on transport ACK (2xx), not per-event — offline/dropped batches never
+     advance it; a never-acking backend leaves sequence at 0.
+  9. crash.report_json embeds a full JSON report as a STRING attribute (nested data flattened to one
+     string to satisfy primitives-only rule) — large single attribute; addresses not symbolicated.
+  10. PrivacyInfo.xcprivacy is an EMPTY STUB (NSPrivacyAccessedAPITypes = []) while README claims it
+     declares all restricted-reason codes — direct contradiction. EdgeRumOTelBridge is a build-time
+     stub only (no OTelToRecorderAdapter/BridgeBootstrap despite CLAUDE.md repo-structure claim).
+  11. network.effectiveType on cellular is coarse "cellular" (TODO for CTTelephonyNetworkInfo radio type).
+  12. Dependency pin vs resolved drift: opentelemetry-swift-core pinned from:2.4.1 but Package.resolved
+     locks 2.5.0; swift-docc-plugin 1.4.0->1.5.0. podspec declares Apache-2.0 while README badge says TBD.
+
+ci_cd:
+  what_exists: >
+    4 GitHub Actions workflows. ci.yml (push/PR to main): build (release + xcodebuild device/sim),
+    test (swift test + coverage >=80% gate on EdgeRumCore), device matrix (min/mid/new simulators),
+    crash-ui-test (XCUI replay), perf-budget (XCTMetric, advisory continue-on-error), audit
+    (supported-ios + firewall terminology check), pod-lint, sample-build (3 sample apps), docs
+    (README/DocC snippet compile + link check). gitleaks.yml: full-history secret scan.
+    release-please.yml (push main): maintains release PR, bumps VERSION, updates CHANGELOG.
+    release.yml (tag v* only): verify (firewall+tests), xcframework build+SHA256+GH Release attach,
+    cocoapods pod trunk push. release.yml hardcodes Xcode_16.app; ci.yml uses latest-stable.
+  publishes_to: >
+    GitHub Releases (XCFramework zip + .sha256) and CocoaPods trunk. Chain: merge release-please PR
+    -> vX.Y.Z tag + GH Release -> tag push fires release.yml -> XCFramework + pod trunk push. Caveat
+    (documented in release-please.yml): default GITHUB_TOKEN tag pushes do NOT trigger release.yml;
+    needs RELEASE_PLEASE_TOKEN or manual workflow_dispatch.
+
+open_questions:
+  - "PLCrashIntegrationConfig values (topFramesPerThread, eventSizeCapBytes, maxReportBytes) not read this pass — exact native-crash size caps unknown."
+  - "Does the backend (EdgeTelemetryProcessor) accept sdk.platform=ios-native and the F16 enrichment keys / metricName-with-value shape? — cross-repo, not verifiable here (CLAUDE.md flags as open 'Backend asks')."
+  - "Whether the 3 divergent 'navigation' attribute shapes are intended or drift — needs product confirmation."
