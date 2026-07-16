@@ -118,7 +118,7 @@ let package = Package(
         // script for local dev; this target is what consumers download.
         .binaryTarget(
             name: "CrashReporter",
-            url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk/releases/download/1.0.0-alpha.1/CrashReporter.xcframework.zip",
+            url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk/releases/download/1.0.0-alpha.2/CrashReporter.xcframework.zip",
             checksum: "5ce842611f2b49bde2f9f9281e05e3f94d5a009c0f1b59693138da7c9f7d9ca0"
         ),
 
