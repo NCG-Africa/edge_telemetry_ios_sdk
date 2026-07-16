@@ -108,15 +108,18 @@ let package = Package(
 
         // MARK: - Binary target: PLCrashReporter 1.12.0
         //
-        // Vendored under Frameworks/CrashReporter.xcframework. The upstream
-        // release zip nests the xcframework one directory deep, so we cannot
-        // use `.binaryTarget(url:checksum:)` directly — `Tools/fetch-
-        // plcrashreporter.sh` downloads, verifies SHA256 against a pinned
-        // value, and extracts. Run it once after cloning (CI runs it before
-        // every `swift build`).
+        // Hosted as a release asset so external SPM consumers get the
+        // xcframework on resolve — a local `path:` target only works for
+        // repo clones that first run `Tools/fetch-plcrashreporter.sh`, and
+        // the framework is gitignored so it isn't in the release tag.
+        // Microsoft's upstream zip nests the xcframework one dir deep (SPM
+        // requires it at the archive root), so we re-zip at root and attach
+        // it to this repo's GitHub release. Repo clones still use the fetch
+        // script for local dev; this target is what consumers download.
         .binaryTarget(
             name: "CrashReporter",
-            path: "Frameworks/CrashReporter.xcframework"
+            url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk/releases/download/1.0.0-alpha.1/CrashReporter.xcframework.zip",
+            checksum: "5ce842611f2b49bde2f9f9281e05e3f94d5a009c0f1b59693138da7c9f7d9ca0"
         ),
 
         // MARK: - Test targets
