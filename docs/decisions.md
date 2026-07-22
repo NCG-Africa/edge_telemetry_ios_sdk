@@ -1331,3 +1331,50 @@ Two design tensions surfaced during planning:
   for backend team review prior to merge.
 - No new `eventName`. No new `metricName`. No transport change. No
   public API change.
+
+## ADR-014 — iOS↔Processor wire sync: Processor-of-record, manual reconciliation
+
+**Date:** 2026-07-22
+
+**Status:** Accepted. Closes wayfinder map #140.
+
+**Context.** Map #140 pinned five iOS wire changes so the
+EdgeTelemetryProcessor extractors consume iOS output: nav keys
+`to_screen`/`from_screen`/`method` (#143), drop the `screen.duration`
+metric (#144), `memory_usage` value in MB + `memory.pressure_level`
+(#145), add `http.success` + `frame.dropped` and strip the duplicated
+`value` attribute (#146), and wire the real `sdk.version` (#142). The
+iOS contract docs still described the pre-alignment wire, and there was
+no stated rule for who keeps the two repos aligned on the next Processor
+change.
+
+**Decision.**
+
+- **Source of truth: the Processor extractors.** The stance locked in
+  map #140 — *iOS conforms to the Processor of record* — is the standing
+  sync policy, not a one-off. When the Processor's
+  `app/services/parsers/extractors.py` /
+  `app/services/processors/event_processor.py` change and drift the iOS
+  wire, iOS adapts. Neither a shared third-party contract file nor a
+  CI-enforced key manifest is introduced (rejected: both add cross-repo
+  machinery the locked stance doesn't need).
+- **Reconciliation is manual, human-triggered.** The contract owner
+  re-runs a wayfinder reconciliation on iOS whenever Processor extractors
+  change. No automation notices drift for us.
+- **Docs amended now, prose only.** `CLAUDE.md` wire tables/examples and
+  `docs/payload-example.jsonc` were updated in this map to describe the
+  post-alignment (target) wire. `docs/payload-schema.json` is referenced
+  by CLAUDE.md but does not exist — no file to amend.
+  `Tests/Fixtures/golden-batch-ios.json` is **deliberately deferred** to
+  the Swift implementation PR: flipping the golden fixture before the
+  Swift lands would turn the contract test red with no code to match it.
+  Docs+code+fixture flip together in the impl handoff.
+
+**Consequences.**
+
+- The three pinned prose docs now lead the Swift implementation: they
+  are the spec the handoff PR implements against.
+- The golden fixture and the Swift changes are the only remaining wire
+  work, and they are out of this decide-only map's scope.
+- Next Processor extractor change → open a fresh iOS reconciliation map;
+  there is no automated guard, by design.
