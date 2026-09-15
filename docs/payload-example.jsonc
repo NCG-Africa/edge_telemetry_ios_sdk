@@ -10,7 +10,7 @@
   "type": "telemetry_batch",
   "timestamp": "2026-06-14T10:30:00.512Z",
   "location": "Nairobi/Kenya",
-  "batch_size": 5,
+  "batch_size": 4,
   "events": [
 
     // ── navigation (UIKit screen entry) ─────────────────────────────────
@@ -44,39 +44,17 @@
         "user.id": "user_1717100000000_deadbeefcafef00d",
         "sdk.version": "1.0.0",
         "sdk.platform": "ios-native",
-        "navigation.screen": "CartViewController",
-        "navigation.previous_screen": "ProductListViewController",
-        "navigation.type": "viewDidAppear",
+        "navigation.to_screen": "CartViewController",
+        "navigation.from_screen": "ProductListViewController",
+        "navigation.method": "push",
         "navigation.kind": "uikit"
       }
     },
 
-    // ── screen.duration (UIKit screen exit, full dwell time) ────────────
-    {
-      "type": "event",
-      "eventName": "screen.duration",
-      "timestamp": "2026-06-14T10:30:04.456Z",
-      "attributes": {
-        "app.name": "Shop",
-        "app.package_name": "com.example.shop",
-        "app.build_number": "412",
-        "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
-        "device.platform": "ios",
-        "device.model": "iPhone15,3",
-        "device.manufacturer": "Apple",
-        "device.os": "ios",
-        "device.platform_version": "17.4.1",
-        "network.type": "wifi",
-        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "session.start_time": "2026-06-14T10:25:00.002Z",
-        "user.id": "user_1717100000000_deadbeefcafef00d",
-        "sdk.version": "1.0.0",
-        "sdk.platform": "ios-native",
-        "screen.name": "CartViewController",
-        "screen.duration_ms": 4333,
-        "screen.exit_method": "viewWillDisappear"
-      }
-    },
+    // NOTE: iOS does NOT emit a screen.duration event. The Processor
+    // synthesizes screen_duration from every `navigation` event
+    // (event_processor.py:155) — emitting one from iOS would double-count.
+    // See map #140 / decision #144.
 
     // ── http.request (URLSession capture) ───────────────────────────────
     {
@@ -99,6 +77,7 @@
         "http.host": "api.example.com",
         "http.path": "/products",
         "http.status_code": 200,
+        "http.success": true,
         "http.duration_ms": 342,
         "http.request_size": 0,
         "http.response_size": 18244,
@@ -153,6 +132,7 @@
         "user.id": "user_1717100000000_deadbeefcafef00d",
         "sdk.version": "1.0.0",
         "sdk.platform": "ios-native",
+        "frame.dropped": true,
         "frame.max_ms": 33,
         "frame.p95_ms": 28,
         "frame.dropped_count": 1,

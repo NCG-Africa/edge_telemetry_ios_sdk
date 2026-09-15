@@ -244,7 +244,7 @@ and logged when `debug == true`.
 | Signal                                       | `eventName` value                                | Where emitted                                                                 |
 |----------------------------------------------|--------------------------------------------------|-------------------------------------------------------------------------------|
 | UIKit screen entry                           | `navigation`                                     | `EdgeRumCapture/UIViewControllerCapture.swift` (`viewDidAppear` swizzle)      |
-| UIKit screen exit / dwell                    | `screen.duration`                                | same file (`viewWillDisappear` pair)                                          |
+| UIKit screen exit / dwell                    | *(not emitted — Processor synthesizes from `navigation`; see #144)* | —                                                          |
 | SwiftUI screen entry                         | `navigation` (with `navigation.kind = "swiftui"`)| `EdgeRum/SwiftUI/ViewModifiers.swift` (public `.edgeRumScreen` modifier) and  |
 |                                              |                                                  | `UIHostingController` auto-detection in the UIKit swizzle                     |
 | HTTP request                                 | `http.request`                                   | `EdgeRumCapture/HTTPCapture.swift` (URLProtocol + delegate swizzle)           |
@@ -278,9 +278,10 @@ and logged when `debug == true`.
 
 ## Payload examples
 
-A complete 4-event reference batch (`navigation`, `screen.duration`,
-`http.request`, `metric:frame_render_time`) lives in
-`docs/payload-example.jsonc`. All other event shapes — `app.crash`,
+A complete 4-event reference batch (`navigation`, `http.request`,
+`metric:resource_timing`, `metric:frame_render_time`) lives in
+`docs/payload-example.jsonc`. iOS does **not** emit `screen.duration`
+(the Processor synthesizes it from `navigation` — see #144). All other event shapes — `app.crash`,
 `user.profile.update`, `custom_event`, `app_lifecycle`, `page_load`,
 `network_change`, `session.started`, `session.finalized`, and the
 `metric` items from `EdgeRum.time()`, `memory_usage`, `long_task`,
@@ -569,10 +570,11 @@ platform-specific values (`device.platform`, `device.model`,
   }
   ```
 
-- Both emit existing `eventName`s — `navigation` /`screen.duration` and
+- Both emit existing `eventName`s — `navigation` and
   `user.interaction` — with a `navigation.kind = "swiftui"` (or
   `interaction.kind = "tap"`) attribute differentiator. **No new
-  eventName is introduced for SwiftUI.** See `PLAN-iOS.md` § 6.2 and
+  eventName is introduced for SwiftUI.** (No `screen.duration` — the
+  Processor synthesizes dwell from `navigation`; see #144.) See `PLAN-iOS.md` § 6.2 and
   the "Backend asks" item 4.
 - `UIHostingController` is detected by the UIKit swizzle and routes the
   emitted `navigation` through the same allowlisted name.
