@@ -31,9 +31,9 @@ Pod::Spec.new do |s|
                          :tag => s.version.to_s }
 
   s.ios.deployment_target = '14.0'
-  # SwiftPM consumers build at language mode Swift 6 via
-  # `Package.swift`'s `swift-tools-version: 6.0`. CocoaPods consumers
-  # are deliberately pinned to Swift 5.10 because CLAUDE.md states
+  # `Package.swift` uses `swift-tools-version: 6.0` but pins
+  # `swiftLanguageModes: [.v5]`, so SwiftPM consumers also compile in
+  # Swift 5 mode. CocoaPods is pinned to Swift 5.10 because CLAUDE.md states
   # "nothing on our public surface requires Swift 6 strict
   # concurrency" — advertising 6.0 here makes Xcode promote every
   # MainActor-isolation warning to an error under iOS 26 SDK, blocking

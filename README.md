@@ -1,7 +1,7 @@
 # EdgeRum — iOS Real User Monitoring SDK
 
 [![Swift Package Manager](https://img.shields.io/badge/SwiftPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
-[![CocoaPods](https://img.shields.io/badge/CocoaPods-1.0.0--alpha.1-blue.svg)](https://cocoapods.org)
+[![CocoaPods](https://img.shields.io/badge/CocoaPods-1.0.0--alpha.2-blue.svg)](https://cocoapods.org)
 [![Supported iOS](https://img.shields.io/badge/iOS-14.0%2B-blue.svg)](#supported-ios)
 [![License](https://img.shields.io/badge/license-TBD-lightgrey.svg)](#contributing-and-license)
 [![CI](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/actions/workflows/ci.yml)
@@ -14,8 +14,9 @@ interactions captured on iOS apps and shipped as JSON to the EdgeRum
 collector that already serves the web and Android SDKs. The public
 Swift surface is a small, EdgeRum-native vocabulary; the wire is
 JSON-only — no compression or binary framing — and the SDK is
-ATT-neutral, IDFA-free, and ships with a privacy manifest that
-satisfies App Review out of the box.
+ATT-neutral and IDFA-free, and ships a `PrivacyInfo.xcprivacy`
+manifest in every distribution slice. The manifest is currently the
+F1 stub — the restricted-reason declarations land with F20.
 
 ## Supported iOS
 
@@ -90,7 +91,7 @@ host project.
 
 ```swift-skip
 .package(url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git",
-         from: "1.0.0-alpha.1")
+         from: "1.0.0-alpha.2")
 ```
 
 Then add the `EdgeRum` product to your app target's dependencies:
@@ -99,7 +100,7 @@ Then add the `EdgeRum` product to your app target's dependencies:
 .target(
     name: "MyApp",
     dependencies: [
-        .product(name: "EdgeRum", package: "edge-rum-ios")
+        .product(name: "EdgeRum", package: "edge_telemetry_ios_sdk")
     ]
 )
 ```
@@ -109,7 +110,7 @@ Then add the `EdgeRum` product to your app target's dependencies:
 ### CocoaPods
 
 ```ruby
-pod 'EdgeRum', '~> 1.0.0-alpha.1'
+pod 'EdgeRum', '~> 1.0.0-alpha.2'
 ```
 
 ### XCFramework
@@ -480,10 +481,12 @@ constraint at compile time, so it cannot be violated from Swift.
 - **ATT-neutral.** `ATTrackingManager.requestTrackingAuthorization` is
   never called.
 - **Privacy manifest.** [`PrivacyInfo.xcprivacy`](Sources/EdgeRum/Resources/PrivacyInfo.xcprivacy)
-  declares every restricted-reason API the SDK uses:
+  ships in every slice. **It is still the F1 stub** (empty
+  `NSPrivacyAccessedAPITypes`). The declarations it will carry —
   file timestamps (`C617.1`), system boot time (`35F9.1`),
-  disk space (`E174.1`), UserDefaults (`CA92.1`). See
-  [PLAN-iOS.md §10.4](PLAN-iOS.md) for the policy mapping.
+  disk space (`E174.1`), UserDefaults (`CA92.1`) — land with F20;
+  see [PLAN-iOS.md §10.4](PLAN-iOS.md). Until then, host apps must
+  declare these reasons themselves.
 - **Identifiers.** All three identifiers (`device.id`, `session.id`,
   `user.id`) are SDK-owned 8-byte `SecRandomCopyBytes` values stored
   locally only. iCloud Keychain is not used; on modern iOS a Keychain

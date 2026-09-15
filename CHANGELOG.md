@@ -17,6 +17,43 @@ Nothing in this slot yet.
 
 ---
 
+## [1.0.0-alpha.2] — 2026-06-24
+
+Distribution fixes plus the testing & CI feature. No public API change,
+no wire-format change.
+
+### Added
+
+- **F19 — Testing & CI.** Golden-batch snapshot test, crash UI test,
+  three-slot iOS Simulator device matrix (`min` / `mid` / `new`),
+  advisory performance budgets, and an `EdgeRumCore` line-coverage gate
+  at ≥ 80 % (`Tools/check-edge-rum-core-coverage.sh`).
+
+### Fixed
+
+- **SwiftPM distribution.** `CrashReporter.xcframework` is now a
+  `.binaryTarget` pointing at a GitHub release asset, so external
+  consumers resolve the package without first running
+  `Tools/fetch-plcrashreporter.sh`.
+- **CocoaPods distribution.** The podspec installs: subspecs pinned to
+  Swift 5.10, `static_framework`, `Internal-Crash` depends on the
+  upstream `PLCrashReporter` pod, and `EdgeRumVersion.swift` is
+  regenerated from `VERSION` via `prepare_command`.
+- **CI.** Concurrent-install tests stabilized.
+
+### Known limitations
+
+- `PrivacyInfo.xcprivacy` is still the F1 stub — the restricted-reason
+  declarations (`C617.1`, `35F9.1`, `E174.1`, `CA92.1`) land with F20.
+  Host apps must declare those reasons themselves until then.
+- The `EdgeRumOTelBridge` target is not part of the CocoaPods
+  distribution — upstream does not publish the OpenTelemetry pods.
+- Carried over from alpha.1: background `URLSession` traffic is not
+  instrumented; `device.id` rotates on reinstall; performance is
+  unverified on hardware older than iPhone SE 2.
+
+---
+
 ## [1.0.0-alpha.1] — 2026-06-17
 
 First public alpha. Every feature in `PLAN-iOS.md` § F1 – F18 has
