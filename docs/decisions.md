@@ -1378,3 +1378,64 @@ change.
   work, and they are out of this decide-only map's scope.
 - Next Processor extractor change → open a fresh iOS reconciliation map;
   there is no automated guard, by design.
+
+---
+
+## ADR-015 — Distributed trace v3 on iOS: spec lives in `docs/specs/`, nine new wire attributes, five root types
+
+**Date:** 2026-09-15
+
+**Status:** Accepted. Closes wayfinder map #153 (tickets #154–#163, #166).
+
+**Context.** Android shipped distributed trace v3 (map #120), and the
+backend half is live at `EDGETELEMETRYPROCESSORGO@2874607` — seven trace
+columns, an index, and the `rum_action_envelopes` view. iOS had **zero**
+trace code. A naive port fails on iOS ground truth: HTTP capture is
+`URLProtocol`-based and runs on a Foundation queue that has never seen the
+caller's thread, `Clock` is `Date`-only, `launchStart` is `Date()` on first
+reference rather than process start, and Darwin's sleep semantics for
+`CLOCK_MONOTONIC_RAW` are the inverse of Linux's.
+
+**Decision.**
+
+- **The artifact is [`docs/specs/distributed-trace-v3-ios.md`](specs/distributed-trace-v3-ios.md)**,
+  not this entry. That document is implementation-ready and holds every
+  decision with its `file:line` evidence, verified at `b90a869`; this ADR
+  is an index entry, and the spec's §18 maps each section to the ticket
+  that owns it.
+- **Fidelity rule: wire-identical, mechanism free.** Attribute names, the
+  `traceparent.outcome` enum and `trace.root_type` values are frozen to
+  Android's contract; *how* iOS produces them was decided per-ticket on iOS
+  merits. Four iOS-only values were filed and cleared through
+  `EDGETELEMETRYPROCESSORGO#1`: `trace.root_type = resume`,
+  `trace.root_expired`, `interaction.name_source`, and `injected_expired`.
+- **Capture moves to the caller's thread** via an instance-swizzle of
+  `URLSession`'s task-creation family — including the five *private*
+  delegate-carrying selectors async/await dispatches to, discovered at
+  install by `class_copyMethodList` rather than by literal. `URLProtocol`
+  stays as-is for the load and the metrics, and becomes read-only with
+  respect to trace state.
+- **Five root types** — `launch`, `interaction`, `navigation`, `resume`,
+  `request` (accepted by the store, never minted by iOS) — each with a
+  minting site, a lifetime, and a carrying event holding its ids.
+- **Plan-only.** No SDK code merges from map #153. The spec is the
+  handoff; the implementation is a separate effort.
+
+**Consequences.**
+
+- `http.duration_ms` changes meaning: `span.start_time` is stamped at task
+  creation rather than in `startLoading()`, so it now includes caller-side
+  queueing — the interval the map is named after (defect D6).
+- Three prohibitions in the spec (§15) fail **silently** if ignored: a
+  numeric `span.start_time` NULLs the backend column, an `applicationState`
+  guard on the resume mint suppresses 100% of resume roots, and reading the
+  non-expiring `lastRoot` from the capture point fabricates attribution. The
+  spec's guard test (§14.1) enforces the third.
+- Two off-route defects were filed standalone rather than fixed here:
+  **#164** (`HangWatchdog` measures hang duration on `Date`) and **#165**
+  (the internal ephemeral session discards host session config and bypasses
+  host TLS pinning).
+- One overhead finding is not fixable inside the design this map kept: a
+  fresh ephemeral `URLSession` per intercepted request destroys connection
+  reuse, so every span duration this spec produces carries an SDK-induced
+  TLS handshake. Recorded as a measurement caveat, not a blocker.
