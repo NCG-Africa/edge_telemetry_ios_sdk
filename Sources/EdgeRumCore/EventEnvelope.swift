@@ -9,6 +9,7 @@
 //       "location": "City/Country",          // optional, omitted when nil
 //       "batch_size": <events.count>,
 //       "sdk.thread_time_ms": <Int>,         // optional, omitted when nil
+//       "sdk.events_generated": <Int>, …     // F32 health counters, flat
 //       "events": [ ... ]
 //     }
 //
@@ -39,14 +40,25 @@ public struct EventEnvelope: Sendable, Encodable {
     /// Cumulative, session-scoped caller-thread wall-time (ms) spent
     /// inside the Recorder ingress. SDK self-cost; never a delta.
     public let sdkThreadTimeMs: Int?
+    /// F32 health counters, flat `sdk.*` keys encoded beside the
+    /// fixed fields. Cumulative per scope; markers already dropped
+    /// when zero by the producer.
+    public let sdkHealth: [String: AttributeValue]
     public let events: [Event]
 
-    public init(timestamp: Date, location: String?, events: [Event], sdkThreadTimeMs: Int? = nil) {
+    public init(
+        timestamp: Date,
+        location: String?,
+        events: [Event],
+        sdkThreadTimeMs: Int? = nil,
+        sdkHealth: [String: AttributeValue] = [:]
+    ) {
         self.type = "telemetry_batch"
         self.timestamp = timestamp
         self.location = location
         self.batchSize = events.count
         self.sdkThreadTimeMs = sdkThreadTimeMs
+        self.sdkHealth = sdkHealth
         self.events = events
     }
 
@@ -66,7 +78,18 @@ public struct EventEnvelope: Sendable, Encodable {
         try c.encodeIfPresent(location, forKey: .location)
         try c.encode(batchSize, forKey: .batchSize)
         try c.encodeIfPresent(sdkThreadTimeMs, forKey: .sdkThreadTimeMs)
+        var health = encoder.container(keyedBy: HealthKey.self)
+        for (key, value) in sdkHealth {
+            try health.encode(value, forKey: HealthKey(stringValue: key))
+        }
         try c.encode(events, forKey: .events)
+    }
+
+    private struct HealthKey: CodingKey {
+        let stringValue: String
+        init(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
     }
 }
 

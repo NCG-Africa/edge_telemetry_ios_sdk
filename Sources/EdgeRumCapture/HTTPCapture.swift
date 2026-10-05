@@ -871,16 +871,12 @@ internal extension URLSessionConfiguration {
         defer { os_unfair_lock_unlock(swizzleLock) }
         if _swizzled { return }
 
-        guard
-            let original = class_getInstanceMethod(
-                URLSessionConfiguration.self,
-                #selector(getter: URLSessionConfiguration.protocolClasses)
-            ),
-            let replacement = class_getInstanceMethod(
-                URLSessionConfiguration.self,
-                #selector(URLSessionConfiguration.edgerum_swizzled_protocolClasses)
-            )
-        else {
+        guard Swizzle.exchange(
+            URLSessionConfiguration.self,
+            #selector(getter: URLSessionConfiguration.protocolClasses),
+            #selector(URLSessionConfiguration.edgerum_swizzled_protocolClasses),
+            capability: .httpSwizzle
+        ) else {
             os_log(
                 "HTTPCapture could not resolve protocolClasses getter on URLSessionConfiguration",
                 log: HTTPCapture.log,
@@ -888,7 +884,6 @@ internal extension URLSessionConfiguration {
             )
             return
         }
-        method_exchangeImplementations(original, replacement)
         _swizzled = true
     }
 

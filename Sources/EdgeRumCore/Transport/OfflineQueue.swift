@@ -36,13 +36,14 @@ public protocol OfflineQueueing: Sendable {
     @discardableResult
     func enqueue(_ payload: Data, eventCount: Int) -> URL?
 
-    /// Drain the queue sequentially via the supplied closure. The
-    /// closure returns `true` to delete the file (success) or `false`
-    /// to leave it on disk and abort the drain (failure).
+    /// Drain the queue sequentially via the supplied closure, which
+    /// receives each payload and its event count. The closure returns
+    /// `true` to delete the file (success) or `false` to leave it on
+    /// disk and abort the drain (failure).
     ///
     /// Returns the count of files successfully drained.
     @discardableResult
-    func drain(via: (Data) -> Bool) -> Int
+    func drain(via: (Data, Int) -> Bool) -> Int
 
     /// Number of payload files currently on disk.
     var count: Int { get }
@@ -79,16 +80,21 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
     private var directoryEnsured: Bool = false
     private var sequence: UInt64 = 0
     private let clockEpochMs: () -> Int64
+    private let health: SdkHealth
 
+    /// `nil` when `directory` is `nil` — the caller records the
+    /// `offline_queue` capability failure.
     public init?(
         directory: URL? = OfflineQueue.defaultDirectory(),
         fileManager: FileManager = .default,
         maxQueueSize: Int = 200,
         debug: Bool = false,
         log: OSLog = OSLog(subsystem: "com.edge.rum", category: "OfflineQueue"),
-        clockEpochMs: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }
+        clockEpochMs: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+        health: SdkHealth = .shared
     ) {
         guard let directory else { return nil }
+        self.health = health
         self.directory = directory
         self.fileManager = fileManager
         self.maxQueueSize = max(1, maxQueueSize)
@@ -141,8 +147,11 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
     }
 
     @discardableResult
-    public func drain(via: (Data) -> Bool) -> Int {
+    public func drain(via: (Data, Int) -> Bool) -> Int {
         let files = orderedFiles()
+        // A queue left by a previous process counts toward this one's
+        // high-water marks.
+        recordHighWater(files)
         var drained = 0
         for url in files {
             guard let data = try? Data(contentsOf: url) else {
@@ -151,7 +160,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
                 try? fileManager.removeItem(at: url)
                 continue
             }
-            let ok = via(data)
+            let ok = via(data, Self.eventCount(of: url))
             if !ok {
                 break
             }
@@ -208,10 +217,24 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
         let entries = orderedFiles()
         let counts = entries.map(Self.eventCount(of:))
         var total = counts.reduce(0, +)
+        var kept = entries
         for (url, n) in zip(entries.dropLast(), counts) where total > maxQueueSize {
             try? fileManager.removeItem(at: url)
             total -= n
+            kept.removeFirst()
+            health.add(.queueOverflow, n)  // events, not files
         }
+        recordHighWater(kept)
+    }
+
+    /// `sdk.queue_depth_max` (events) and `sdk.storage_bytes_max` from
+    /// the files currently on disk.
+    private func recordHighWater(_ files: [URL]) {
+        health.raise(.queueDepthMax, to: files.reduce(0) { $0 + Self.eventCount(of: $1) })
+        let bytes = files.reduce(0) { sum, url in
+            sum + ((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        health.raise(.storageBytesMax, to: bytes)
     }
 
     /// `<n>` from `<epochMs>-<seq>-<n>.json`; legacy two-part names → 1.

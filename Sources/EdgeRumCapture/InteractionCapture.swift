@@ -164,10 +164,7 @@ public enum InteractionCapture {
     }
 
     private static func swizzle(base: AnyClass, original: Selector, swizzled: Selector) {
-        guard
-            let originalMethod = class_getInstanceMethod(base, original),
-            let swizzledMethod = class_getInstanceMethod(base, swizzled)
-        else {
+        guard Swizzle.exchange(base, original, swizzled, capability: .interactionSwizzle) else {
             os_log(
                 "Could not resolve %{public}@ / %{public}@ on UIWindow — swizzle skipped",
                 log: log,
@@ -177,7 +174,6 @@ public enum InteractionCapture {
             )
             return
         }
-        method_exchangeImplementations(originalMethod, swizzledMethod)
     }
     #endif
 

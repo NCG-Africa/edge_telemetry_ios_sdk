@@ -68,7 +68,7 @@ final class OfflineQueueTests: XCTestCase {
         XCTAssertNotNil(queue.enqueue(Data("a".utf8), eventCount: 1))
         XCTAssertNotNil(queue.enqueue(Data("b".utf8), eventCount: 1))
 
-        let drained = queue.drain { _ in true }
+        let drained = queue.drain { _, _ in true }
         XCTAssertEqual(drained, 2)
         XCTAssertEqual(queue.count, 0)
     }
@@ -82,7 +82,7 @@ final class OfflineQueueTests: XCTestCase {
         XCTAssertNotNil(queue.enqueue(Data("c".utf8), eventCount: 1))
 
         var seen: [Data] = []
-        let drained = queue.drain { payload in
+        let drained = queue.drain { payload, _ in
             seen.append(payload)
             // Succeed on the first two, fail on the third.
             return seen.count < 3
@@ -113,12 +113,42 @@ final class OfflineQueueTests: XCTestCase {
 
     private func makeQueue(
         maxQueueSize: Int,
-        clockEpochMs: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }
+        clockEpochMs: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+        health: SdkHealth = SdkHealth()
     ) -> OfflineQueue {
         OfflineQueue(
             directory: tempDir,
             maxQueueSize: maxQueueSize,
-            clockEpochMs: clockEpochMs
+            clockEpochMs: clockEpochMs,
+            health: health
         )!
+    }
+
+    // MARK: F32 health
+
+    func testOverflowCountsEventsNotFiles() {
+        var epoch: Int64 = 1_717_000_000_000
+        let health = SdkHealth()
+        let queue = makeQueue(maxQueueSize: 50, clockEpochMs: { defer { epoch += 1 }; return epoch }, health: health)
+
+        queue.enqueue(Data(repeating: 0x61, count: 100), eventCount: 30)
+        queue.enqueue(Data(repeating: 0x62, count: 100), eventCount: 30)  // trims the first
+
+        let snap = health.snapshot()
+        XCTAssertEqual(snap["sdk.events_dropped.queue_overflow"], .int(30), "one file overflow = its events")
+        XCTAssertEqual(snap["sdk.queue_depth_max"], .int(30))
+        XCTAssertEqual(snap["sdk.storage_bytes_max"], .int(100))
+    }
+
+    func testDrainHandsEachFilesEventCountAndRecordsHighWater() {
+        let health = SdkHealth()
+        let queue = makeQueue(maxQueueSize: 200, health: health)
+        queue.enqueue(Data("x".utf8), eventCount: 7)
+
+        var counts: [Int] = []
+        queue.drain { _, n in counts.append(n); return true }
+
+        XCTAssertEqual(counts, [7])
+        XCTAssertEqual(health.snapshot()["sdk.queue_depth_max"], .int(7))
     }
 }

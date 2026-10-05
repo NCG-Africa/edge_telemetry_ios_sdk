@@ -105,6 +105,74 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 }
 
+// MARK: - F32 health counters
+
+extension HTTPTransportSinkTests {
+
+    private func threeEvents() -> EventEnvelope {
+        let e = Event.event(name: "navigation", timestamp: Date(), attributes: AttributeBag([:]))
+        return EventEnvelope(timestamp: Date(), location: nil, events: [e, e, e])
+    }
+
+    private func waitUntil(_ condition: @escaping () -> Bool) {
+        let deadline = Date().addingTimeInterval(3)
+        while !condition() && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+    }
+
+    func testSuccessCountsEventsAndBatchesUploaded() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
+                                     apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
+        sink.send(threeEvents(), reason: .immediate)
+        sink.send(threeEvents(), reason: .immediate)
+        waitUntil { health.snapshot()["sdk.batches_uploaded"] == .int(2) }
+
+        XCTAssertEqual(health.snapshot()["sdk.events_uploaded"], .int(6))
+        XCTAssertNil(health.snapshot()["sdk.upload_failures"])
+    }
+
+    func testNonRetryableCountsEventsAndFailure() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        transport.alwaysOutcome = .failure(status: 400, retryAfter: nil)
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
+                                     apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
+        sink.send(threeEvents(), reason: .immediate)
+        waitUntil { health.snapshot()["sdk.events_dropped.non_retryable"] != nil }
+
+        XCTAssertEqual(health.snapshot()["sdk.events_dropped.non_retryable"], .int(3))
+        XCTAssertEqual(health.snapshot()["sdk.upload_failures"], .int(1))
+    }
+
+    func testMissingOfflineQueueCountsEnqueueFailure() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.001, 0.001, 0.001]),
+                                     offlineQueue: nil, apiKey: "edge_t", userAgent: "ua",
+                                     pathObserver: nil, health: health)
+        sink.send(threeEvents(), reason: .immediate)
+        waitUntil { health.snapshot()["sdk.events_dropped.enqueue_failure"] != nil }
+
+        XCTAssertEqual(health.snapshot()["sdk.events_dropped.enqueue_failure"], .int(3))
+        XCTAssertEqual(health.snapshot()["sdk.upload_failures"], .int(4))
+    }
+
+    func testUnencodableEnvelopeCountsEncodeFailure() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
+                                     apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
+        let nan = Event.event(name: "navigation", timestamp: Date(), attributes: AttributeBag(["x": .double(.nan)]))
+        sink.send(EventEnvelope(timestamp: Date(), location: nil, events: [nan, nan]), reason: .immediate)
+        waitUntil { health.snapshot()["sdk.events_dropped.encode_failure"] != nil }
+
+        XCTAssertEqual(health.snapshot()["sdk.events_dropped.encode_failure"], .int(2))
+        XCTAssertTrue(transport.posts.isEmpty)
+    }
+}
+
 // MARK: - Probes
 
 private final class ProbeTransport: BatchSending, @unchecked Sendable {
@@ -166,7 +234,7 @@ private final class InMemoryQueue: OfflineQueueing, @unchecked Sendable {
     }
 
     @discardableResult
-    func drain(via: (Data) -> Bool) -> Int {
+    func drain(via: (Data, Int) -> Bool) -> Int {
         var drained = 0
         while true {
             lock.lock()
@@ -175,7 +243,7 @@ private final class InMemoryQueue: OfflineQueueing, @unchecked Sendable {
                 return drained
             }
             lock.unlock()
-            let ok = via(next)
+            let ok = via(next, 1)
             if !ok { return drained }
             lock.lock()
             if !_payloads.isEmpty { _payloads.removeFirst() }

@@ -221,12 +221,15 @@ public enum HangDetector {
 
         if let createdObserver {
             CFRunLoopAddObserver(CFRunLoopGetMain(), createdObserver, .commonModes)
-        } else if debug {
-            os_log(
-                "HangDetector: CFRunLoopObserverCreateWithHandler returned nil — heartbeat disabled",
-                log: log,
-                type: .info
-            )
+        } else {
+            SdkHealth.shared.fail(.hangObserver)
+            if debug {
+                os_log(
+                    "HangDetector: CFRunLoopObserverCreateWithHandler returned nil — heartbeat disabled",
+                    log: log,
+                    type: .info
+                )
+            }
         }
 
         let thread = HangWatchdogThread(tickInterval: tickIntervalSeconds)
