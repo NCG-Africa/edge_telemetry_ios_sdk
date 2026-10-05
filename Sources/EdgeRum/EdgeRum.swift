@@ -142,6 +142,10 @@ public enum EdgeRum {
             capturing: config.captureBreadcrumbs,
             url: config.captureBreadcrumbs ? Breadcrumbs.defaultURL() : nil
         )
+        // F36 — actions open when the previous process died; read and
+        // deleted before this launch persists its own.
+        let priorActions = Actions.takePrior()
+        Actions.shared.configure(url: Actions.defaultURL())
 
         if let realRecorder = Recorder.shared as? Recorder {
             realRecorder.installPersistedStores(
@@ -221,6 +225,7 @@ public enum EdgeRum {
             // `app.hang` + `hang.terminated`. Before this launch's
             // watchdog can write a new record.
             HangDetector.replayPending(recorder: realRecorder, sidecarContents: priorSidecar)
+            replayPriorActions(priorActions, sidecarContents: priorSidecar, recorder: realRecorder)
             // F33 — how the previous process ended, on `session.started`.
             realRecorder.setLaunchEvidence(
                 PreviousSession.attributes(prior: priorSidecar, crashed: replayedCrash)
@@ -421,6 +426,25 @@ public enum EdgeRum {
         return timer
     }
 
+    /// Start an action — something the user is trying to do, such as
+    /// `"checkout"` — and return its handle. Call `complete()` or
+    /// `fail(reason:)` on it when the action ends. Records an
+    /// `action.started` event now and an `action.ended` event with the
+    /// outcome later. Keep `name` to a small fixed set: past 50
+    /// distinct names in a session, new names are recorded as
+    /// `"_other"`.
+    ///
+    /// If called before `start(_:)`, an already-ended handle is
+    /// returned and nothing is recorded.
+    public static func startAction(_ name: String) -> RumAction {
+        RumAction(
+            name: name,
+            recorder: Recorder.shared,
+            actions: .shared,
+            live: requireStarted("startAction")
+        )
+    }
+
     /// Report a thrown `Error` as an `app.error` event. It follows
     /// `sampleRate` and the normal flush cadence — it never forces an
     /// upload. The error's type, domain, code,
@@ -532,6 +556,21 @@ public enum EdgeRum {
     }
 
     // MARK: Internal helpers
+
+    /// F36 — actions open when the previous process died, each as
+    /// `action.ended` `abandoned` / `process_death` on the prior session's
+    /// identity (event keys win). Like hang replay, they pass this launch's
+    /// sampler, not the dead session's.
+    internal static func replayPriorActions(
+        _ prior: [[String: AttributeValue]],
+        sidecarContents: [String: AttributeValue]?,
+        recorder: Recording
+    ) {
+        let identity = PLCrashIntegration.replayIdentity(sidecarContents: sidecarContents)
+        for attrs in prior {
+            recorder.recordEvent(name: "action.ended", attributes: attrs.merging(identity) { own, _ in own })
+        }
+    }
 
     private static func requireStarted(_ method: String) -> Bool {
         stateLock.lock()

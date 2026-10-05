@@ -24,6 +24,22 @@ final class CrashSidecarReaderTests: XCTestCase {
         XCTAssertNil(snapshot.extras[SessionSidecar.cleanExitKey])
     }
 
+    /// F36: `process_death` actions replay on the sidecar's identity.
+    func testReplayIdentityCarriesPriorSessionAndVolatileAction() {
+        let attrs = PLCrashIntegration.replayIdentity(sidecarContents: [
+            "session.id": .string("session_1717234870002_ff009988aabbccdd_ios"),
+            "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios"),
+            "action.id": .string("action_1717234876000_0123456789abcdef")
+        ])
+        XCTAssertEqual(attrs["session.id"], .string("session_1717234870002_ff009988aabbccdd_ios"))
+        XCTAssertEqual(attrs["action.id"], .string("action_1717234876000_0123456789abcdef"))
+        XCTAssertTrue(PLCrashIntegration.replayIdentity(sidecarContents: nil).isEmpty)
+        XCTAssertTrue(PLCrashIntegration.replayIdentity(sidecarContents: [
+            "session.id": .string("not-a-session"),
+            "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios")
+        ]).isEmpty, "malformed identity → empty")
+    }
+
     // MARK: - Happy path
 
     func testReadsValidIdentitiesAndExtras() throws {

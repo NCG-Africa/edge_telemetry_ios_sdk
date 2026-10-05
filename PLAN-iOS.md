@@ -1552,6 +1552,16 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     (d) Periodic items are absent while the app is not active, on Low
     Power Mode, or at thermal `serious`+ — disambiguate gaps with
     `device.low_power_mode` / `device.thermal_state`. RN: none.
+17. **F36 action lifecycle (#223).** Two new `eventName`s,
+    `action.started` and `action.ended` — **allowlist them before this
+    ships**, unknown names are dropped. `action.id` (rider on every event
+    while an action is open) is **not** `rum.action.id` (a trace-root
+    id): different ids, different lifetimes. `action.outcome` =
+    `completed` / `failed` / `abandoned` (+ `action.abandon_reason` =
+    `rotation` / `process_death` / `timeout`); Apdex is computed
+    downstream from duration (`ended − started` timestamps) + outcome.
+    Catalogue §5.14, ADR-027. RN: a handle-shaped API across the bridge
+    (id mapping).
 
 ---
 

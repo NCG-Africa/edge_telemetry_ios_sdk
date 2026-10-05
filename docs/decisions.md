@@ -1968,3 +1968,63 @@ its own enum (C1/C7).
    transitions, it is wired only when `captureNetworkChanges` is on.
 5. **Links `CoreTelephony`** (iOS + Catalyst); no privacy-manifest entry —
    none of the APIs are on the required-reason list.
+
+---
+
+## ADR-027 — Action lifecycle (F36): a stack beside the rider box, its own file, abandon at three points
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 12 of `docs/specs/rum-coverage-roadmap.md` (#223),
+W5 (#193). Hosts need "what the user was trying to do" with an outcome —
+the raw material for Apdex — without the SDK guessing at abandonment.
+
+**Decision.**
+
+1. **API.** `EdgeRum.startAction(_:) -> RumAction`; `complete()` /
+   `fail(reason:)`. `RumTimer`'s `settled`-lock idempotency, copied; no
+   `cancel()` (an action is always closed by something). Before
+   `start()` the handle is already settled.
+2. **Two events**, `action.started` / `action.ended` (+ `action.outcome`).
+   Allowlist 13 → 15. Both follow session sampling.
+3. **Ordered stack** in `EdgeRumCore.Actions`, behind a plain `NSLock`,
+   mutated only on start / end / background transitions. The top's
+   `action.id` (`action_<epochMs>_<16 hex>`) is published to the `Riders`
+   box, so the per-event read never takes the stack lock. `end` removes
+   by identity; the rider falls back to the new top.
+4. **The handle touches the session before every stack mutation**
+   (`Recording.touchSession()`). A rotation due at `startAction` abandons
+   the old stack before the new action joins it; one due at `complete()`
+   (an action left open across a long suspend) closes it as `rotation`,
+   and the completion becomes a no-op — an action never ends in a later
+   session than it started.
+5. **Abandonment at three points only.** Rotation (inside the Recorder's
+   rotation hook, before `session.finalized`, on the ending session's
+   context and sampling decision), next launch (`process_death`), and a
+   600 s wall-clock leak guard (`timeout`, one `asyncAfter` per handle
+   that holds it until it fires). Backgrounding and screen exit are
+   never triggers.
+6. **Persistence: own file, not the sidecar's volatile zone.** The
+   volatile zone is a flat bag of riders that `CrashSidecarReader`
+   splats onto replayed crashes; a whole stack does not fit it. The
+   stack goes to `Library/Caches/edge-rum/open-actions.json`
+   (coalesced, best-effort, deleted when empty); only the top
+   `action.id` rides the volatile zone, so a replayed crash carries it.
+   `start()` reads + deletes the file before this launch writes it, and
+   closes each entry on the sidecar's identity
+   (`PLCrashIntegration.replayIdentity`) and the dead process's riders
+   (never stamped with live ones). Known ceilings, shared with hang
+   replay: the replay passes **this** launch's sampler roll, not the dead
+   session's; and a crash inside the coalescing window right after
+   `startAction` loses the action, leaving an `action.started` with no
+   `action.ended`.
+7. **Background hops** are counted on the `app.state` transition into
+   `background` and timed on `CLOCK_MONOTONIC_RAW` (keeps counting
+   through sleep). A hop open at process death is lost from
+   `background_duration_ms`; its count is kept.
+8. **Name cap = 50** distinct names per session; overflow → `_other`,
+   `action.name.dropped` = distinct names lost. Reset on rotation; a
+   session continued across launches starts a fresh set.
+

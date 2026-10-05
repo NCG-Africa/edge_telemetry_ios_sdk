@@ -74,6 +74,9 @@ public protocol Recording: AnyObject, Sendable {
     /// F11's `NetworkPathCapture` calls this on every NWPath transition.
     func refreshNetworkContext(_ context: NetworkContext)
 
+    /// Bump last-active, emitting a due session rotation now (F36).
+    func touchSession()
+
     /// Forward an offline-queue drain request to the installed
     /// transport. Called from `EdgeRum.enable()` and F11's
     /// `didBecomeActive` lifecycle hook.
@@ -108,6 +111,10 @@ public extension Recording {
 
     /// Default no-op; the real `Recorder` overrides this.
     func clearUser() { }
+
+    /// Bump last-active, rotating the session if it is due (F36).
+    /// Default no-op; the real `Recorder` overrides this.
+    func touchSession() { }
 
     /// Default no-op; the real `Recorder` overrides this.
     func resetIdentity() { }

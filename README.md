@@ -328,6 +328,19 @@ func recipeTime(perform: (@escaping () -> Void) -> Void) {
 }
 ```
 
+### Track an action
+
+```swift
+import EdgeRum
+
+func recipeAction(submit: (@escaping (Bool) -> Void) -> Void) {
+    let checkout = EdgeRum.startAction("checkout")
+    submit { ok in
+        if ok { checkout.complete() } else { checkout.fail(reason: "payment_declined") }
+    }
+}
+```
+
 ### Capture a handled error
 
 ```swift

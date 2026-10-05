@@ -203,6 +203,7 @@ public enum ContextObservers {
             tokens.append(nc.addObserver(forName: name, object: nil, queue: .main) { _ in
                 riders.setAppState(state)
                 riders.setOrientation(interfaceOrientation())
+                Actions.shared.noteAppState(state)  // F36 background hops
             })
         }
         // F33 — the only clean exit iOS announces.
@@ -222,7 +223,9 @@ public enum ContextObservers {
         })
         let seed = {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-            riders.setAppState(appStateName(UIApplication.shared.applicationState))
+            let state = appStateName(UIApplication.shared.applicationState)
+            riders.setAppState(state)
+            Actions.shared.noteAppState(state)  // F36: a background launch
             riders.setOrientation(interfaceOrientation())
         }
         if Thread.isMainThread { seed() } else { DispatchQueue.main.async(execute: seed) }

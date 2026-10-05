@@ -75,6 +75,11 @@ final class HTTPTransportSinkTests: XCTestCase {
         sink.drainOfflineQueue()
 
         XCTAssertTrue(transport.waitForPosts(count: 2, timeout: 2))
+        // The drain removes each file after its POST returns, so the last
+        // removal trails the last post — wait for it, don't race it.
+        let drained = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in queue.payloads.isEmpty }, object: nil)
+        wait(for: [drained], timeout: 2)
         XCTAssertEqual(queue.payloads.count, 0, "Queue should be empty after successful drain")
     }
 
