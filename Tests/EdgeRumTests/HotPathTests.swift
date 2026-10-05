@@ -98,7 +98,7 @@ final class HotPathTests: XCTestCase {
         // 3. setUser
         recorder.setUser(RecorderUser(id: "ext-1", name: "Ann", email: "a@x.io", phone: "+254"))
         assertSiteWrote("setUser")
-        XCTAssertEqual(file.read()?["user.name"], .string("Ann"))
+        XCTAssertNil(file.read()?["user.name"], "host identity is never mirrored (F27)")
 
         // 4. idle rotation
         let before = recorder.currentSessionId

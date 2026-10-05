@@ -66,8 +66,10 @@ subclass inherits it, and emits exactly once per `.ended` touch.
 
 What's captured: `interaction.kind`, `interaction.target` (the
 reflected class name of the resolved target view), `interaction.target_id`
-(the `accessibilityIdentifier`, or for `UIButton` the current title),
-and `interaction.screen` (the current screen name from the navigation
+(the `accessibilityIdentifier`; a `UIButton`'s current title only when
+``EdgeRumConfig/captureButtonTitles`` is `true`), `interaction.name_source`
+(`accessibility_identifier`, `button_title`, or `none` when no label was
+sent), and `interaction.screen` (the current screen name from the navigation
 pointer; omitted when no screen has appeared yet).
 
 Secure-entry text fields are never recorded — if the tap's responder

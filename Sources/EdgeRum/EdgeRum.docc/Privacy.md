@@ -21,9 +21,32 @@ EdgeRum owns three identifiers, all generated locally:
 | `session.id` | UserDefaults suite `com.edge.rum.session`   | Rotates after 30 minutes of inactivity or on cold start. |
 | `user.id`    | UserDefaults suite `com.edge.rum.session`   | SDK-owned anonymous id. `EdgeRum.identify(_:)` attaches host-app `user.name` / `user.email` / `user.phone` as additional attributes but **does not** change this id. |
 
-All three are 8 bytes of `SecRandomCopyBytes` entropy formatted
-`prefix_<epochMs>_<16 hex>_ios`. They are never sent to advertising
-networks; they are never persisted to iCloud Keychain.
+All three carry 8 bytes of `SecRandomCopyBytes` entropy as 16 hex
+characters: `device_<epochMs>_<16 hex>_ios`,
+`session_<epochMs>_<16 hex>_ios`, and `user_<epochMs>_<16 hex>` (no
+`_ios` suffix). They are never sent to advertising networks; they are
+never persisted to iCloud Keychain.
+
+## User identity controls
+
+- ``EdgeRum/identify(_:)`` attaches `user.name`, `user.email`,
+  `user.phone` and your own user id to later events, verbatim — no
+  hashing or truncation. Calling it is your assertion that you have the
+  user's consent.
+- ``EdgeRum/clearUser()`` detaches that profile. Call it on logout:
+  `identify(_:)` merges, so it cannot express "a different person" on
+  its own.
+- ``EdgeRum/resetIdentity()`` generates a new `device.id` and `user.id`
+  and detaches the profile. Wire it to a user's data-deletion request;
+  delete the old ids on your backend.
+- ``EdgeRum/disable()`` is the consent lever: it halts capture and
+  sending, and keeps already-queued files on disk. It also stops hang
+  detection, and ``EdgeRum/enable()`` does not restart it — hang
+  detection returns on the next launch.
+
+The profile fields are kept in memory only. They are not written to the
+crash-recovery file, so a crash reported on the next launch carries
+`user.id` but not the name, email, or phone.
 
 ## Restricted-reason APIs
 
@@ -63,14 +86,27 @@ and UserDefaults containers do.
 ## What we send
 
 Every event carries a flat `attributes` map of primitives only —
-`String`, `Int`, `Double`, `Bool`. No URL path components are added
-beyond what the host app generates through its own `URLSession` calls;
-URL sanitisation hooks let consumers redact further.
+`String`, `Int`, `Double`, `Bool`. Request and response headers,
+cookies and bodies are never read. HTTP requests are recorded with
+their full URL today, query string included; use
+``EdgeRumConfig/sanitizeUrl`` to strip sensitive query parameters and
+path segments. A future release drops the full URL and keeps only host
+and path.
 
-The reference payload — every field that may appear on the wire — lives
-in [`docs/payload-example.jsonc`](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/main/docs/payload-example.jsonc)
-and [`docs/payload-example.jsonc`](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/main/docs/payload-example.jsonc)
-in the repo root.
+Taps are labelled with the control's `accessibilityIdentifier`. A
+button's on-screen title is used only when you opt in with
+``EdgeRumConfig/captureButtonTitles``; taps that land in a secure text
+field are never recorded.
+
+``EdgeRumConfig/resolveLocation`` and
+``EdgeRumConfig/locationProviderUrl`` are not wired up: the SDK never
+contacts a location provider and never sends the device IP to a third
+party. Both settings will be removed; set ``EdgeRumConfig/location``
+yourself.
+
+Every key that may appear on the wire, with its personal-data class,
+and the list of identifiers the SDK never collects, live in the
+[data catalogue](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/main/docs/catalogue/ios-data-catalogue.md).
 
 ## Data retention and the offline queue
 
@@ -79,7 +115,10 @@ files under `Library/Caches/edge-rum/queue/` for later replay. The
 cache directory is not backed up to iCloud and is purged by the OS
 under storage pressure; the queue is capped at
 ``EdgeRumConfig/maxQueueSize`` (default 200 events) with oldest-file-
-first overflow. Nothing else is persisted to disk by the SDK.
+first overflow. The only other file is
+`Library/Caches/edge-rum/last-session.json`, which holds the current
+session, device and anonymous user ids so a crash can be attributed on
+the next launch.
 
 ## Sample privacy disclosure
 

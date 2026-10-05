@@ -56,19 +56,15 @@ public struct EdgeRumConfig: Sendable {
     // MARK: Location
 
     /// Optional batch-level location string in `City/Country` form
-    /// (e.g. `"Nairobi/Kenya"`). Set explicitly or let
-    /// `resolveLocation = true` populate it once at startup from
-    /// `locationProviderUrl`.
+    /// (e.g. `"Nairobi/Kenya"`). Sent as-is on every batch.
     public var location: String?
 
-    /// If `true`, the SDK calls `locationProviderUrl` once on init,
-    /// caches the resolved `"City/Country"` for 24 hours in
-    /// `UserDefaults`. Off by default — opt in only.
+    /// Not wired up: setting it has no effect and the SDK makes no
+    /// location request. Will be removed — set `location` yourself.
     public var resolveLocation: Bool = false
 
-    /// Provider used when `resolveLocation == true`. Defaults to
-    /// ipapi.co; replace with your own service to avoid sending the
-    /// device IP to a third party.
+    /// Not wired up: the SDK never contacts this URL. Will be removed
+    /// together with `resolveLocation`.
     public var locationProviderUrl: URL? = URL(string: "https://ipapi.co/json/")
 
     // MARK: Sampling + queuing
@@ -118,6 +114,13 @@ public struct EdgeRumConfig: Sendable {
 
     /// Capture top-level tap interactions. Default `true`.
     public var captureTaps: Bool = true
+
+    /// Use a button's on-screen title as the tap label when the button
+    /// has no `accessibilityIdentifier`. Default `false`: on-screen text
+    /// is app content and can contain personal data, so by default an
+    /// un-annotated button is recorded with no label. Set
+    /// `accessibilityIdentifier` on the controls you want named instead.
+    public var captureButtonTitles: Bool = false
 
     /// Capture continuous performance signals: per-second frame render
     /// time (max / p95 / dropped count), 10-second memory usage polls

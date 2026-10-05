@@ -59,16 +59,21 @@ final class SessionSidecarTests: XCTestCase {
         XCTAssertNil(read?["app.name"])
     }
 
-    func testWritesOptionalUserFieldsWhenPresent() {
+    func testNeverWritesHostIdentityFields() {
         let sidecar = makeSidecar()
         var bag = AttributeBag()
         bag.set("session.id", .string("session_1_aaaaaaaaaaaaaaaa_ios"))
         bag.set("user.id", .string("user_1_bbbbbbbbbbbbbbbb"))
+        bag.set("user.name", .string("Ann"))
         bag.set("user.email", .string("a@b.com"))
+        bag.set("user.phone", .string("+254"))
         sidecar.write(snapshot: bag)
 
         let read = sidecar.read()
-        XCTAssertEqual(read?["user.email"], .string("a@b.com"))
+        XCTAssertEqual(read?["user.id"], .string("user_1_bbbbbbbbbbbbbbbb"))
+        XCTAssertNil(read?["user.name"])
+        XCTAssertNil(read?["user.email"])
+        XCTAssertNil(read?["user.phone"])
     }
 
     // MARK: Overwrite semantics

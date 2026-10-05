@@ -23,4 +23,6 @@ public enum RecordedCall: Sendable, Equatable {
     case event(name: String, attributes: [String: AttributeValue])
     case performance(name: String, attributes: [String: AttributeValue])
     case setUser(RecorderUser)
+    case clearUser
+    case resetIdentity
 }

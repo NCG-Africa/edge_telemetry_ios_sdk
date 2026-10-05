@@ -65,13 +65,12 @@ URL is reflected on both the `http.request` event and the companion
 ## Location
 
 ``EdgeRumConfig/location`` sets the batch envelope's `location` field
-to a literal `"City/Country"` string. Set ``EdgeRumConfig/resolveLocation``
-to `true` to let the SDK call ``EdgeRumConfig/locationProviderUrl``
-once at startup and cache the result for 24 hours in `UserDefaults`.
+to a literal `"City/Country"` string.
 
-> Note: `resolveLocation = true` sends the device IP to a third party
-> (default `https://ipapi.co/json/`). Disable it or supply your own
-> provider to keep traffic on your infrastructure.
+> Note: ``EdgeRumConfig/resolveLocation`` and
+> ``EdgeRumConfig/locationProviderUrl`` are not wired up — setting them
+> has no effect and no request is made. They will be removed; set
+> `location` yourself.
 
 ## Capture toggles
 
@@ -81,6 +80,9 @@ that only want a subset of the signals:
 - ``EdgeRumConfig/captureScreens`` — UIKit screen entry/exit swizzle.
 - ``EdgeRumConfig/captureHTTP`` — `URLSession` capture.
 - ``EdgeRumConfig/captureTaps`` — top-level tap capture.
+- ``EdgeRumConfig/captureButtonTitles`` — default `false`. Opt in to
+  labelling taps on buttons without an `accessibilityIdentifier` with
+  their on-screen title.
 - ``EdgeRumConfig/captureRenderingPerformance`` — frame render time,
   memory, long-task samplers.
 - ``EdgeRumConfig/captureLifecycle`` — foreground / background / will-

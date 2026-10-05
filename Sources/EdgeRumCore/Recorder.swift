@@ -112,6 +112,10 @@ public final class Recorder: Recording, @unchecked Sendable {
     private var _buffer: [Event] = []
     private var _deviceId: String
 
+    /// Persisted identity store, kept so `resetIdentity()` regenerates
+    /// the persisted ids. `nil` until `installPersistedStores`.
+    private var identityProvider: IdentityProvider?
+
     /// Re-entrancy guard so synthetic `session.finalized` /
     /// `session.started` emissions during a mid-event rotation don't
     /// re-touch the session manager (which would recurse).
@@ -205,6 +209,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.lock()
         self.sessionManager = revivedManager
         self._deviceId = snapshot.deviceId
+        self.identityProvider = identityProvider
         self.sidecar = sidecar
         stateLock.unlock()
 
@@ -421,6 +426,25 @@ public final class Recorder: Recording, @unchecked Sendable {
         recordEvent(name: "user.profile.update", attributes: attrs)
     }
 
+    /// Non-merging replace: drops `user.name` / `user.email` /
+    /// `user.phone`, keeps the SDK-owned `user.id`.
+    public func clearUser() {
+        context.refreshUser(UserContextSnapshot(id: context.currentUser().id))
+        writeSidecar()
+    }
+
+    /// Erasure hook: regenerates the persisted `device.id` and `user.id`
+    /// and drops host identity. The session is not rotated.
+    public func resetIdentity() {
+        stateLock.lock(); let provider = identityProvider; stateLock.unlock()
+        let deviceId = provider?.regenerateDeviceId() ?? DeviceIdentitySnapshot.newId(at: _clock.now)
+        let userId = provider?.regenerateUserId() ?? UserContextSnapshot.newAnonymousId(at: _clock.now)
+        stateLock.lock(); _deviceId = deviceId; stateLock.unlock()
+        context.refreshDeviceIdentity(DeviceIdentitySnapshot(id: deviceId))
+        context.refreshUser(UserContextSnapshot(id: userId))
+        writeSidecar()
+    }
+
     // MARK: Flush
 
     /// Build an envelope from the current buffer and hand it to the
@@ -492,9 +516,10 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     // MARK: Internals
 
-    /// Mirror identity to the crash sidecar. Called only from the five
+    /// Mirror identity to the crash sidecar. Called only from the
     /// identity-mutation sites: `installPersistedStores`, `start()`,
-    /// `setUser`, idle rotation, `didAckBatch`.
+    /// `setUser`, `clearUser`, `resetIdentity`, idle rotation,
+    /// `didAckBatch`.
     /// Snapshot and write under one lock so concurrent sites (ACK on
     /// the transport thread vs `setUser` on the caller) cannot land a
     /// stale snapshot last.

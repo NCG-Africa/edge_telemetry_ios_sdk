@@ -54,14 +54,13 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
     /// stamp. We intentionally omit transient values (network state,
     /// battery level) because the replayed crash event should carry
     /// the *prior* session's identity, not its network state.
+    /// Host-supplied `user.name` / `user.email` / `user.phone` are
+    /// never mirrored (F27) — they would sit on disk in plaintext.
     public static let mirroredKeys: Set<String> = [
         "session.id",
         "session.start_time",
         "session.sequence",
         "user.id",
-        "user.name",
-        "user.email",
-        "user.phone",
         "device.id",
         "sdk.version",
         "sdk.platform"
