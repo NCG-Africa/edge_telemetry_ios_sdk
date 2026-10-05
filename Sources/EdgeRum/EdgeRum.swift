@@ -207,16 +207,24 @@ public enum EdgeRum {
         // recorder (which immediately flushes). Skipped here for any
         // host swap-in test probe — replay only makes sense against
         // the real Recorder pipeline.
-        if config.captureNativeCrashes, let realRecorder = Recorder.shared as? Recorder {
+        if let realRecorder = Recorder.shared as? Recorder {
             // The Recorder drops events while disabled, and replay runs
             // before `start()` enables it — open the gate first.
             realRecorder.setEnabled(true)
-            PLCrashIntegration.replayIfNeeded(
+            let crashed = config.captureNativeCrashes && PLCrashIntegration.replayIfNeeded(
                 recorder: realRecorder,
                 sidecarContents: priorSidecar,
                 priorBreadcrumbs: config.captureBreadcrumbs ? priorBreadcrumbs : nil,
                 config: PLCrashIntegrationConfig(),
                 debug: config.debug
+            )
+            // F33 — a stall the previous process died in, as
+            // `app.hang` + `hang.terminated`. Before this launch's
+            // watchdog can write a new record.
+            HangDetector.replayPending(recorder: realRecorder, sidecarContents: priorSidecar)
+            // F33 — how the previous process ended, on `session.started`.
+            realRecorder.setLaunchEvidence(
+                PreviousSession.attributes(prior: priorSidecar, crashed: crashed)
             )
         }
 
@@ -283,7 +291,13 @@ public enum EdgeRum {
         if config.captureRenderingPerformance {
             FrameSampler.install(debug: config.debug)
             MemorySampler.install(debug: config.debug)
-            RunLoopObserverCapture.install(debug: config.debug)
+            // F33 disjoint rungs: a stall at or past the hang threshold
+            // is an `app.hang`, not a `long_task`.
+            RunLoopObserverCapture.install(
+                debug: config.debug,
+                ceilingMs: config.enableHangDetection
+                    ? HangDetector.effectiveThreshold(config.hangTimeout) * 1000 : nil
+            )
         }
 
         // F11 — install lifecycle + connectivity capture. Idempotent;
@@ -407,12 +421,16 @@ public enum EdgeRum {
     /// entries of `userInfo` are flattened into wire attributes
     /// automatically. A snapshot of the call-site stack — captured
     /// here, synchronously, before any queue handoff — is attached
-    /// as `error.stack`. Supply additional caller context with
-    /// `context:`; those keys are prefixed `crash.context.` on the
-    /// wire so they never collide with the standard `error.*`
-    /// payload.
+    /// as `error.stack`. Say what kind of failure this was with
+    /// `type:` — a free string of your choosing (for example
+    /// `"decoding_error"`), sent as `error_type` and capped at 128
+    /// UTF-8 bytes; the SDK never classifies errors itself. Supply
+    /// additional caller context with `context:`; those keys are
+    /// prefixed `crash.context.` on the wire so they never collide
+    /// with the standard `error.*` payload.
     public static func captureError(
         _ error: Error,
+        type: String? = nil,
         context: [String: AttributeValue]? = nil
     ) {
         guard requireStarted("captureError") else { return }
@@ -422,6 +440,7 @@ public enum EdgeRum {
         let recorder = Recorder.shared
         let attrs = AppErrorBuilder.build(
             error: error,
+            type: type,
             context: context ?? [:],
             stack: stack,
             debug: recorder.debug

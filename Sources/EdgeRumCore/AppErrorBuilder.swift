@@ -13,6 +13,8 @@
 //     offset format), whole-frame capped at 4096 B, plus
 //     `error.stack.truncated` (bytes removed) and `error.binary_images`
 //   - `crash.context.<key>` prefix on caller-supplied context
+//   - `error_type` — host-supplied free string (F33), capped at
+//     `maxErrorTypeBytes`; the SDK classifies nothing
 //
 // Stack capture itself MUST happen at the public call site
 // (`EdgeRum.captureError`) — by the time the builder runs the bag is
@@ -33,10 +35,16 @@ public enum AppErrorBuilder {
     /// stack can't balloon a batch.
     public static let maxStackBytes: Int = 4_096
 
+    /// `error_type` cap in UTF-8 bytes — W6's label constant, as
+    /// `screen.name`.
+    public static let maxErrorTypeBytes: Int = 128
+
     /// Build the full wire-attribute bag for an `app.error` event.
     ///
     /// - Parameters:
     ///   - error: the value reported via `EdgeRum.captureError`.
+    ///   - type: host-supplied kind of failure → `error_type`. `nil` or
+    ///     empty omits the key.
     ///   - context: caller-supplied context. Keys are prefixed with
     ///     `crash.context.` on the wire (PLAN-iOS.md §F13/T13.1).
     ///   - stack: frames captured at the public call site via
@@ -46,6 +54,7 @@ public enum AppErrorBuilder {
     ///     entries are logged via `os_log`.
     public static func build(
         error: Error,
+        type errorType: String? = nil,
         context: [String: AttributeValue],
         stack: [StackFrame],
         debug: Bool
@@ -84,6 +93,10 @@ public enum AppErrorBuilder {
         }
         if let images = capped.binaryImages {
             attrs["error.binary_images"] = .string(images)
+        }
+
+        if let errorType, !errorType.isEmpty {
+            attrs["error_type"] = .string(capUTF8(errorType, maxBytes: maxErrorTypeBytes).0)
         }
 
         for (key, value) in context {

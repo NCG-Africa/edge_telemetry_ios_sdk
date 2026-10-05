@@ -1835,3 +1835,60 @@ W8 (#196). Choices the spec and catalogue § 2.2 left to the code.
    `keychain` (`regenerateDeviceId()` returns no flag).
 9. **`sdk.start_duration_ms` is not shipped here**: owned by tranche 9
    (catalogue X9).
+
+## ADR-024 — Error evidence + two-phase hang (F33): record cadence, clean exit, ceilings, caps
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 8 of `docs/specs/rum-coverage-roadmap.md` (#220),
+W11 (#199) and W19 (#207). Choices the spec and catalogue left to the code.
+
+**Decision.**
+
+1. **`error_type` cap = 128 UTF-8 bytes** (W6's label constant, as
+   `screen.name`), cut on a character boundary. No `.truncated` marker:
+   the value is a host-chosen label, not captured content. Empty → omitted.
+2. **The pending-hang record is rewritten on every watchdog tick** after
+   threshold (≤ 4 writes/s, only while main is stuck), so a replayed
+   `hang.duration_ms` is time-to-death ± 250 ms rather than the threshold.
+   The record holds the full `app.hang` bag (stack, CPU read at threshold
+   crossing); replay adds `hang.terminated = true` and the sidecar identity.
+   `uninstall()` (`disable()`) deletes an open record: a stall we stop
+   watching never ends under our watch and must not replay as `terminated`.
+3. **A replayed hang is treated like `app.crash`**: no live riders, no live
+   breadcrumbs (the `hang.terminated` key is the marker the Recorder reads).
+   It stays sampled — W11 keeps force for the process dying in a crash.
+4. **The `long_task` ceiling is the watchdog's effective threshold**,
+   `max(2 s, hangTimeout)`, not the raw config value: a 1 s `hangTimeout`
+   runs the watchdog at 2 s, so dropping 1–2 s spans would leave them on no
+   rung.
+5. **`clean` = `UIApplication.willTerminateNotification` observed**, written
+   synchronously to the sidecar by `ContextObservers` (installed on every
+   `start()`, independent of `captureLifecycle`). Apps killed while
+   suspended never get it — they read `unknown` with
+   `previous_session.app_state = background`, which is the point of that key.
+   `crash` (a replayed PLCrashReporter report) wins over the marker.
+6. **`app.version` / `device.platform_version` join the sidecar's identity
+   zone**, so a replayed `app.crash` / `app.hang` now reports the version
+   that died rather than the relaunched one — the same rule as identity.
+7. **`frame.dropped_count` deltas use `link.timestamp`**, not
+   `targetTimestamp`, for both the frame time and the drop count, as the
+   W19 formula specifies. A window with no deltas (zero or one callback)
+   omits the key.
+8. **`device.boot_time` rides every launch `session.started`**, first launch
+   included; `previous_session.*` needs a prior sidecar with a `session.id`.
+   `sysctl KERN_BOOTTIME` is not on Apple's required-reason list, but the
+   value is boot-time-derived and leaves the device: confirm the
+   `NSPrivacyAccessedAPICategorySystemBootTime` position when F20 writes the
+   manifest (`35F9.1` forbids sending derived values off-device).
+9. **A stall is timed from the last watchdog tick that saw a beat**, not
+   the first tick that saw none, so it reads up to one tick (250 ms) long
+   rather than up to two short. Short would leave stalls just past the
+   threshold on no rung (`long_task` drops them, the watchdog has not
+   crossed yet); long puts a ≤ 250 ms sliver on both. Polling cannot make
+   the rungs exactly disjoint; this picks overlap over loss.
+10. **`crash.mach_exception` is the type name only** (`EXC_BAD_ACCESS`).
+   The codes stay in `crash.report_json`: `codes[1]` is usually a fault
+   address, which would make the queryable key unbounded.

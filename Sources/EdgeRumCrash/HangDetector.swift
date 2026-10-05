@@ -6,11 +6,16 @@
 //      `.entry | .beforeWaiting | .afterWaiting | .exit`) bumps an
 //      atomic heartbeat counter every time the main runloop turns.
 //   2. A dedicated background `HangWatchdogThread` polls the counter
-//      every `tickIntervalSeconds` (250 ms). If the counter has not
-//      advanced for longer than the configured `hangTimeout`, the
-//      watchdog records one `app.hang` event with
-//      `hang.stack`, `hang.duration_ms`, and
-//      `hang.threshold_ms` (see `HangEventEncoder`).
+//      every `tickIntervalSeconds` (250 ms).
+//
+// F33 two-phase hang (W19): once the counter has not advanced for the
+// configured `hangTimeout`, the watchdog captures the stack and
+// persists a pending-hang record (`PendingHangFile`) — main is stuck,
+// so the write costs the user nothing — and emits nothing. When the
+// heartbeat resumes it records one `app.hang` with the real
+// `hang.duration_ms` and deletes the record. If the process dies
+// first, `replayPending(...)` re-emits the record at next launch with
+// `hang.terminated = true` on the previous session's identity.
 //
 // Idempotent install (NSLock-protected `installed` flag mirrors
 // `PLCrashIntegration` lines 38-72). `uninstall()` removes the
@@ -26,8 +31,7 @@
 // thread, suspends the main thread for a few microseconds while it
 // walks the frame-pointer chain, then resumes. `Recorder.recordEvent`
 // runs synchronously on the calling (watchdog) thread and only
-// buffers (`app.hang` is sampled, no forced flush), so recording
-// never touches the stalled main thread.
+// buffers (`app.hang` is sampled, no forced flush).
 //
 // Refs: PLAN-iOS.md §6.8, §F15/T15.1, §F15/T15.2;
 //       docs/decisions.md ADR-011; CLAUDE.md "Touching crash code?"
@@ -52,6 +56,12 @@ public enum HangDetector {
     /// false-positive rate on mid-tier hardware (iPhone 8 / SE 2) is
     /// unacceptable per PLAN-iOS.md §17 risk #5.
     internal static let minimumThresholdSeconds: TimeInterval = 2.0
+
+    /// The threshold the watchdog actually runs at for a host-supplied
+    /// `hangTimeout` — the `long_task` ceiling (F33 disjoint rungs).
+    public static func effectiveThreshold(_ hangTimeout: TimeInterval) -> TimeInterval {
+        max(minimumThresholdSeconds, hangTimeout)
+    }
 
     // MARK: - State
 
@@ -85,8 +95,38 @@ public enum HangDetector {
             recorder: Recorder.shared,
             clock: SystemClock(),
             stackProvider: nil,
-            cpuProvider: nil  // → whole-process `ProcessCPUReader`
+            cpuProvider: nil,  // → whole-process `ProcessCPUReader`
+            pending: PendingHangFile(url: PendingHangFile.defaultURL())
         )
+    }
+
+    /// Replay a pending-hang record left by a process that died
+    /// mid-stall as one `app.hang` with `hang.terminated = true`,
+    /// attributed to the previous session via the sidecar, then delete
+    /// it. Call before this launch's watchdog can write a new record.
+    public static func replayPending(
+        recorder: Recording,
+        sidecarContents: [String: AttributeValue]?
+    ) {
+        _replayPending(
+            recorder: recorder,
+            sidecarContents: sidecarContents,
+            pending: PendingHangFile(url: PendingHangFile.defaultURL())
+        )
+    }
+
+    internal static func _replayPending(
+        recorder: Recording,
+        sidecarContents: [String: AttributeValue]?,
+        pending: PendingHangFile
+    ) {
+        guard var attrs = pending.read() else { return }
+        pending.delete()
+        attrs["hang.terminated"] = .bool(true)
+        if let snapshot = sidecarContents.flatMap(CrashSidecarReader.parse) {
+            attrs.merge(CrashSidecarReader.replayAttributes(snapshot)) { own, _ in own }
+        }
+        recorder.recordEvent(name: "app.hang", attributes: attrs)
     }
 
     /// Tear down the watchdog. Removes the runloop observer and
@@ -96,6 +136,9 @@ public enum HangDetector {
     /// no-op.
     public static func uninstall() {
         installLock.lock()
+        // A stall still open here never ends under our watch; its record
+        // must not replay as `terminated`.
+        watchdog?.discardPending()
         let removedObserver = observer
         let removedThread = watchdogThread
         watchdog = nil
@@ -122,7 +165,8 @@ public enum HangDetector {
         recorder: Recording,
         clock: Clock,
         stackProvider: (() -> [StackFrame])?,
-        cpuProvider: (() -> Double?)?
+        cpuProvider: (() -> Double?)?,
+        pending: PendingHangFile = PendingHangFile(url: nil)
     ) {
         installLock.lock()
         if watchdog != nil {
@@ -139,6 +183,7 @@ public enum HangDetector {
             recorder: recorder,
             stackProvider: stack,
             cpuProvider: cpu,
+            pending: pending,
             debug: debug,
             log: log
         )
@@ -165,6 +210,14 @@ public enum HangDetector {
         heartbeat = 0
         heartbeatLock.unlock()
         MainThreadStackSnapshot._resetForTests()
+    }
+
+    /// Test hook — stop the watchdog thread but keep the watchdog live
+    /// (unlike `uninstall()`, which discards it) so a test can drive
+    /// `tick` alone.
+    internal static func _cancelThreadForTests() {
+        installLock.lock(); let thread = watchdogThread; installLock.unlock()
+        thread?.cancel()
     }
 
     /// Test hook — read the live heartbeat counter without taking
@@ -263,13 +316,24 @@ internal final class HangWatchdog {
     private let recorder: Recording
     private let stackProvider: () -> [StackFrame]
     private let cpuProvider: () -> Double?
+    private let pending: PendingHangFile
     private let debug: Bool
     private let log: OSLog
 
     private var lastSeenHeartbeat: UInt64 = 0
     private var hasObservedHeartbeat: Bool = false
+    /// Tick that last saw the heartbeat move — the stall's start, so a
+    /// stall is never measured short (no gap below the `long_task`
+    /// ceiling); it reads up to one tick long instead.
+    private var lastBeatAt: Date?
     private var stalledStart: Date?
-    private var firedForCurrentStall: Bool = false
+    /// Set by `discardPending()`; a tick racing the uninstall must not
+    /// re-create the record.
+    private var discarded = false
+    /// Attributes captured at threshold crossing; non-nil while a hang
+    /// is open (crossed, not yet ended).
+    private var openHang: [String: AttributeValue]?
+    private let pendingLock = NSLock()
 
     init(
         threshold: TimeInterval,
@@ -277,6 +341,7 @@ internal final class HangWatchdog {
         recorder: Recording,
         stackProvider: @escaping () -> [StackFrame],
         cpuProvider: @escaping () -> Double?,
+        pending: PendingHangFile = PendingHangFile(url: nil),
         debug: Bool,
         log: OSLog
     ) {
@@ -285,13 +350,22 @@ internal final class HangWatchdog {
         self.recorder = recorder
         self.stackProvider = stackProvider
         self.cpuProvider = cpuProvider
+        self.pending = pending
         self.debug = debug
         self.log = log
     }
 
-    /// Run one decision tick. Returns `true` iff a hang event was
-    /// recorded on this tick. Tests call this directly with a
-    /// synthetic `currentHeartbeat` value.
+    /// Drop an open hang without emitting it (`uninstall`).
+    func discardPending() {
+        pendingLock.lock(); defer { pendingLock.unlock() }
+        discarded = true
+        openHang = nil
+        pending.delete()
+    }
+
+    /// Run one decision tick. Returns `true` iff an `app.hang` was
+    /// recorded on this tick — at stall end, never at threshold. Tests
+    /// call this directly with a synthetic `currentHeartbeat` value.
     @discardableResult
     func tick(currentHeartbeat: UInt64) -> Bool {
         let now = clock.now
@@ -304,34 +378,53 @@ internal final class HangWatchdog {
             if currentHeartbeat > 0 {
                 hasObservedHeartbeat = true
                 lastSeenHeartbeat = currentHeartbeat
+                lastBeatAt = now
             }
             return false
         }
 
+        pendingLock.lock(); defer { pendingLock.unlock() }
+        guard !discarded else { return false }
+
         if currentHeartbeat != lastSeenHeartbeat {
             lastSeenHeartbeat = currentHeartbeat
-            stalledStart = nil
-            firedForCurrentStall = false
-            return false
+            lastBeatAt = now
+            defer { stalledStart = nil; openHang = nil }
+            guard var attrs = openHang, let start = stalledStart else { return false }
+            // Stall over: one event with the real length (± one tick).
+            let durationMs = now.timeIntervalSince(start) * 1000.0
+            attrs["hang.duration_ms"] = .double(durationMs)
+            pending.delete()
+            recorder.recordEvent(name: "app.hang", attributes: attrs)
+            if debug {
+                os_log("edge-rum: hang ended — %.0f ms", log: log, type: .info, durationMs)
+            }
+            return true
         }
 
         // Heartbeat hasn't advanced since the previous tick. Begin
         // (or continue) the stall window.
-        if stalledStart == nil {
-            stalledStart = now
+        guard let start = stalledStart else {
+            stalledStart = lastBeatAt ?? now
             // Re-prime the delta reader so the detection read covers
             // the stall window, not everything since the last hang.
             _ = cpuProvider()
             return false
         }
+        let durationMs = now.timeIntervalSince(start) * 1000.0
 
-        guard !firedForCurrentStall,
-              let start = stalledStart,
-              now.timeIntervalSince(start) >= threshold else {
+        if var attrs = openHang {
+            // ponytail: rewrites the record every tick (≤ 4/s, only while
+            // main is stuck) so a replay's duration is time-to-death
+            // ± 250 ms. Throttle if the write ever shows up.
+            attrs["hang.duration_ms"] = .double(durationMs)
+            openHang = attrs
+            pending.write(attrs)
             return false
         }
 
-        let durationMs = now.timeIntervalSince(start) * 1000.0
+        guard now.timeIntervalSince(start) >= threshold else { return false }
+
         let attrs = HangEventEncoder.encode(
             durationMs: durationMs,
             thresholdMs: threshold * 1000.0,
@@ -339,8 +432,8 @@ internal final class HangWatchdog {
             stackFrames: stackProvider(),
             timestamp: now
         )
-        recorder.recordEvent(name: "app.hang", attributes: attrs)
-        firedForCurrentStall = true
+        openHang = attrs
+        pending.write(attrs)
 
         if debug {
             os_log(
@@ -351,7 +444,39 @@ internal final class HangWatchdog {
                 threshold * 1000.0
             )
         }
-        return true
+        return false
+    }
+}
+
+// MARK: - Pending-hang record
+
+/// `Library/Caches/edge-rum/pending-hang.json` — the open hang's
+/// attributes, so a stall the process dies in replays next launch.
+/// A `nil` URL makes every operation a no-op (tests).
+internal struct PendingHangFile {
+
+    let url: URL?
+
+    static func defaultURL() -> URL? {
+        SessionSidecar.defaultBaseDirectoryURL()?
+            .appendingPathComponent("pending-hang.json", isDirectory: false)
+    }
+
+    func write(_ attrs: [String: AttributeValue]) {
+        guard let url, let data = try? JSONEncoder().encode(attrs) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    func read() -> [String: AttributeValue]? {
+        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([String: AttributeValue].self, from: data)
+    }
+
+    func delete() {
+        guard let url else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }
 

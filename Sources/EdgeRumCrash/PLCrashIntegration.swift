@@ -115,29 +115,31 @@ public enum PLCrashIntegration {
     /// `sidecarContents` is `SessionSidecar.read()` taken by
     /// `EdgeRum.start()` before this launch's first sidecar write;
     /// `priorBreadcrumbs` is `Breadcrumbs.takePrior()` (F31), attached
-    /// only when its `session.id` matches the sidecar's.
+    /// only when its `session.id` matches the sidecar's. Returns `true`
+    /// iff an `app.crash` was replayed (`previous_session.end = crash`).
+    @discardableResult
     public static func replayIfNeeded(
         recorder: Recording,
         sidecarContents: [String: AttributeValue]?,
         priorBreadcrumbs: Breadcrumbs.File? = nil,
         config: PLCrashIntegrationConfig = PLCrashIntegrationConfig(),
         debug: Bool
-    ) {
+    ) -> Bool {
         #if canImport(CrashReporter)
         guard let reporter = makeReporter(config: config) else {
             if debug {
                 os_log("PLCrashReporter init failed during replay", log: log, type: .info)
             }
-            return
+            return false
         }
-        guard reporter.hasPendingCrashReport() else { return }
+        guard reporter.hasPendingCrashReport() else { return false }
 
         guard let data = reporter.loadPendingCrashReportData() else {
             if debug {
                 os_log("PLCrashReporter load returned nil — purging", log: log, type: .info)
             }
             _ = reporter.purgePendingCrashReport()
-            return
+            return false
         }
 
         guard var attrs = CrashReportEncoder.encode(
@@ -149,7 +151,7 @@ public enum PLCrashIntegration {
                 os_log("PLCrashReporter report did not parse — purging", log: log, type: .info)
             }
             _ = reporter.purgePendingCrashReport()
-            return
+            return false
         }
 
         // Fold in the crashed session's identity so the wire event
@@ -158,20 +160,7 @@ public enum PLCrashIntegration {
         // event-wins semantics so these override the live context.
         let snapshot = sidecarContents.flatMap(CrashSidecarReader.parse)
         if let snapshot {
-            attrs["session.id"] = .string(snapshot.sessionId)
-            if let start = snapshot.sessionStartTime {
-                attrs["session.start_time"] = .string(start)
-            }
-            if let seq = snapshot.sessionSequence {
-                attrs["session.sequence"] = .int(seq)
-            }
-            attrs["device.id"] = .string(snapshot.deviceId)
-            if let userId = snapshot.userId {
-                attrs["user.id"] = .string(userId)
-            }
-            for (key, value) in snapshot.extras where attrs[key] == nil {
-                attrs[key] = value
-            }
+            attrs.merge(CrashSidecarReader.replayAttributes(snapshot)) { own, _ in own }
         } else if debug {
             os_log(
                 "PLCrashReporter replay: sidecar missing or malformed — using live identity",
@@ -190,12 +179,14 @@ public enum PLCrashIntegration {
         if !reporter.purgePendingCrashReport(), debug {
             os_log("PLCrashReporter purge returned false", log: log, type: .info)
         }
+        return true
         #else
         _ = recorder
         _ = sidecarContents
         _ = priorBreadcrumbs
         _ = config
         _ = debug
+        return false
         #endif
     }
 

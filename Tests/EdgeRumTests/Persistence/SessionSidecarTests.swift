@@ -26,6 +26,36 @@ final class SessionSidecarTests: XCTestCase {
         SessionSidecar(url: tempDir.appendingPathComponent("last-session.json"))
     }
 
+    // MARK: F33 — previous-session evidence
+
+    func testMirrorsAppVersionAndOSVersion() {
+        let sidecar = makeSidecar()
+        var bag = AttributeBag()
+        bag.set("session.id", .string("session_1_aaaaaaaaaaaaaaaa_ios"))
+        bag.set("app.version", .string("2.1.0"))
+        bag.set("device.platform_version", .string("17.4.1"))
+        sidecar.write(snapshot: bag)
+        XCTAssertEqual(sidecar.read()?["app.version"], .string("2.1.0"))
+        XCTAssertEqual(sidecar.read()?["device.platform_version"], .string("17.4.1"))
+    }
+
+    func testCleanExitMarkerSurvivesLaterWritesOfTheSameProcess() {
+        let sidecar = makeSidecar()
+        var bag = AttributeBag()
+        bag.set("session.id", .string("session_1_aaaaaaaaaaaaaaaa_ios"))
+        sidecar.write(snapshot: bag)
+        XCTAssertNil(sidecar.read()?[SessionSidecar.cleanExitKey])
+        sidecar.markCleanExit()
+        XCTAssertEqual(sidecar.read()?[SessionSidecar.cleanExitKey], .bool(true))
+        sidecar.writeVolatile(["app.state": .string("background")])
+        XCTAssertEqual(sidecar.read()?[SessionSidecar.cleanExitKey], .bool(true))
+
+        // The next process starts unmarked.
+        let next = makeSidecar()
+        next.write(snapshot: bag)
+        XCTAssertNil(next.read()?[SessionSidecar.cleanExitKey])
+    }
+
     // MARK: Mirror behaviour
 
     func testWritesOnlyMirroredKeys() throws {

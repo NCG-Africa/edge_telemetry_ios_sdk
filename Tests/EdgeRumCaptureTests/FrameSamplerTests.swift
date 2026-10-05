@@ -111,49 +111,57 @@ final class FrameSamplerTests: XCTestCase {
 
     // MARK: FrameWindowAggregator — pure stat tests
 
-    func test_aggregator_emptyWindow_reportsAllDropped() {
-        let stats = FrameWindowAggregator.computeStats(
-            samples: [],
-            windowSeconds: 1.0,
-            targetHz: 60
-        )
+    /// F33: an empty window omits `frame.dropped_count` — never the
+    /// full expected count.
+    func test_aggregator_emptyWindow_omitsDropped() {
+        let stats = FrameWindowAggregator.computeStats(samples: [], dropped: 0, windowSeconds: 1.0)
         XCTAssertEqual(stats.maxMs, 0)
         XCTAssertEqual(stats.p95Ms, 0)
-        XCTAssertEqual(stats.droppedCount, 60)
+        XCTAssertNil(stats.droppedCount)
         XCTAssertEqual(stats.sampleCount, 0)
     }
 
     func test_aggregator_singleSample_maxAndP95EqualThatSample() {
-        let stats = FrameWindowAggregator.computeStats(
-            samples: [22.5],
-            windowSeconds: 1.0,
-            targetHz: 60
-        )
+        let stats = FrameWindowAggregator.computeStats(samples: [22.5], dropped: 0, windowSeconds: 1.0)
         XCTAssertEqual(stats.maxMs, 22.5)
         XCTAssertEqual(stats.p95Ms, 22.5)
         XCTAssertEqual(stats.sampleCount, 1)
-        XCTAssertEqual(stats.droppedCount, 59) // 60 expected, 1 observed
+        XCTAssertEqual(stats.droppedCount, 0, "one on-time frame drops nothing")
     }
 
     func test_aggregator_p95_picksNearestRank() {
         let samples = Array(stride(from: 1.0, through: 100.0, by: 1.0))
-        let stats = FrameWindowAggregator.computeStats(
-            samples: samples,
-            windowSeconds: 1.0,
-            targetHz: 60
-        )
+        let stats = FrameWindowAggregator.computeStats(samples: samples, dropped: 0, windowSeconds: 1.0)
         XCTAssertEqual(stats.maxMs, 100.0)
         XCTAssertEqual(stats.p95Ms, 95.0)
         XCTAssertEqual(stats.sampleCount, 100)
-        XCTAssertEqual(stats.droppedCount, 0)
     }
 
-    func test_aggregator_droppedNeverGoesNegative() {
-        let stats = FrameWindowAggregator.computeStats(
-            samples: Array(repeating: 16.6, count: 200),
-            windowSeconds: 1.0,
-            targetHz: 60
-        )
+    // MARK: F33 — observed drops
+
+    func test_recordDelta_countsSkippedRefreshIntervals() {
+        var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
+        agg.recordDelta(16.7, refreshMs: 16.7)   // on time
+        agg.recordDelta(50.0, refreshMs: 16.7)   // 3 intervals → 2 dropped
+        agg.recordDelta(26.0, refreshMs: 16.7)   // 1.56 → rounds to 2 → 1 dropped
+        XCTAssertEqual(agg.flush(now: t(1)).droppedCount, 3)
+    }
+
+    /// ProMotion ramp-down: 60 Hz frames on a 120 Hz panel throttled to
+    /// 60 Hz are on time against the live interval, not drops.
+    func test_recordDelta_measuresAgainstLiveInterval_notTargetHz() {
+        var agg = FrameWindowAggregator(targetHz: 120, startedAt: t(0))
+        for _ in 0..<60 { agg.recordDelta(16.7, refreshMs: 16.7) }
+        XCTAssertEqual(agg.flush(now: t(1)).droppedCount, 0)
+    }
+
+    func test_recordDelta_unusableRefreshIntervalCountsNoDrop() {
+        var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
+        agg.recordDelta(50, refreshMs: 0)
+        agg.recordDelta(50, refreshMs: -16)
+        agg.recordDelta(50, refreshMs: .nan)
+        let stats = agg.flush(now: t(1))
+        XCTAssertEqual(stats.sampleCount, 3)
         XCTAssertEqual(stats.droppedCount, 0)
     }
 
@@ -176,13 +184,13 @@ final class FrameSamplerTests: XCTestCase {
         XCTAssertTrue(agg.shouldFlush(now: t(10)))
     }
 
-    func test_flush_reportsWindowMs_andExpectsFramesForThatLength() {
+    func test_flush_reportsWindowMs_andNoInferredDrops() {
         var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
-        for _ in 0..<100 { agg.recordDelta(16.7) }
+        for _ in 0..<100 { agg.recordDelta(16.7, refreshMs: 16.7) }
         let stats = agg.flush(now: t(2.5))
         XCTAssertEqual(stats.windowMs, 2500)
         XCTAssertEqual(stats.sampleCount, 100)
-        XCTAssertEqual(stats.droppedCount, 50) // 150 expected over 2.5 s
+        XCTAssertEqual(stats.droppedCount, 0, "not 150 expected − 100 observed")
     }
 
     func test_flush_windowMsClampedToHardCap() {
@@ -192,10 +200,10 @@ final class FrameSamplerTests: XCTestCase {
 
     func test_aggregator_negativeOrNonFiniteDeltasAreIgnored() {
         var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
-        agg.recordDelta(-5)
-        agg.recordDelta(.nan)
-        agg.recordDelta(.infinity)
-        agg.recordDelta(16.6)
+        agg.recordDelta(-5, refreshMs: 16.6)
+        agg.recordDelta(.nan, refreshMs: 16.6)
+        agg.recordDelta(.infinity, refreshMs: 16.6)
+        agg.recordDelta(16.6, refreshMs: 16.6)
         let stats = agg.flush(now: t(1.0))
         XCTAssertEqual(stats.sampleCount, 1)
         XCTAssertEqual(stats.maxMs, 16.6)
@@ -218,6 +226,12 @@ final class FrameSamplerTests: XCTestCase {
         XCTAssertEqual(attrs["frame.target_hz"], .int(60))
         XCTAssertEqual(attrs["frame.source"], .string("displaylink"))
         XCTAssertEqual(attrs["value"], .double(33.3))
+    }
+
+    func test_makeAttributes_emptyWindow_omitsDroppedCount() {
+        let stats = FrameWindowAggregator.Stats(
+            maxMs: 0, p95Ms: 0, droppedCount: nil, sampleCount: 0, windowMs: 2_000)
+        XCTAssertNil(FrameSampler.makeAttributes(stats: stats, targetHz: 60)["frame.dropped_count"])
     }
 
     func test_makeAttributes_carriesWindowMs() {

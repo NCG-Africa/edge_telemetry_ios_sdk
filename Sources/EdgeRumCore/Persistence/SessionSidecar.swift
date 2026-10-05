@@ -11,6 +11,10 @@
 // F28 adds a volatile zone (`volatileKeys`) written by `Riders` on
 // change; every write re-emits both zones.
 //
+// F33 mirrors `app.version` / `device.platform_version` and adds the
+// clean-exit marker (`markCleanExit()`, at `willTerminate`) — the next
+// launch's `PreviousSession` evidence.
+//
 // F4 ships the **writer** only. The reader + replay path is owned by
 // F14 / `EdgeRumCrash` / T14.3 — flagged as carry-over on issue #44.
 //
@@ -29,10 +33,13 @@ public protocol SessionSidecarWriting: Sendable {
     func write(snapshot: AttributeBag)
     /// Replace the volatile zone (F28 riders). Best-effort.
     func writeVolatile(_ values: [String: AttributeValue])
+    /// Persist the clean-exit marker (F33). Synchronous.
+    func markCleanExit()
 }
 
 public extension SessionSidecarWriting {
     func writeVolatile(_ values: [String: AttributeValue]) {}
+    func markCleanExit() {}
 }
 
 public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
@@ -72,8 +79,14 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         "user.id",
         "device.id",
         "sdk.version",
-        "sdk.platform"
+        "sdk.platform",
+        // F33 — upgrade exclusion for `previous_session.*`.
+        "app.version",
+        "device.platform_version"
     ]
+
+    /// Present (`true`) once `willTerminate` was observed (F33).
+    public static let cleanExitKey = "session.clean_exit"
 
     /// The volatile zone (F28): rider values persisted on change by
     /// `Riders`, best-effort. Flat alongside the identity keys, so
@@ -93,6 +106,7 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
     /// Last written zones; each write re-emits both. Guarded by `lock`.
     private var identity: [String: AttributeValue] = [:]
     private var volatile: [String: AttributeValue] = [:]
+    private var cleanExit = false
 
     public init(
         url: URL? = SessionSidecar.defaultURL(),
@@ -122,12 +136,22 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         persistLocked()
     }
 
+    /// Persist the clean-exit marker; it stays in every later write of
+    /// this process.
+    public func markCleanExit() {
+        lock.lock(); defer { lock.unlock() }
+        cleanExit = true
+        persistLocked()
+    }
+
     /// Caller holds `lock`.
     private func persistLocked() {
         guard let url else { return }
         do {
             try ensureDirectory(for: url)
-            let data = try Self.encoder.encode(identity.merging(volatile) { id, _ in id })
+            var zones = identity.merging(volatile) { id, _ in id }
+            if cleanExit { zones[Self.cleanExitKey] = .bool(true) }
+            let data = try Self.encoder.encode(zones)
             try data.write(to: url, options: .atomic)
         } catch {
             os_log(
@@ -148,7 +172,10 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         // Filtered on read too: a file written by a pre-F27 build may
         // still hold host identity keys.
         return (try? Self.decoder.decode([String: AttributeValue].self, from: data))?
-            .filter { Self.mirroredKeys.contains($0.key) || Self.volatileKeys.contains($0.key) }
+            .filter {
+                Self.mirroredKeys.contains($0.key) || Self.volatileKeys.contains($0.key)
+                    || $0.key == Self.cleanExitKey
+            }
     }
 
     private func filter(_ bag: AttributeBag) -> [String: AttributeValue] {

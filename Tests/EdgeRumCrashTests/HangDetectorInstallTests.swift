@@ -80,6 +80,12 @@ final class HangDetectorInstallTests: XCTestCase {
                        "uninstall must drop the runloop observer")
     }
 
+    /// F33: the `long_task` ceiling is the threshold the watchdog runs at.
+    func testEffectiveThresholdClampsToTheTwoSecondFloor() {
+        XCTAssertEqual(HangDetector.effectiveThreshold(0.5), 2.0)
+        XCTAssertEqual(HangDetector.effectiveThreshold(5.0), 5.0)
+    }
+
     func testHostHangTimeoutBelowFloorIsClampedToTwoSeconds() {
         let probe = HangProbeRecorder()
         // Sub-2s thresholds must be clamped to the 2.0s floor per

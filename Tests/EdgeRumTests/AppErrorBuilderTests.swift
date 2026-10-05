@@ -37,6 +37,31 @@ final class AppErrorBuilderTests: XCTestCase {
         XCTAssertEqual(attrs["error.code"], .int(7))
     }
 
+    // MARK: - error_type (F33)
+
+    func testErrorTypeIsHostSuppliedVerbatim() {
+        struct DemoError: Error {}
+        let attrs = AppErrorBuilder.build(
+            error: DemoError(), type: "decoding_error", context: [:], stack: [], debug: false)
+        XCTAssertEqual(attrs["error_type"], .string("decoding_error"))
+    }
+
+    func testErrorTypeOmittedWhenNilOrEmpty() {
+        struct DemoError: Error {}
+        XCTAssertNil(AppErrorBuilder.build(error: DemoError(), context: [:], stack: [], debug: false)["error_type"])
+        XCTAssertNil(AppErrorBuilder.build(
+            error: DemoError(), type: "", context: [:], stack: [], debug: false)["error_type"])
+    }
+
+    func testErrorTypeCappedAt128UTF8Bytes() {
+        struct DemoError: Error {}
+        let attrs = AppErrorBuilder.build(
+            error: DemoError(), type: String(repeating: "é", count: 100), context: [:], stack: [], debug: false)
+        guard case let .string(value)? = attrs["error_type"] else { return XCTFail("error_type missing") }
+        XCTAssertEqual(value.utf8.count, 128)
+        XCTAssertEqual(value, String(repeating: "é", count: 64))
+    }
+
     // MARK: - error.class
 
     func testErrorTypeIsSwiftTypeName() {

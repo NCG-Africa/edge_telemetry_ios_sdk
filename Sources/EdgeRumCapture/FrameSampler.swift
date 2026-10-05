@@ -13,6 +13,11 @@
 // `frame.dropped_count`, `frame.target_hz`, `frame.sample_count`,
 // `frame.window_ms`, `frame.source = "displaylink"` (PLAN-iOS.md §6.10).
 //
+// F33 — `frame.dropped_count` is observed, not inferred: per callback
+// `round(Δtimestamp / (targetTimestamp − timestamp)) − 1`, against the
+// refresh interval actually running, so a ProMotion ramp-down is not a
+// drop. A window with no frame deltas omits the key.
+//
 // iOS version paths:
 //   - iOS 14: `preferredFramesPerSecond = 0` so UIKit uses the device's
 //     native refresh; `frame.target_hz` reports `60` (non-ProMotion).
@@ -62,7 +67,8 @@ public struct FrameWindowAggregator: Sendable {
     public struct Stats: Equatable, Sendable {
         public let maxMs: Double
         public let p95Ms: Double
-        public let droppedCount: Int
+        /// Observed drops; `nil` for an empty window (key omitted).
+        public let droppedCount: Int?
         public let sampleCount: Int
         /// Window length (ms) — `frame.window_ms`.
         public let windowMs: Int
@@ -73,11 +79,11 @@ public struct FrameWindowAggregator: Sendable {
     /// A window never runs longer than this.
     public static let hardCapSeconds: Double = 10.0
 
-    /// Native target refresh rate (Hz). Used as the expected
-    /// frames-per-second for the dropped-frame estimate.
+    /// Native target refresh rate (Hz) — `frame.target_hz` context.
     public let targetHz: Int
 
     private var samples: [Double] = []
+    private var dropped = 0
     private let windowStart: Date
     private var lastMotion: Date
 
@@ -87,10 +93,13 @@ public struct FrameWindowAggregator: Sendable {
         self.lastMotion = startedAt
     }
 
-    /// Record an inter-frame delta in milliseconds.
-    public mutating func recordDelta(_ ms: Double) {
-        if ms.isFinite && ms >= 0 {
-            samples.append(ms)
+    /// Record an inter-frame delta in milliseconds, and the frames it
+    /// skipped at the live refresh interval `refreshMs`.
+    public mutating func recordDelta(_ ms: Double, refreshMs: Double) {
+        guard ms.isFinite, ms >= 0 else { return }
+        samples.append(ms)
+        if refreshMs.isFinite, refreshMs > 0 {
+            dropped += max(0, Int((ms / refreshMs).rounded()) - 1)
         }
     }
 
@@ -108,29 +117,21 @@ public struct FrameWindowAggregator: Sendable {
     /// Stats for the window ending at `now` (clamped to the hard cap).
     public func flush(now: Date) -> Stats {
         let seconds = min(max(0, now.timeIntervalSince(windowStart)), Self.hardCapSeconds)
-        return Self.computeStats(samples: samples, windowSeconds: seconds, targetHz: targetHz)
+        return Self.computeStats(samples: samples, dropped: dropped, windowSeconds: seconds)
     }
 
     /// Pure stat computation; broken out so tests can drive it
     /// independently of any window state.
     public static func computeStats(
         samples: [Double],
-        windowSeconds: Double,
-        targetHz: Int
+        dropped: Int,
+        windowSeconds: Double
     ) -> Stats {
-        if samples.isEmpty {
-            // Expected frames within an empty window — every one missed.
-            let expected = max(0, Int((Double(targetHz) * windowSeconds).rounded()))
-            return Stats(maxMs: 0, p95Ms: 0, droppedCount: expected, sampleCount: 0,
-                         windowMs: Int((windowSeconds * 1000).rounded()))
-        }
         let sorted = samples.sorted()
-        let maxMs = sorted.last ?? 0
-        let p95Ms = percentile(sorted: sorted, fraction: 0.95)
-        let expected = max(0, Int((Double(targetHz) * windowSeconds).rounded()))
-        let observed = samples.count
-        let dropped = max(0, expected - observed)
-        return Stats(maxMs: maxMs, p95Ms: p95Ms, droppedCount: dropped, sampleCount: observed,
+        return Stats(maxMs: sorted.last ?? 0,
+                     p95Ms: percentile(sorted: sorted, fraction: 0.95),
+                     droppedCount: samples.isEmpty ? nil : dropped,
+                     sampleCount: samples.count,
                      windowMs: Int((windowSeconds * 1000).rounded()))
     }
 
@@ -223,7 +224,6 @@ public enum FrameSampler {
         var attrs: [String: AttributeValue] = [
             "frame.max_ms": .double(stats.maxMs),
             "frame.p95_ms": .double(stats.p95Ms),
-            "frame.dropped_count": .int(stats.droppedCount),
             "frame.target_hz": .int(targetHz),
             "frame.source": .string("displaylink"),
             // The Recorder's value-extraction path pulls `value` off
@@ -233,6 +233,9 @@ public enum FrameSampler {
             // sort by it without parsing the attribute bag.
             "value": .double(stats.maxMs)
         ]
+        if let dropped = stats.droppedCount {
+            attrs["frame.dropped_count"] = .int(dropped)
+        }
         attrs["frame.sample_count"] = .int(stats.sampleCount)
         attrs["frame.window_ms"] = .int(stats.windowMs)
         return attrs
@@ -319,9 +322,10 @@ public enum FrameSampler {
         @objc
         private func tick(_ link: CADisplayLink) {
             guard var current = window else { return }
-            let ts = link.targetTimestamp
+            let ts = link.timestamp
             if lastTimestamp != 0 {
-                current.recordDelta((ts - lastTimestamp) * 1000.0)
+                current.recordDelta((ts - lastTimestamp) * 1000.0,
+                                    refreshMs: (link.targetTimestamp - ts) * 1000.0)
             }
             lastTimestamp = ts
             window = current
@@ -339,7 +343,7 @@ public enum FrameSampler {
                     stats.windowMs,
                     stats.maxMs,
                     stats.p95Ms,
-                    stats.droppedCount
+                    stats.droppedCount ?? 0
                 )
             }
         }

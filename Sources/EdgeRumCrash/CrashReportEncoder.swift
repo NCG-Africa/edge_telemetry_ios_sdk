@@ -84,6 +84,9 @@ internal enum CrashReportEncoder {
             attrs["crash.exception_name"] = .string(exc.exceptionName)
             attrs["crash.exception_reason"] = .string(exc.exceptionReason)
         }
+        if let mach = report.machExceptionInfo {
+            attrs["crash.mach_exception"] = .string(machExceptionName(mach.type))
+        }
         if let timestamp = report.systemInfo?.timestamp {
             attrs["crash.timestamp"] = .string(WireDateFormatter.string(from: timestamp))
         }
@@ -127,6 +130,23 @@ internal enum CrashReportEncoder {
 
         return attrs
     }
+
+    #endif
+
+    /// `<mach/exception_types.h>` name for a Mach exception type —
+    /// `EXC_BAD_ACCESS` vs `EXC_CRASH` is what `crash.signal` cannot
+    /// say. Unknown types fall back to the decimal value.
+    internal static func machExceptionName(_ type: UInt64) -> String {
+        let names = [
+            1: "EXC_BAD_ACCESS", 2: "EXC_BAD_INSTRUCTION", 3: "EXC_ARITHMETIC",
+            4: "EXC_EMULATION", 5: "EXC_SOFTWARE", 6: "EXC_BREAKPOINT",
+            7: "EXC_SYSCALL", 8: "EXC_MACH_SYSCALL", 9: "EXC_RPC_ALERT",
+            10: "EXC_CRASH", 11: "EXC_RESOURCE", 12: "EXC_GUARD", 13: "EXC_CORPSE_NOTIFY"
+        ]
+        return names[Int(clamping: type)] ?? String(type)
+    }
+
+    #if canImport(CrashReporter)
 
     // MARK: - Report → dictionary
 

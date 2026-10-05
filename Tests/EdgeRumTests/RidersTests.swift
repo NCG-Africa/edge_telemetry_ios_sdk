@@ -132,6 +132,22 @@ final class RidersTests: XCTestCase {
         XCTAssertEqual(attributes(events[1])["app.state"], .string("active"), "handled errors are live")
     }
 
+    /// F33: a terminated `app.hang` is replayed from the previous
+    /// process — no live riders; a live hang is stamped.
+    func testReplayedTerminatedHangIsNotStampedWithLiveRiders() throws {
+        let riders = Riders()
+        let (recorder, sink) = makeRecorder(riders: riders)
+        riders.enterScreen("ReportingLaunchHome")
+        recorder.recordEvent(name: "app.hang", attributes: ["hang.terminated": .bool(true)])
+        recorder.recordEvent(name: "app.hang", attributes: [:])
+        recorder.flush(reason: .manual)
+
+        let events = sink.envelopes.flatMap(\.events)
+        XCTAssertEqual(events.count, 2)
+        XCTAssertNil(attributes(events[0])["screen.name"])
+        XCTAssertEqual(attributes(events[1])["screen.name"], .string("ReportingLaunchHome"))
+    }
+
     // MARK: Screen box
 
     func testSheetDismissalRestoresPresenter() {

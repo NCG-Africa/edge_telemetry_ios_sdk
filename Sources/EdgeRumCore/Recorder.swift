@@ -140,6 +140,10 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// `installPersistedStores`, emitted by `start()`.
     private var _pendingFinalized: [String: AttributeValue]?
 
+    /// F33 `PreviousSession` evidence for the next `start()`'s
+    /// `session.started` only; consumed once.
+    private var _pendingStarted: [String: AttributeValue] = [:]
+
     /// Re-entrancy guard so synthetic `session.finalized` /
     /// `session.started` emissions during a mid-event rotation don't
     /// re-touch the session manager (which would recurse).
@@ -279,6 +283,20 @@ public final class Recorder: Recording, @unchecked Sendable {
         riders.attach(sidecar: sidecar)
     }
 
+    /// Stage `PreviousSession` attributes for the `session.started` the
+    /// next `start()` emits (F33).
+    public func setLaunchEvidence(_ attributes: [String: AttributeValue]) {
+        stateLock.lock(); _pendingStarted = attributes; stateLock.unlock()
+    }
+
+    /// `willTerminate` observed: persist the clean-exit marker so the
+    /// next launch reports `previous_session.end = clean` (F33).
+    public func markCleanExit() {
+        stateLock.lock(); let sidecar = self.sidecar; stateLock.unlock()
+        sidecarLock.lock(); defer { sidecarLock.unlock() }
+        sidecar?.markCleanExit()
+    }
+
     /// F5 production wiring: swap the in-memory `NoopTransportSink` for
     /// a real HTTP-backed sink. Called once by `EdgeRum.start()` after
     /// `installPersistedStores`. If the sink is an `HTTPTransportSink`
@@ -368,6 +386,8 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.lock()
         var pendingFinalized = _pendingFinalized
         _pendingFinalized = nil
+        var startedAttrs = _pendingStarted
+        _pendingStarted = [:]
         if let ended = touched.ended {
             pendingFinalized = Self.finalizedAttributes(ended.state, reason: ended.reason)
         }
@@ -376,7 +396,6 @@ public final class Recorder: Recording, @unchecked Sendable {
         writeSidecar()
 
         // A rotation pair carries `session.rotation` on both halves.
-        var startedAttrs: [String: AttributeValue] = [:]
         if let pendingFinalized {
             recordEventInternal(name: "session.finalized", attributes: pendingFinalized)
             startedAttrs["session.rotation"] = pendingFinalized["session.rotation"]
@@ -447,7 +466,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         guard currentSampler.shouldEmit(eventName: name) else { countDrop(\.droppedSampled); return }
 
         var attributes = attributes
-        if name == "app.error" || name == "app.hang" {
+        if name == "app.error" || (name == "app.hang" && !Self.isReplayed(name, attributes)) {
             attributes.merge(breadcrumbs.attachOnce()) { own, _ in own }
         }
         let event = Event.event(name: name, timestamp: now, attributes: AttributeBag(attributes))
@@ -774,12 +793,18 @@ public final class Recorder: Recording, @unchecked Sendable {
         }
     }
 
+    /// `app.crash`, or an `app.hang` replayed with `hang.terminated` (F33).
+    private static func isReplayed(_ name: String, _ attributes: [String: AttributeValue]) -> Bool {
+        name == "app.crash" || (name == "app.hang" && attributes["hang.terminated"] != nil)
+    }
+
     private func stampRiders(_ event: Event) -> Event {
         switch event {
         case let .event(name, timestamp, attributes):
-            // A native crash is replayed from the previous process; its
-            // riders come from the sidecar, never from this launch.
-            if name == "app.crash" { return event }
+            // A native crash or terminated hang is replayed from the
+            // previous process; its riders come from the sidecar, never
+            // from this launch.
+            if Self.isReplayed(name, attributes.values) { return event }
             return .event(name: name, timestamp: timestamp, attributes: riders.stamp(attributes))
         case let .metric(name, value, timestamp, attributes):
             return .metric(name: name, value: value, timestamp: timestamp, attributes: riders.stamp(attributes))

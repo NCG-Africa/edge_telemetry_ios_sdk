@@ -59,6 +59,21 @@ final class ContextObserversTests: XCTestCase {
         XCTAssertEqual(riders.values()["app.state"], .string("active"))
     }
 
+    /// F33: `willTerminate` persists the clean-exit marker through the
+    /// shared Recorder's sidecar.
+    func testWillTerminateMarksCleanExitInSidecar() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("edge-rum-clean-\(UUID().uuidString)/last-session.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let sidecar = SessionSidecar(url: url)
+        Recorder.installShared(Recorder(sidecar: sidecar))
+        defer { Recorder.resetShared() }
+        ContextObservers.install(provider: makeProvider(), riders: Riders())
+
+        NotificationCenter.default.post(name: UIApplication.willTerminateNotification, object: nil)
+        XCTAssertEqual(sidecar.read()?[SessionSidecar.cleanExitKey], .bool(true))
+    }
+
     func testAppStateNameMapsAllThreeStates() {
         XCTAssertEqual(ContextObservers.appStateName(.active), "active")
         XCTAssertEqual(ContextObservers.appStateName(.inactive), "inactive")

@@ -14,6 +14,16 @@ import EdgeRumCore
 
 final class CrashSidecarReaderTests: XCTestCase {
 
+    /// F33: the clean-exit marker is launch evidence, never a crash attribute.
+    func testCleanExitMarkerIsNotAnExtra() throws {
+        let snapshot = try XCTUnwrap(CrashSidecarReader.parse([
+            "session.id": .string("session_1717234870002_ff009988aabbccdd_ios"),
+            "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios"),
+            SessionSidecar.cleanExitKey: .bool(true)
+        ]))
+        XCTAssertNil(snapshot.extras[SessionSidecar.cleanExitKey])
+    }
+
     // MARK: - Happy path
 
     func testReadsValidIdentitiesAndExtras() throws {
