@@ -100,7 +100,8 @@ final class HangDetectorDetectionTests: XCTestCase {
         _ = watchdog.tick(currentHeartbeat: 2)
         _ = watchdog.tick(currentHeartbeat: 3)
         XCTAssertEqual(probe.calls.count, 1, "one event per stall")
-        XCTAssertEqual(probe.calls.first?.attributes["hang.duration_ms"], .double(10_250))
+        XCTAssertEqual(probe.calls.first?.attributes["hang.duration_ms"], .double(10_500),
+                       "measured from the last tick that saw a beat")
     }
 
     func testStallShorterThanThresholdEmitsNothing() {
@@ -174,6 +175,40 @@ final class HangDetectorDetectionTests: XCTestCase {
         XCTAssertNil(pending.read())
         XCTAssertFalse(watchdog.tick(currentHeartbeat: 2))
         XCTAssertTrue(probe.calls.isEmpty)
+    }
+
+    /// A tick racing `uninstall()` (blocked on the lock while the record
+    /// is discarded) must not write it back.
+    func testTickAfterDiscardNeverRewritesRecord() {
+        let pending = tempPending()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_000_000))
+        let watchdog = HangWatchdog(threshold: 2, clock: clock, recorder: HangProbeRecorder(),
+                                    stackProvider: { [] }, cpuProvider: { nil },
+                                    pending: pending, debug: false, log: .default)
+        _ = watchdog.tick(currentHeartbeat: 1)
+        _ = watchdog.tick(currentHeartbeat: 1)
+        clock.advance(by: 3)
+        watchdog.discardPending()
+        _ = watchdog.tick(currentHeartbeat: 1)
+        clock.advance(by: 1)
+        _ = watchdog.tick(currentHeartbeat: 1)
+        XCTAssertNil(pending.read())
+    }
+
+    /// No gap below the `long_task` ceiling: the stall is timed from the
+    /// last tick that saw a beat, so it never reads short.
+    func testStallTimedFromLastObservedBeat() {
+        let probe = HangProbeRecorder()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_000_000))
+        let watchdog = makeWatchdog(threshold: 2.0, clock: clock, recorder: probe)
+        _ = watchdog.tick(currentHeartbeat: 1)   // beat seen at t0
+        clock.advance(by: 0.25)
+        _ = watchdog.tick(currentHeartbeat: 1)   // first stalled tick
+        clock.advance(by: 1.75)
+        _ = watchdog.tick(currentHeartbeat: 1)   // t0 + 2 s → threshold
+        _ = watchdog.tick(currentHeartbeat: 2)
+        XCTAssertEqual(probe.calls.count, 1)
+        XCTAssertEqual(probe.calls.first?.attributes["hang.duration_ms"], .double(2_000))
     }
 
     /// Tranche 8 acceptance: killed mid-stall ⇒ next launch replays one
@@ -288,7 +323,7 @@ final class HangCPUWiringTests: XCTestCase {
         HangDetector._install(threshold: 2, debug: false, recorder: probe, clock: clock,
                               stackProvider: { [] }, cpuProvider: nil)
         let watchdog = try XCTUnwrap(HangDetector._activeWatchdog())
-        HangDetector.uninstall()  // stop the live thread; drive `tick` alone
+        HangDetector._cancelThreadForTests()  // stop the live thread; drive `tick` alone
         Thread.sleep(forTimeInterval: 0.05)
         XCTAssertFalse(watchdog.tick(currentHeartbeat: 1))  // baseline
         clock.advance(by: 0.25)

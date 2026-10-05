@@ -1883,3 +1883,12 @@ W11 (#199) and W19 (#207). Choices the spec and catalogue left to the code.
    value is boot-time-derived and leaves the device: confirm the
    `NSPrivacyAccessedAPICategorySystemBootTime` position when F20 writes the
    manifest (`35F9.1` forbids sending derived values off-device).
+9. **A stall is timed from the last watchdog tick that saw a beat**, not
+   the first tick that saw none, so it reads up to one tick (250 ms) long
+   rather than up to two short. Short would leave stalls just past the
+   threshold on no rung (`long_task` drops them, the watchdog has not
+   crossed yet); long puts a ≤ 250 ms sliver on both. Polling cannot make
+   the rungs exactly disjoint; this picks overlap over loss.
+10. **`crash.mach_exception` is the type name only** (`EXC_BAD_ACCESS`).
+   The codes stay in `crash.report_json`: `codes[1]` is usually a fault
+   address, which would make the queryable key unbounded.

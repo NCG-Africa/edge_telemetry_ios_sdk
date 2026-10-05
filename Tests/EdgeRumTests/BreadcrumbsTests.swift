@@ -192,6 +192,21 @@ final class BreadcrumbsTests: XCTestCase {
         XCTAssertEqual(rows.map(\.l), ["GET /v1/orders", "backgrounded", "UIButton", "pay"])
     }
 
+    /// F33 (ADR-024 #3): a replayed terminated hang gets no live trail;
+    /// the next live hang still takes it.
+    func testReplayedTerminatedHangDoesNotTakeTheTrail() {
+        let crumbs = makeCrumbs()
+        let (recorder, sink) = makeRecorder(crumbs: crumbs)
+        recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string("pay")])
+        recorder.recordEvent(name: "app.hang", attributes: ["hang.terminated": .bool(true)])
+        recorder.recordEvent(name: "app.hang", attributes: [:])
+        recorder.flush(reason: .manual)
+        let hangs = events(sink, "app.hang")
+        XCTAssertEqual(hangs.count, 2)
+        XCTAssertNil(hangs[0]["breadcrumbs"])
+        XCTAssertNotNil(hangs[1]["breadcrumbs"])
+    }
+
     func testEvictionAndTruncationAreCounted() throws {
         let crumbs = makeCrumbs()
         let (recorder, _) = makeRecorder(crumbs: crumbs)

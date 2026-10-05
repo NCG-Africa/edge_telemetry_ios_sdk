@@ -169,6 +169,8 @@ public enum RunLoopObserverCapture {
                     let elapsedNs = self.machDeltaToNanos(start: self.lastResumeAt, end: end)
                     let ms = Double(elapsedNs) / 1_000_000.0
                     self.lastResumeAt = 0
+                    // Pre-check of `decideEmission`'s range so an
+                    // out-of-range span skips symbolication.
                     if ms >= self.thresholdMs, ms < self.ceilingMs ?? .infinity {
                         let stack = StackFrames.symbolicate(
                             Thread.callStackReturnAddresses.map(\.uintValue)

@@ -212,6 +212,14 @@ public enum HangDetector {
         MainThreadStackSnapshot._resetForTests()
     }
 
+    /// Test hook — stop the watchdog thread but keep the watchdog live
+    /// (unlike `uninstall()`, which discards it) so a test can drive
+    /// `tick` alone.
+    internal static func _cancelThreadForTests() {
+        installLock.lock(); let thread = watchdogThread; installLock.unlock()
+        thread?.cancel()
+    }
+
     /// Test hook — read the live heartbeat counter without taking
     /// the install lock.
     internal static func _currentHeartbeat() -> UInt64 {
@@ -314,7 +322,14 @@ internal final class HangWatchdog {
 
     private var lastSeenHeartbeat: UInt64 = 0
     private var hasObservedHeartbeat: Bool = false
+    /// Tick that last saw the heartbeat move — the stall's start, so a
+    /// stall is never measured short (no gap below the `long_task`
+    /// ceiling); it reads up to one tick long instead.
+    private var lastBeatAt: Date?
     private var stalledStart: Date?
+    /// Set by `discardPending()`; a tick racing the uninstall must not
+    /// re-create the record.
+    private var discarded = false
     /// Attributes captured at threshold crossing; non-nil while a hang
     /// is open (crossed, not yet ended).
     private var openHang: [String: AttributeValue]?
@@ -343,6 +358,7 @@ internal final class HangWatchdog {
     /// Drop an open hang without emitting it (`uninstall`).
     func discardPending() {
         pendingLock.lock(); defer { pendingLock.unlock() }
+        discarded = true
         openHang = nil
         pending.delete()
     }
@@ -362,14 +378,17 @@ internal final class HangWatchdog {
             if currentHeartbeat > 0 {
                 hasObservedHeartbeat = true
                 lastSeenHeartbeat = currentHeartbeat
+                lastBeatAt = now
             }
             return false
         }
 
         pendingLock.lock(); defer { pendingLock.unlock() }
+        guard !discarded else { return false }
 
         if currentHeartbeat != lastSeenHeartbeat {
             lastSeenHeartbeat = currentHeartbeat
+            lastBeatAt = now
             defer { stalledStart = nil; openHang = nil }
             guard var attrs = openHang, let start = stalledStart else { return false }
             // Stall over: one event with the real length (± one tick).
@@ -386,7 +405,7 @@ internal final class HangWatchdog {
         // Heartbeat hasn't advanced since the previous tick. Begin
         // (or continue) the stall window.
         guard let start = stalledStart else {
-            stalledStart = now
+            stalledStart = lastBeatAt ?? now
             // Re-prime the delta reader so the detection read covers
             // the stall window, not everything since the last hang.
             _ = cpuProvider()
