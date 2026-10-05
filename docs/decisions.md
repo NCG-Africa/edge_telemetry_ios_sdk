@@ -2028,3 +2028,36 @@ the raw material for Apdex — without the SDK guessing at abandonment.
    `action.name.dropped` = distinct names lost. Reset on rotation; a
    session continued across launches starts a fresh set.
 
+## ADR-028 — Host-gated readiness (F37): a token beside the box, abandon on supersede or leave
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 13 of `docs/specs/rum-coverage-roadmap.md` (#224),
+W23 (#211), W9 (#197). Screen and launch readiness cannot be observed
+without the host; both ship as host calls.
+
+**Decision.**
+
+1. **`markScreenReady()`, no name.** Every `Riders.enterScreen` (UIKit
+   appear, `.edgeRumScreen`, `trackScreen`) stores a pending token
+   (capped screen + `clock.now`) under the box's own lock, so token and
+   box cannot disagree. The first mark consumes it → metric
+   `screen_ready`, `screen.ready_outcome = ready`, `value` = ms. No
+   token → no-op. A re-fired appear of the **same** screen keeps the
+   original anchor (SwiftUI re-fires `onAppear`).
+2. **Abandon triggers: supersede and leave.** The spec says "disappears
+   pending". A pending token is settled when another screen enters the
+   box *or* `leaveScreen` names it (pop / dismissal). Supersede is
+   needed because SwiftUI may fire the next `onAppear` before the old
+   `onDisappear`, and a UIKit push leaves without `isLeaving`. Only
+   screens marked at least once this process (learned set, never
+   persisted) emit `abandoned`; others drop the token silently — the
+   hole on record. The row is emitted before the box moves, and carries
+   its own `screen.name`, so the rider cannot stamp the next screen.
+3. **`markInteractive()`** — once per process, first call after
+   `start()` wins (a pre-`start()` call is a no-op and does not
+   consume). Metric `launch_interactive`, ms on `CLOCK_MONOTONIC_RAW`
+   from `PageLoadCapture.launchStartNs`, the `page_load` anchor.
+4. Metric allowlist 6 → 8. Both rows follow session sampling.

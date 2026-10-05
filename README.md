@@ -328,6 +328,19 @@ func recipeTime(perform: (@escaping () -> Void) -> Void) {
 }
 ```
 
+### Mark a screen or the app ready
+
+```swift
+import EdgeRum
+
+func recipeReady(load: (@escaping () -> Void) -> Void) {
+    load {
+        EdgeRum.markScreenReady()  // the screen now showing has its content
+        EdgeRum.markInteractive()  // first call per launch counts; later ones do nothing
+    }
+}
+```
+
 ### Track an action
 
 ```swift

@@ -12,7 +12,7 @@
 //     fractional seconds), `batch_size == events.count`.
 //   - Per-event: `type ∈ {"event","metric"}`, `timestamp` present,
 //     `eventName` in the 13-name allowlist, `metricName` in the
-//     6-name allowlist, no `cause` attribute (F29).
+//     8-name allowlist (F37), no `cause` attribute (F29).
 //   - Identity attrs present and well-formed: `session.id` /
 //     `device.id` prefixes, `sdk.platform == "ios-native"`.
 //   - No forbidden tokens anywhere in raw bytes: `traceId`,

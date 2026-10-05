@@ -281,6 +281,8 @@ and logged when `debug == true`.
 | Connectivity change                          | `network_change`                                 | `EdgeRumCapture/NetworkPathCapture.swift` (`NWPathMonitor`)                   |
 | `EdgeRum.startAction()`                      | `action.started`                                 | `Sources/EdgeRum/RumAction.swift` (stack: `EdgeRumCore/Actions.swift`)        |
 | `RumAction.complete()` / `fail()` / abandon  | `action.ended` (`action.outcome`)                | same; abandon on rotation, next launch (`process_death`), 600 s `timeout`     |
+| `EdgeRum.markScreenReady()` / abandon        | (`metric`, `metricName` = `"screen_ready"`, `screen.ready_outcome`) | `Sources/EdgeRum/EdgeRum.swift` (token: `EdgeRumCore/Riders.swift`) |
+| `EdgeRum.markInteractive()` (once/process)   | (`metric`, `metricName` = `"launch_interactive"`) | `Sources/EdgeRum/EdgeRum.swift` (ms from `launchStart`)                      |
 
 > **Not emitted on iOS:** `LCP`, `FCP`, `CLS`, `INP`, `TTFB`. iOS has
 > no native analogue to Web Vitals. Confirmation that the backend
@@ -289,9 +291,9 @@ and logged when `debug == true`.
 >
 > **Not emitted on iOS:** any `eventName` outside this table. The
 > backend silently drops unknowns. The allowlist is exactly 15 names;
-> `metricName` has its own 6-name allowlist (`Recorder.allowedMetricNames`:
+> `metricName` has its own 8-name allowlist (`Recorder.allowedMetricNames`:
 > `resource_timing`, `long_task`, `frame_render_time`, `memory_usage`,
-> `cpu_usage`, `custom_timer`).
+> `cpu_usage`, `custom_timer`, `screen_ready`, `launch_interactive`).
 >
 > **Forced-emit set** (bypasses `sampleRate`): `session.started`,
 > `session.finalized`, `app.crash`, `network_change`. `app.crash` is
@@ -473,6 +475,8 @@ public enum EdgeRum {
                                    attributes: [String: AttributeValue]? = nil)
     public static func time(_ name: String) -> RumTimer
     public static func startAction(_ name: String) -> RumAction  // F36: complete() / fail(reason:)
+    public static func markScreenReady()          // F37: screen_ready, no name parameter
+    public static func markInteractive()          // F37: launch_interactive, once per process
     public static func captureError(_ error: Error,
                                     type: String? = nil,  // F33: error_type
                                     context: [String: AttributeValue]? = nil)

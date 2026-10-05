@@ -54,6 +54,8 @@ recipes for the common host-app patterns are listed below.
 - ``EdgeRum/trackScreen(_:attributes:)``
 - ``EdgeRum/time(_:)``
 - ``EdgeRum/startAction(_:)``
+- ``EdgeRum/markScreenReady()``
+- ``EdgeRum/markInteractive()``
 - ``EdgeRum/captureError(_:type:context:)``
 
 ### Lifecycle

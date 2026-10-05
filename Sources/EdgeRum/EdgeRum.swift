@@ -66,6 +66,8 @@ public enum EdgeRum {
 
     private static let stateLock = NSLock()
     nonisolated(unsafe) private static var startedIdentity: StartedIdentity?
+    /// F37 — `markInteractive()` already recorded this process.
+    nonisolated(unsafe) private static var interactiveMarked = false
 
     /// The shared background uploader, instantiated at `start()` time
     /// so `handleBackgroundEvents(identifier:completion:)` can attach
@@ -411,6 +413,45 @@ public enum EdgeRum {
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }
 
+    /// Say the screen now showing is ready for the user — its content
+    /// is loaded, not just its placeholder. Records a `screen_ready`
+    /// performance data point: milliseconds from the screen's
+    /// appearance, carrying the current `screen.name`. Takes no name:
+    /// the screen is whichever one appeared last.
+    ///
+    /// Only the first call after an appearance counts; a call after the
+    /// user has moved to another screen does nothing. Once a screen has
+    /// been marked, leaving it again before it is ready records the same
+    /// data point with `screen.ready_outcome = "abandoned"` and the time
+    /// until the user left. A screen's first appearance in a process,
+    /// before its first mark, is never judged abandoned.
+    ///
+    /// If called before `start(_:)`, it does nothing.
+    public static func markScreenReady() {
+        guard requireStarted("markScreenReady") else { return }
+        Riders.shared.markScreenReady()
+    }
+
+    /// Say the app is ready for the user after launch. Records a
+    /// `launch_interactive` performance data point: milliseconds from
+    /// the same launch moment as `page_load`. Only the first call in a
+    /// process counts; later calls do nothing.
+    ///
+    /// If called before `start(_:)`, it does nothing and a later call
+    /// still counts.
+    public static func markInteractive() {
+        guard requireStarted("markInteractive") else { return }
+        stateLock.lock()
+        let first = !interactiveMarked
+        interactiveMarked = true
+        stateLock.unlock()
+        guard first, let ms = PageLoadCapture.elapsedMs(
+            fromNs: PageLoadCapture.launchStartNs,
+            toNs: PageLoadCapture.monotonicNs()
+        ) else { return }
+        Recorder.shared.recordPerformance(name: "launch_interactive", attributes: ["value": .double(Double(ms))])
+    }
+
     /// Start measuring an interval of code. Call `end()` on the
     /// returned `RumTimer` to record a performance data point with
     /// the elapsed duration.
@@ -594,6 +635,7 @@ public enum EdgeRum {
     internal static func _resetStartedConfigForTesting() {
         stateLock.lock()
         startedIdentity = nil
+        interactiveMarked = false
         stateLock.unlock()
     }
 }

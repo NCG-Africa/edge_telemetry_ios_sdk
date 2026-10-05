@@ -49,9 +49,10 @@ internal enum SwiftUIEmitter {
         recorder.recordEvent(name: "navigation", attributes: payload)
     }
 
-    /// `.edgeRumScreen` on-disappear → no event. Restores the
+    /// `.edgeRumScreen` on-disappear → no `navigation`. Restores the
     /// presenter in the screen box: sheet dismissal does not re-fire
-    /// the presenter's `onAppear`.
+    /// the presenter's `onAppear`. May emit an `abandoned`
+    /// `screen_ready` row (F37).
     internal static func emitScreenDisappear(name: String, riders: Riders = .shared) {
         riders.leaveScreen(name)
     }

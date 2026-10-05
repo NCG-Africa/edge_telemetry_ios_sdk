@@ -11,9 +11,10 @@
 //       navigation.kind            — "uikit" or "swiftui"
 //       navigation.previous_screen — last entered screen (omitted if nil)
 //
-// Disappear emits nothing (F29 deleted `screen.duration`; the
-// Processor synthesizes dwell from `navigation`, #144). It only
-// restores the presenter in the screen box on dismissal.
+// Disappear emits no dwell (F29 deleted `screen.duration`; the
+// Processor synthesizes dwell from `navigation`, #144). It restores
+// the presenter in the screen box on dismissal — which also settles a
+// pending `screen_ready` token as `abandoned` (F37, ADR-028).
 //
 // The current screen lives in the `Riders` box (F28), shared with
 // `.edgeRumScreen` and `trackScreen`; it is written before `navigation`
