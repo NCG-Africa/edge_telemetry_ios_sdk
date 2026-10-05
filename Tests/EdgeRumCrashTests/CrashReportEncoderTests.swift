@@ -27,9 +27,9 @@ final class CrashReportEncoderTests: XCTestCase {
         ))
 
         // Required wire fields.
-        XCTAssertEqual(attrs["cause"], .string("NativeCrash"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("native"))
-        XCTAssertEqual(attrs["crash.fatal"], .bool(true))
+        XCTAssertNil(attrs["crash.fatal"])
         XCTAssertEqual(
             attrs["crash.report_format_version"],
             .string("edgerum.crash.v1"),

@@ -1,7 +1,7 @@
 // Sources/EdgeRumCrash/CrashReportEncoder.swift
 //
 // Pure encoder over a parsed `PLCrashReport`. Builds the flat
-// attribute bag for an `app.crash` event with `cause = "NativeCrash"`,
+// attribute bag for an `app.crash` event (native crash replay),
 // stamping `crash.report_format_version = "edgerum.crash.v1"` so the
 // backend can validate the embedded `crash.report_json` shape.
 //
@@ -71,9 +71,7 @@ internal enum CrashReportEncoder {
     ) -> [String: AttributeValue] {
 
         var attrs: [String: AttributeValue] = [:]
-        attrs["cause"] = .string("NativeCrash")
         attrs["runtime"] = .string("native")
-        attrs["crash.fatal"] = .bool(true)
         attrs["crash.report_format_version"] = .string(reportFormatVersion)
 
         if let sigName = report.signalInfo?.name {

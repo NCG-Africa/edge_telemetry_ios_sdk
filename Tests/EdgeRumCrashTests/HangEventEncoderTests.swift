@@ -25,13 +25,13 @@ final class HangEventEncoderTests: XCTestCase {
             timestamp: referenceTimestamp
         )
 
-        XCTAssertEqual(attrs["cause"], .string("Hang"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("native"))
-        XCTAssertEqual(attrs["crash.fatal"], .bool(false))
+        XCTAssertNil(attrs["crash.fatal"])
         XCTAssertEqual(attrs["hang.duration_ms"], .double(5_240))
         XCTAssertEqual(attrs["hang.threshold_ms"], .double(5_000))
         XCTAssertEqual(
-            attrs["crash.timestamp"],
+            attrs["hang.timestamp"],
             .string(WireDateFormatter.string(from: referenceTimestamp))
         )
     }
@@ -59,7 +59,7 @@ final class HangEventEncoderTests: XCTestCase {
     }
 
     func testStackFallsBackToPlaceholderWhenSnapshotIsEmpty() {
-        // T15.2 acceptance — `crash.thread.main_stack` must always be
+        // T15.2 acceptance — `hang.stack` must always be
         // non-empty. When the Mach snapshot fails (empty array), the
         // encoder substitutes a placeholder so the wire still carries
         // a value.
@@ -70,8 +70,8 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: [],
             timestamp: referenceTimestamp
         )
-        guard case let .string(stack) = attrs["crash.thread.main_stack"] else {
-            return XCTFail("crash.thread.main_stack must be set with a string value")
+        guard case let .string(stack) = attrs["hang.stack"] else {
+            return XCTFail("hang.stack must be set with a string value")
         }
         XCTAssertEqual(stack, HangEventEncoder.unavailableFrame)
         XCTAssertFalse(stack.isEmpty)
@@ -86,8 +86,8 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: bigStack,
             timestamp: referenceTimestamp
         )
-        guard case let .string(stack) = attrs["crash.thread.main_stack"] else {
-            return XCTFail("crash.thread.main_stack must be set with a string value")
+        guard case let .string(stack) = attrs["hang.stack"] else {
+            return XCTFail("hang.stack must be set with a string value")
         }
         let lines = stack.components(separatedBy: "\n")
         XCTAssertEqual(lines.count, HangEventEncoder.topFrames + 1,

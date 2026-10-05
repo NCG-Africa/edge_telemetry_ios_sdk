@@ -64,10 +64,12 @@ final class RecorderTests: XCTestCase {
     func testAllowedEventNamesContainsExpectedSet() {
         let expected: Set<String> = [
             "session.started", "session.finalized", "app_lifecycle",
-            "page_load", "navigation", "screen.duration",
+            "page_load", "navigation",
             "http.request", "user.interaction", "network_change",
-            "user.profile.update", "custom_event", "app.crash"
+            "user.profile.update", "custom_event",
+            "app.error", "app.hang", "app.crash"
         ]
+        XCTAssertEqual(expected.count, 13)
         XCTAssertEqual(Recorder.allowedEventNames, expected)
     }
 
@@ -101,24 +103,37 @@ final class RecorderTests: XCTestCase {
     // MARK: Immediate-flush triggers
 
     func testAppCrashEventTriggersImmediateFlush() {
-        // F13: `EdgeRum.captureError` routes through
-        // `recordEvent(name: "app.crash", ...)`. The Recorder must
-        // treat that event name as an immediate-flush trigger so
-        // crash payloads never wait behind a `flushInterval` timer.
+        // `app.crash` is native crash replay only (F29) — the process
+        // died, so it never waits behind a `flushInterval` timer.
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordEvent(name: "app.crash", attributes: [
-            "cause": "AppError",
-            "runtime": "swift",
-            "error.kind": "swift",
-            "error.type": "DemoError",
-            "error.message": "boom"
-        ])
+        recorder.recordEvent(name: "app.crash", attributes: ["runtime": "native"])
         XCTAssertEqual(sink.envelopes.count, 1)
         XCTAssertEqual(sink.sends.first?.reason, .immediate)
-        let event = sink.envelopes.first?.events.first
-        XCTAssertEqual(event?.name, "app.crash")
-        XCTAssertEqual(event?.attributes["cause"], .string("AppError"))
-        XCTAssertEqual(event?.attributes["error.kind"], .string("swift"))
+        XCTAssertEqual(sink.envelopes.first?.events.first?.name, "app.crash")
+    }
+
+    // F29 acceptance: a `captureError` call neither bypasses the
+    // sampler nor flushes; `app.hang` follows the same policy.
+    func testAppErrorAndAppHangDoNotFlush() {
+        let (recorder, sink, _) = makeRecorder(batchSize: 100)
+        recorder.recordEvent(name: "app.error", attributes: ["error.kind": "swift"])
+        recorder.recordEvent(name: "app.hang", attributes: ["runtime": "native"])
+        XCTAssertTrue(sink.envelopes.isEmpty)
+        recorder.flush(reason: .manual)
+        XCTAssertEqual(sink.envelopes.first?.events.map(\.name), ["app.error", "app.hang"])
+    }
+
+    func testAppErrorAndAppHangFollowTheSampler() {
+        let (recorder, sink, _) = makeRecorder()
+        recorder.configure(RecorderConfig(
+            apiKey: "edge_test",
+            endpoint: URL(string: "https://collect.example.com")!,
+            sampleRate: 0.0
+        ))
+        recorder.recordEvent(name: "app.error", attributes: [:])
+        recorder.recordEvent(name: "app.hang", attributes: [:])
+        recorder.flush(reason: .manual)
+        XCTAssertTrue(sink.envelopes.isEmpty)
     }
 
     func testSessionFinalizedTriggersImmediateFlush() {

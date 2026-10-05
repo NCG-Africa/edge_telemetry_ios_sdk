@@ -385,8 +385,9 @@ public enum EdgeRum {
         return timer
     }
 
-    /// Report a thrown `Error` as an `app.crash` event with
-    /// `cause = "AppError"`. The error's type, domain, code,
+    /// Report a thrown `Error` as an `app.error` event. It follows
+    /// `sampleRate` and the normal flush cadence — it never forces an
+    /// upload. The error's type, domain, code,
     /// `localizedDescription`, and (for `NSError`) the primitive
     /// entries of `userInfo` are flattened into wire attributes
     /// automatically. A snapshot of the call-site stack — captured
@@ -410,7 +411,7 @@ public enum EdgeRum {
             stack: stack,
             debug: recorder.debug
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
     }
 
     // MARK: Enable / disable

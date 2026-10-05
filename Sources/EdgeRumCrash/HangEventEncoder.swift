@@ -1,10 +1,7 @@
 // Sources/EdgeRumCrash/HangEventEncoder.swift
 //
-// F15/T15.2 — pure encoder for hang `app.crash` events. Mirrors the
-// shape of `CrashReportEncoder` (native crash path) so the backend
-// dispatcher routes both flavours through the same `app.crash`
-// channel, differentiated by `cause`. Hangs ride with
-// `cause = "Hang"`, `runtime = "native"`, `crash.fatal = false`.
+// F15/T15.2 — pure encoder for `app.hang` events (F29 split them off
+// `app.crash`). Hangs ride with `runtime = "native"`.
 //
 // Hang-specific attribute keys:
 //
@@ -12,14 +9,11 @@
 //   - `hang.threshold_ms`   — configured `hangTimeout` in ms
 //   - `hang.cpu_usage`      — whole-process CPU over the stall window,
 //                             per-core percent (may exceed 100)
-//   - `crash.thread.main_stack` — best-effort symbolicated stack
-//   - `crash.timestamp`     — ISO 8601 time of detection
+//   - `hang.stack`          — best-effort symbolicated stack
+//   - `hang.timestamp`      — ISO 8601 time of detection
 //
-// The `crash.thread.main_stack` key (rather than `hang.stack` from
-// PLAN-iOS.md §6.8) is the explicit acceptance criterion in T15.2
-// and matches the existing `CrashReportEncoder` namespace so future
-// crash + hang dashboards share a single column. ADR-011 pins the
-// rationale.
+// F29 renamed `crash.thread.main_stack` / `crash.timestamp` to the
+// `hang.` keys (roadmap §10 row 11), superseding ADR-011's namespace.
 //
 // Refs: PLAN-iOS.md §6.8, §F15/T15.2; docs/decisions.md ADR-011;
 //       CLAUDE.md "EdgeTelemetryProcessor contract".
@@ -37,7 +31,7 @@ internal enum HangEventEncoder {
     /// `…N more…` marker via `CrashStackTruncator`.
     internal static let topFrames: Int = 30
 
-    /// Build the flat attribute bag for one hang `app.crash` event.
+    /// Build the flat attribute bag for one `app.hang` event.
     /// Pure — no I/O, no globals, safe to call from any thread.
     ///
     /// - Parameters:
@@ -49,7 +43,7 @@ internal enum HangEventEncoder {
     ///   - stackFrames: ordered main-thread frames captured at
     ///     detection. Empty when the snapshot helper failed; in that
     ///     case we fall back to a single placeholder frame so the
-    ///     T15.2 "non-empty `crash.thread.main_stack`" acceptance
+    ///     T15.2 "non-empty `hang.stack`" acceptance
     ///     criterion holds.
     ///   - timestamp: detection wall-clock time, in ISO 8601 form.
     internal static func encode(
@@ -61,15 +55,13 @@ internal enum HangEventEncoder {
     ) -> [String: AttributeValue] {
 
         var attrs: [String: AttributeValue] = [:]
-        attrs["cause"] = .string("Hang")
         attrs["runtime"] = .string("native")
-        attrs["crash.fatal"] = .bool(false)
         attrs["hang.duration_ms"] = .double(durationMs)
         attrs["hang.threshold_ms"] = .double(thresholdMs)
         if let cpu = cpuUsage {
             attrs["hang.cpu_usage"] = .double(cpu)
         }
-        attrs["crash.timestamp"] = .string(WireDateFormatter.string(from: timestamp))
+        attrs["hang.timestamp"] = .string(WireDateFormatter.string(from: timestamp))
 
         let safeFrames = stackFrames.isEmpty
             ? [Self.unavailableFrame]
@@ -82,7 +74,7 @@ internal enum HangEventEncoder {
         if let marker = omitted {
             rendered += "\n" + marker
         }
-        attrs["crash.thread.main_stack"] = .string(rendered)
+        attrs["hang.stack"] = .string(rendered)
 
         return attrs
     }

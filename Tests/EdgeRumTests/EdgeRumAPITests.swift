@@ -207,16 +207,16 @@ final class EdgeRumAPITests: XCTestCase {
         EdgeRum.captureError(err, context: ["payment.method": "card"])
 
         let crashEvents = probe.calls.compactMap { call -> [String: AttributeValue]? in
-            if case let .event(name, attributes) = call, name == "app.crash" {
+            if case let .event(name, attributes) = call, name == "app.error" {
                 return attributes
             }
             return nil
         }
         XCTAssertEqual(crashEvents.count, 1)
         guard let attrs = crashEvents.first else {
-            return XCTFail("Expected an app.crash routing call")
+            return XCTFail("Expected an app.error routing call")
         }
-        XCTAssertEqual(attrs["cause"], .string("AppError"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("swift"))
         XCTAssertEqual(attrs["error.kind"], .string("nserror"))
         XCTAssertEqual(attrs["error.domain"], .string("PaymentDomain"))
@@ -241,7 +241,7 @@ final class EdgeRumAPITests: XCTestCase {
         EdgeRum.start(Self.validConfig())
         EdgeRum.captureError(DemoError(detail: "nope"))
         let kinds = probe.calls.compactMap { call -> AttributeValue? in
-            if case let .event(name, attributes) = call, name == "app.crash" {
+            if case let .event(name, attributes) = call, name == "app.error" {
                 return attributes["error.kind"]
             }
             return nil

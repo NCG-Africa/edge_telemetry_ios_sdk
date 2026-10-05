@@ -8,7 +8,7 @@
 // per test) and deterministic on noisy CI runners.
 //
 // Refs: PLAN-iOS.md §6.8, §F15/T15.1 acceptance ("synthetic 6 s main-
-// thread block emits one `app.crash` with `crash.cause = "Hang"`").
+// thread block emits one `app.hang`").
 //
 
 import XCTest
@@ -70,8 +70,8 @@ final class HangDetectorDetectionTests: XCTestCase {
         // Exactly one event recorded.
         XCTAssertEqual(probe.calls.count, 1)
         let call = try XCTUnwrap(probe.calls.first)
-        XCTAssertEqual(call.name, "app.crash")
-        XCTAssertEqual(call.attributes["cause"], .string("Hang"))
+        XCTAssertEqual(call.name, "app.hang")
+        XCTAssertNil(call.attributes["cause"])
         XCTAssertEqual(call.attributes["runtime"], .string("native"))
         guard case let .double(durationMs) = call.attributes["hang.duration_ms"] else {
             return XCTFail("hang.duration_ms missing or wrong type")
@@ -79,8 +79,8 @@ final class HangDetectorDetectionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(durationMs, 5_000)
         XCTAssertEqual(call.attributes["hang.threshold_ms"], .double(5_000))
         // Stack supplied via the injected provider.
-        guard case let .string(stack) = call.attributes["crash.thread.main_stack"] else {
-            return XCTFail("crash.thread.main_stack missing")
+        guard case let .string(stack) = call.attributes["hang.stack"] else {
+            return XCTFail("hang.stack missing")
         }
         XCTAssertTrue(stack.contains("mainThreadFrame"))
     }
@@ -148,8 +148,8 @@ final class HangDetectorDetectionTests: XCTestCase {
 
         XCTAssertEqual(probe.calls.count, 2,
                        "two distinct stalls must emit two events")
-        let first = try XCTUnwrap(probe.calls.first?.attributes["crash.timestamp"])
-        let second = try XCTUnwrap(probe.calls.last?.attributes["crash.timestamp"])
+        let first = try XCTUnwrap(probe.calls.first?.attributes["hang.timestamp"])
+        let second = try XCTUnwrap(probe.calls.last?.attributes["hang.timestamp"])
         XCTAssertNotEqual(first, second,
                           "two events must carry distinct timestamps")
     }
