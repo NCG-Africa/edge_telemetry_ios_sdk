@@ -1472,10 +1472,14 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
 
 ## 14. Backend asks
 
-The consolidated, tranche-ordered record of everything below — plus the
-React Native bridge delta — is [#225](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/225).
+The RUM coverage tranches (items 9, 13–24) plus the React Native bridge
+delta are collected, tranche-ordered, in [#225](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/225).
 Copy from it by hand; agents do not file on the Processor or RN repos.
-Only the F29 asks (item 19) need a decision; the rest is informational.
+Within #225 only the F29 asks (item 19) need a decision. Where #225 and
+the code disagree, the code wins: `cpu_usage` carries its percent in the
+top-level `value` (no `cpu.percent` key), the memory key is
+`memory.pressure` (not `memory.pressure_level`), and
+`sdk.start_duration_ms` is process-scoped (ADR-025).
 
 1. **Accept `sdk.platform = "ios-native"` as a valid value.** Only
    new identity-attribute value in the iOS payload.
@@ -1488,7 +1492,12 @@ Only the F29 asks (item 19) need a decision; the rest is informational.
    `image +0x<image-relative offset> <hint>` with the image UUIDs in
    `<prefix>.binary_images`; lookup is `(uuid, offset)`. Ingest-time
    symbolication recommended (grouping needs symbolicated frames). A
-   missing dSYM degrades to the on-device hint, never an error.
+   missing dSYM degrades to the on-device hint, never an error. Native
+   crashes key on `crash.binary_uuid` / `crash.binary_name` and
+   `crash.report_json.binary_images[].{uuid, base_address}`;
+   `crash.binary_images.dropped` / `crash.registers.dropped` are counts,
+   omitted when zero. Retain dSYMs (keyed by Mach-O UUID, uploaded from
+   the host's archive step) as long as the oldest emitting app version.
 
 3. **Confirm absence of Web Vital metrics is fine.**
 
@@ -1511,7 +1520,7 @@ Only the F29 asks (item 19) need a decision; the rest is informational.
    cellular path reports the **radio** generation (`2g`–`5g`), never
    `"cellular"`; `"wired"` is a member. `4g` on iOS means "LTE radio",
    not web's throughput estimate — do not pool the distributions
-   (ADR-026).
+   (ADR-026). Radio handovers re-emit `network_change`.
 
 10. **`device.batteryLevel = -1.0`** when battery monitoring is off
     (simulator). Forwarded as-is.
@@ -1569,7 +1578,8 @@ Only the F29 asks (item 19) need a decision; the rest is informational.
     while an action is open) is **not** `rum.action.id` (a trace-root
     id): different ids, different lifetimes. `action.outcome` =
     `completed` / `failed` / `abandoned` (+ `action.abandon_reason` =
-    `rotation` / `process_death` / `timeout`); Apdex is computed
+    `rotation` / `process_death` / `timeout`); `action.name` is capped
+    per session, overflow → `_other` + `action.name.dropped`; Apdex is computed
     downstream from duration (`ended − started` timestamps) + outcome.
     Catalogue §5.14, ADR-027. RN: a handle-shaped API across the bridge
     (id mapping).
@@ -1581,8 +1591,9 @@ Only the F29 asks (item 19) need a decision; the rest is informational.
     anchor. Both are host-adoption-gated: absent until the host calls
     `markScreenReady()` / `markInteractive()`. Catalogue §4.2/§5.11, ADR-028.
     RN: expose both methods.
-19. **F29 breaking batch (#216) — the only decisions.** Rollout:
-    Processor first, then the iOS alpha. (A1) Switch on
+19. **F29 breaking batch (#216) — the only decisions** (A1–A4 are
+    #225's labels). Hand over when F25 starts, not when F29 does.
+    Rollout: Processor first, then the iOS alpha. (A1) Switch on
     `user.interaction` for `rum_ui_interactions` (today keys
     `ui.interaction`, so iOS falls to `default:`). (A2) Promote
     `type: metric` items instead of returning before the event switch.
@@ -1594,26 +1605,36 @@ Only the F29 asks (item 19) need a decision; the rest is informational.
     mapping; host attributes under SDK prefixes are now dropped;
     JS timers arrive as `custom_timer` + `timer.name`.
 20. **F31 breadcrumbs (#218).** `breadcrumbs` (JSON **string**, ≤ 100
-    rows `{t, n, l, s?}`; `l` is `content`) + `breadcrumb.dropped` on
-    `app.crash` / `app.hang` / `app.error`. A replayed crash carries the
-    **previous** session's trail. RN: expose `captureBreadcrumbs`.
+    rows `{t, n, l?, s?}`; `l` is `content`) + `breadcrumb.dropped` on
+    `app.crash` and the **first** `app.hang` / `app.error` per session.
+    A replayed crash carries the **previous** session's trail. ADR-022.
+    RN: expose `captureBreadcrumbs`.
 21. **F32 SDK health (#219).** Flat `sdk.*` envelope counters,
     **cumulative per scope — take the max, never sum**; omitted when
     zero. `sdk.capabilities_failed` (comma-joined subsystem names) is
-    the highest-value field. Gap detection: `sdk.events_generated` vs
-    events received. ADR-023. RN: none.
+    the highest-value field. Process-scoped counters reset on process
+    death; present on sampled sessions (plus forced `app.crash`). Gap
+    detection: `sdk.events_generated` vs events received. ADR-023. RN: none.
 22. **F33 error evidence + two-phase hang (#220).** `previous_session.*`
     + `device.boot_time` on `session.started` — evidence, not a verdict;
     `end = unknown` never means `oom`. `error_type` on `app.error`
     (host free string; not the `http.request` vocabulary).
     `crash.mach_exception` on `app.crash`; exception keys win over
     signal keys. `hang.duration_ms` is now the real stall;
-    `hang.terminated = true` on a replayed hang. RN: expose `type` on
-    `captureError`.
+    `hang.terminated = true` on a replayed hang. `long_task` is capped
+    below `hangTimeout` (one rung per stall); `frame.dropped_count` is
+    observed, omitted on an empty window. No `crash.kind` ships — derive
+    it. ADR-024. RN: expose `type` on `captureError`.
 23. **F34 launch (#221).** `launch.pre_sdk_duration_ms` on `page_load`
     (absent when `prewarmed`, never zero);
     `sdk.start_duration_ms` + `sdk.start_replayed_crash` on the
     envelope — split the p95 on the bool. ADR-025. RN: none.
+24. **F25 hot path (#212).** `sdk.thread_time_ms` on the envelope —
+    cumulative per session, take the max. After `disable()` host calls
+    (`track` / `captureError` / timers / SwiftUI) emit nothing: fewer
+    events from opted-out users is correct. RN: bridge docs must not
+    promise otherwise. Once F24 tracing ships, `resource_timing` carries
+    its request's `span.id` — join on it when present.
 
 ---
 
