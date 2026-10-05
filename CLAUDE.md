@@ -144,6 +144,9 @@ key, so the SDK does **not** send it.
   `sdk.events_dropped.{queue_overflow,encode_failure,non_retryable,enqueue_failure}`,
   `sdk.queue_depth_max`, `sdk.storage_bytes_max`, `sdk.capabilities_failed`.
   Markers omitted when zero; wire-only, no public accessor (ADR-023).
+  F34 (#221): `sdk.start_duration_ms` (the `start()` call, monotonic) +
+  `sdk.start_replayed_crash` (bool), set at the end of `start()` and on
+  every later envelope of the process (ADR-025).
 - `events`: array of event and metric items.
 
 ### Required identity attributes on every event

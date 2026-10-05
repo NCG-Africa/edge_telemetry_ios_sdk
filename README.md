@@ -270,8 +270,9 @@ any per-call code. Each one is independently togglable on the config.
 - **Lifecycle.** `app_lifecycle` events on every state transition;
   background transitions force an immediate flush.
 - **Connectivity.** `network_change` events fed by `NWPathMonitor`.
-- **Page load.** One `page_load` per process, from launch instant to
-  first frame after `.active`.
+- **Page load.** One `page_load` per process, from `start()` to first
+  frame after `.active`, plus `launch.pre_sdk_duration_ms` (process
+  start → `start()`, omitted when prewarmed).
 - **Native crashes.** PLCrashReporter with replay on next launch — the
   emitted `app.crash` carries the **previous** session's identity.
 - **Hangs.** Runloop watchdog emits one `app.hang` when a main-thread

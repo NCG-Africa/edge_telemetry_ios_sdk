@@ -4,14 +4,20 @@
 //
 // Emits exactly one `page_load` event per process, measuring the cold-
 // start window from the SDK's earliest observable launch instant
-// (PageLoadCapture.launchStart — first reference touches it; EdgeRum
-// touches it before any other startup work) to the first
-// `CADisplayLink` tick observed while `UIApplication.shared.application-
-// State == .active`. The event carries:
+// (PageLoadCapture.launchStart — first reference touches it; the first
+// line of `EdgeRum.start()` touches it) to the first `CADisplayLink`
+// tick observed while `UIApplication.shared.applicationState ==
+// .active`. The event carries:
 //
-//   page_load.duration_ms : Int     ms from launchStart to first active tick
-//   page_load.prewarmed   : Bool    iOS 15+ ActivePrewarm env == "1"
-//   page_load.source      : String  "displaylink"
+//   page_load.duration_ms      : Int?   ms launchStart → first active tick,
+//                                       monotonic; omitted if unreadable
+//   page_load.prewarmed        : Bool   iOS 15+ ActivePrewarm env == "1"
+//   page_load.source           : String "displaylink"
+//   launch.pre_sdk_duration_ms : Int?   process start (p_starttime) →
+//                                       launchStart; omitted when
+//                                       prewarmed or unreadable (F34)
+//
+// Time to first frame = pre_sdk_duration_ms + duration_ms.
 //
 // Two static tokens guarantee correctness:
 //
@@ -54,10 +60,10 @@ public enum PageLoadCapture {
 
     // MARK: Launch-start anchor
     //
-    // Captured on first reference to `launchStart`. `EdgeRum.start()`
-    // touches it before any other startup work (Recorder, samplers,
-    // observers) so the anchor is sampled as close to host-app launch
-    // as the SDK can observe.
+    // Captured on first reference to `launchStart`. The first line of
+    // `EdgeRum.start()` touches it, so the SDK's whole start cost is a
+    // prefix of `page_load.duration_ms`. The wall instant pairs with a
+    // monotonic reading; durations use the monotonic one (F34).
 
     nonisolated(unsafe) private static let _launchStartLock: UnsafeMutablePointer<os_unfair_lock> = {
         let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
@@ -65,7 +71,7 @@ public enum PageLoadCapture {
         return p
     }()
 
-    nonisolated(unsafe) private static var _launchStart: Date = Date()
+    nonisolated(unsafe) private static var _launchStart: (wall: Date, ns: UInt64) = (Date(), monotonicNs())
 
     /// The instant the SDK first observed launch. First access initializes
     /// it via the `_launchStart` default expression; `touchLaunchStart()`
@@ -73,7 +79,47 @@ public enum PageLoadCapture {
     public static var launchStart: Date {
         os_unfair_lock_lock(_launchStartLock)
         defer { os_unfair_lock_unlock(_launchStartLock) }
-        return _launchStart
+        return _launchStart.wall
+    }
+
+    /// `launchStart` on the monotonic clock (`CLOCK_MONOTONIC_RAW`, ns).
+    public static var launchStartNs: UInt64 {
+        os_unfair_lock_lock(_launchStartLock)
+        defer { os_unfair_lock_unlock(_launchStartLock) }
+        return _launchStart.ns
+    }
+
+    /// `CLOCK_MONOTONIC_RAW` in ns; `0` when the clock cannot be read.
+    public static func monotonicNs() -> UInt64 {
+        clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
+    }
+
+    /// Whole ms from `startNs` to `endNs`, or `nil` when either reading
+    /// failed (`0`) or the interval runs backwards — omit, never `0`.
+    public static func elapsedMs(fromNs startNs: UInt64, toNs endNs: UInt64) -> Int? {
+        guard startNs != 0, endNs != 0, endNs >= startNs else { return nil }
+        return Int((Double(endNs - startNs) / 1_000_000).rounded())
+    }
+
+    /// `launch.pre_sdk_duration_ms`: process start → `launchStart`. `nil`
+    /// when prewarmed (the fork may be hours old), when the process
+    /// start is unreadable, or when the wall clock ran backwards.
+    static func preSdkDurationMs(processStart: Date?, launchStart: Date, prewarmed: Bool) -> Int? {
+        guard !prewarmed, let processStart else { return nil }
+        let ms = launchStart.timeIntervalSince(processStart) * 1000
+        return ms >= 0 ? Int(ms.rounded()) : nil
+    }
+
+    /// Kernel process start time (`kinfo_proc.p_starttime`), or `nil`
+    /// when `sysctl` fails.
+    static func processStartTime() -> Date? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let tv = info.kp_proc.p_un.__p_starttime
+        guard tv.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(tv.tv_sec) + TimeInterval(tv.tv_usec) / 1_000_000)
     }
 
     /// Touch `launchStart` so its lazy default expression fires now.
@@ -175,14 +221,17 @@ public enum PageLoadCapture {
     /// `prewarmed` is passed in (rather than read from static state)
     /// so this function stays trivially testable.
     static func makeAttributes(
-        durationMs: Int,
-        prewarmed: Bool
+        durationMs: Int?,
+        prewarmed: Bool,
+        preSdkDurationMs: Int? = nil
     ) -> [String: AttributeValue] {
-        [
-            "page_load.duration_ms": .int(durationMs),
+        var attrs: [String: AttributeValue] = [
             "page_load.prewarmed": .bool(prewarmed),
             "page_load.source": .string("displaylink")
         ]
+        if let durationMs { attrs["page_load.duration_ms"] = .int(durationMs) }
+        if let preSdkDurationMs { attrs["launch.pre_sdk_duration_ms"] = .int(preSdkDurationMs) }
+        return attrs
     }
 
     // MARK: Emission
@@ -192,8 +241,9 @@ public enum PageLoadCapture {
     /// the event was recorded, `false` if the guard short-circuited.
     @discardableResult
     static func emit(
-        durationMs: Int,
-        prewarmed: Bool
+        durationMs: Int?,
+        prewarmed: Bool,
+        preSdkDurationMs: Int? = nil
     ) -> Bool {
         os_unfair_lock_lock(emitLock)
         if _emitted {
@@ -219,7 +269,8 @@ public enum PageLoadCapture {
             name: "page_load",
             attributes: makeAttributes(
                 durationMs: durationMs,
-                prewarmed: prewarmed
+                prewarmed: prewarmed,
+                preSdkDurationMs: preSdkDurationMs
             )
         )
         return true
@@ -284,20 +335,22 @@ public enum PageLoadCapture {
             }
 
             let prewarmed = PageLoadCapture.prewarmedAtLaunch
-            let durationMs = Int(
-                (Date().timeIntervalSince(PageLoadCapture.launchStart) * 1000.0).rounded()
+            // Monotonic, so an NTP step cannot bend it; an unreadable
+            // interval is omitted, never shipped as 0 (F34).
+            let durationMs = PageLoadCapture.elapsedMs(
+                fromNs: PageLoadCapture.launchStartNs,
+                toNs: PageLoadCapture.monotonicNs()
+            )
+            let preSdkMs = PageLoadCapture.preSdkDurationMs(
+                processStart: PageLoadCapture.processStartTime(),
+                launchStart: PageLoadCapture.launchStart,
+                prewarmed: prewarmed
             )
 
-            // Defensive clamp — if the clock jumped backwards (rare,
-            // but documented to happen across NTP corrections) we'd
-            // otherwise ship a negative duration that the backend would
-            // reject. The clamp keeps the event valid while preserving
-            // the "exactly one event" guarantee.
-            let safeDuration = max(0, durationMs)
-
             let recorded = PageLoadCapture.emit(
-                durationMs: safeDuration,
-                prewarmed: prewarmed
+                durationMs: durationMs,
+                prewarmed: prewarmed,
+                preSdkDurationMs: preSdkMs
             )
 
             link.invalidate()
@@ -312,7 +365,7 @@ public enum PageLoadCapture {
                     "page_load fired: duration_ms=%{public}d prewarmed=%{public}@ recorded=%{public}@",
                     log: PageLoadCapture.log,
                     type: .info,
-                    safeDuration,
+                    durationMs ?? -1,
                     prewarmed ? "true" : "false",
                     recorded ? "true" : "false"
                 )
@@ -385,8 +438,10 @@ public enum PageLoadCapture {
     /// Pin the launch-start anchor to a fixed instant. Tests drive this
     /// before invoking the emit path so `duration_ms` is deterministic.
     public static func _setLaunchStartForTesting(_ date: Date) {
+        let ago = UInt64(max(0, -date.timeIntervalSinceNow) * 1_000_000_000)
+        let ns = monotonicNs()
         os_unfair_lock_lock(_launchStartLock)
-        _launchStart = date
+        _launchStart = (date, ns > ago ? ns - ago : 1)
         os_unfair_lock_unlock(_launchStartLock)
     }
 

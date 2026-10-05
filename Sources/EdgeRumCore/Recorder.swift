@@ -167,6 +167,11 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
     private var _session = SessionHealth()
 
+    /// F34 — `sdk.start_duration_ms` + `sdk.start_replayed_crash`, set
+    /// once at the end of `EdgeRum.start()`. Empty until then, so the
+    /// crash-replay envelope sent mid-start omits both (ADR-025).
+    private var _startStats: [String: AttributeValue] = [:]
+
     /// Process-scoped health counters, shared with the transport.
     private let health: SdkHealth
 
@@ -287,6 +292,14 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// next `start()` emits (F33).
     public func setLaunchEvidence(_ attributes: [String: AttributeValue]) {
         stateLock.lock(); _pendingStarted = attributes; stateLock.unlock()
+    }
+
+    /// F34 — the `EdgeRum.start()` call's own cost, for every later
+    /// envelope of the process. A `nil` duration is omitted.
+    public func setStartStats(durationMs: Int?, replayedCrash: Bool) {
+        var stats: [String: AttributeValue] = ["sdk.start_replayed_crash": .bool(replayedCrash)]
+        if let durationMs { stats["sdk.start_duration_ms"] = .int(durationMs) }
+        stateLock.lock(); _startStats = stats; stateLock.unlock()
     }
 
     /// `willTerminate` observed: persist the clean-exit marker so the
@@ -573,19 +586,20 @@ public final class Recorder: Recording, @unchecked Sendable {
         let location: String?
         let transport: TransportSink
         let session: SessionHealth
+        let startStats: [String: AttributeValue]
     }
 
     /// Empty the buffer. Caller holds `stateLock`, so the session
     /// counters read here match the events taken.
     private func takeBatchLocked() -> Batch {
-        let batch = Batch(events: _buffer, location: _config?.location, transport: transport, session: _session)
+        let batch = Batch(events: _buffer, location: _config?.location, transport: transport, session: _session, startStats: _startStats)
         _buffer.removeAll(keepingCapacity: true)
         return batch
     }
 
     private func send(_ batch: Batch, reason: FlushReason) {
         guard !batch.events.isEmpty else { return }
-        var sdkHealth = health.snapshot()
+        var sdkHealth = health.snapshot().merging(batch.startStats) { _, new in new }
         sdkHealth["sdk.events_generated"] = .int(batch.session.generated)
         if batch.session.droppedSampled > 0 {
             sdkHealth["sdk.events_dropped.sampled"] = .int(batch.session.droppedSampled)

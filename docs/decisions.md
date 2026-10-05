@@ -1892,3 +1892,47 @@ W11 (#199) and W19 (#207). Choices the spec and catalogue left to the code.
 10. **`crash.mach_exception` is the type name only** (`EXC_BAD_ACCESS`).
    The codes stay in `crash.report_json`: `codes[1]` is usually a fault
    address, which would make the queryable key unbounded.
+
+## ADR-025 — Launch (F34): clock domains, start-stats scope
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 9 of `docs/specs/rum-coverage-roadmap.md` (#221),
+W9 (#197). Choices the spec and catalogue left to the code.
+
+**Decision.**
+
+1. **Two clocks, one per duration.** `page_load.duration_ms` and
+   `sdk.start_duration_ms` use `clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)`
+   (trace v3 §3.1's pick); `launchStart` carries a monotonic reading
+   beside its wall `Date`. `launch.pre_sdk_duration_ms` stays wall-clock:
+   `p_starttime` exists only as a `timeval`. A wall step between process
+   start and `start()` bends it; a backwards one omits it. The TTFF
+   identity holds exactly absent a wall step in that window.
+2. **Unreadable = omitted.** A `0` monotonic reading or a backwards
+   interval omits the key. Monotonic never runs backwards, so in practice
+   only a failed read omits `page_load.duration_ms`.
+3. **`sdk.start_*` are set once, at the end of `start()`**, and ride every
+   later envelope of the process — rotated sessions included (the
+   catalogue's "session" scope: the value describes the process's one
+   `start()`, so the per-session max is the same number). The
+   crash-replay `app.crash` envelope is flushed *inside* `start()`, before
+   the duration exists, and omits both keys — omit, never falsify.
+   `sdk.start_replayed_crash` is `true` iff `PLCrashIntegration.replayIfNeeded`
+   reported a replay.
+4. **The anchor is touched before config validation.** A `start()` that
+   then fails its precondition crashes the host, so the earlier anchor
+   costs nothing; a repeat `start()` re-touches an already-set anchor.
+5. **TTFF identity is exact to ±1 ms.** Each duration is rounded to whole
+   ms on its own; deriving one from the other would couple the clocks.
+6. **`sdk.start_duration_ms` is not a slice of `sdk.thread_time_ms`**
+   (the catalogue said so): thread time counts Recorder ingress only, and
+   `start()` is mostly outside it. Dropped from the catalogue row.
+7. **Privacy manifest unchanged.** `sysctl(KERN_PROC_PID)` and
+   `clock_gettime_nsec_np` are not on Apple's required-reason list; the
+   manifest's declarations remain F20's job.
+8. **No phase breakdown, no `EdgeRum.start()` test of the anchor
+   position** — the ordering is structural (first statement) and
+   `launchStart` is a process-lifetime static that earlier tests touch.

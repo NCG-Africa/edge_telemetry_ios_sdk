@@ -66,6 +66,34 @@ final class SdkHealthTests: XCTestCase {
         XCTAssertEqual(landed["sdk.events_dropped.unknown_name"] as? Int, 3)
     }
 
+    // MARK: F34 — start cost
+
+    func testStartStatsAbsentUntilSetThenOnEveryEnvelope() throws {
+        let (recorder, sink) = makeRecorder(batchSize: 1)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        let before = try json(XCTUnwrap(sink.envelopes.last))
+        XCTAssertNil(before["sdk.start_duration_ms"], "crash-replay envelope sent mid-start omits it")
+        XCTAssertNil(before["sdk.start_replayed_crash"])
+
+        recorder.setStartStats(durationMs: 42, replayedCrash: true)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        for envelope in sink.envelopes.suffix(2) {
+            let env = try json(envelope)
+            XCTAssertEqual(env["sdk.start_duration_ms"] as? Int, 42)
+            XCTAssertEqual(env["sdk.start_replayed_crash"] as? Bool, true)
+        }
+    }
+
+    func testUnreadableStartDurationOmittedNeverZero() throws {
+        let (recorder, sink) = makeRecorder(batchSize: 1)
+        recorder.setStartStats(durationMs: nil, replayedCrash: false)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        let env = try json(XCTUnwrap(sink.envelopes.last))
+        XCTAssertNil(env["sdk.start_duration_ms"])
+        XCTAssertEqual(env["sdk.start_replayed_crash"] as? Bool, false)
+    }
+
     func testSampledOutSessionCountsDropsAndReportsOnForcedEmit() throws {
         let (recorder, sink) = makeRecorder(sampleRate: 0.0)
         for _ in 0..<5 { recorder.recordEvent(name: "navigation", attributes: [:]) }

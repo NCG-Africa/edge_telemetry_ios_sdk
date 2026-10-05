@@ -88,6 +88,12 @@ public enum EdgeRum {
     /// `config.debug == true`). Misuse fails fast via `precondition`
     /// so the same crash surfaces in debug and release builds.
     public static func start(_ config: EdgeRumConfig) {
+        // F12/F34 — anchor the launch-start instant on the true first
+        // line, so all of `start()`'s own cost falls inside the
+        // measured page-load duration. Idempotent on repeat calls.
+        PageLoadCapture.touchLaunchStart()
+        let startNs = PageLoadCapture.monotonicNs()
+
         switch EdgeRumConfig.validate(config) {
         case .ok:
             break
@@ -192,14 +198,6 @@ public enum EdgeRum {
             appBuild: config.appBuild,
             environmentName: config.environment?.rawValue
         ))
-        // F12 — anchor the launch-start instant as early as possible.
-        // The static let backing `launchStart` is lazily initialized
-        // on first reference; this call forces that initialization
-        // before anything else `EdgeRum.start(...)` does so the
-        // measured page-load duration starts as close to host-app
-        // launch as the SDK can observe.
-        PageLoadCapture.touchLaunchStart()
-
         // F14 — replay BEFORE rotating to a new session. If the prior
         // launch crashed, PLCrashIntegration reads the pending PLCR
         // report, folds in the *crashed* session's identity from the
@@ -207,11 +205,12 @@ public enum EdgeRum {
         // recorder (which immediately flushes). Skipped here for any
         // host swap-in test probe — replay only makes sense against
         // the real Recorder pipeline.
+        var replayedCrash = false
         if let realRecorder = Recorder.shared as? Recorder {
             // The Recorder drops events while disabled, and replay runs
             // before `start()` enables it — open the gate first.
             realRecorder.setEnabled(true)
-            let crashed = config.captureNativeCrashes && PLCrashIntegration.replayIfNeeded(
+            replayedCrash = config.captureNativeCrashes && PLCrashIntegration.replayIfNeeded(
                 recorder: realRecorder,
                 sidecarContents: priorSidecar,
                 priorBreadcrumbs: config.captureBreadcrumbs ? priorBreadcrumbs : nil,
@@ -224,7 +223,7 @@ public enum EdgeRum {
             HangDetector.replayPending(recorder: realRecorder, sidecarContents: priorSidecar)
             // F33 — how the previous process ended, on `session.started`.
             realRecorder.setLaunchEvidence(
-                PreviousSession.attributes(prior: priorSidecar, crashed: crashed)
+                PreviousSession.attributes(prior: priorSidecar, crashed: replayedCrash)
             )
         }
 
@@ -337,6 +336,14 @@ public enum EdgeRum {
             HangDetector.install(
                 threshold: config.hangTimeout,
                 debug: config.debug
+            )
+        }
+
+        // F34 — this call's own cost, on every later envelope.
+        if let realRecorder = Recorder.shared as? Recorder {
+            realRecorder.setStartStats(
+                durationMs: PageLoadCapture.elapsedMs(fromNs: startNs, toNs: PageLoadCapture.monotonicNs()),
+                replayedCrash: replayedCrash
             )
         }
     }
