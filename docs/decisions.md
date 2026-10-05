@@ -1612,7 +1612,9 @@ and how a developer obtains a key.
 
 **Date:** 2026-07-02
 
-**Status:** Accepted.
+**Status:** Decision 1 superseded 2026-10-05 — release-please removed;
+version bump, `CHANGELOG.md` and the `vX.Y.Z` tag are done by hand
+(`CONTRIBUTING.md` § "How a release ships"). Decisions 2–3 stand.
 
 **Context.** The second half of the ask is "a pipeline that lets us
 quickly deploy and update new features." `release.yml` already fires on

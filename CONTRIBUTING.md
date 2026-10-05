@@ -17,11 +17,8 @@ firewall, read `CLAUDE.md`; for the "why" behind these choices, see
 
 ## Conventional Commits — required
 
-Releases are automated by [release-please](https://github.com/googleapis/release-please),
-which decides the next version and writes `CHANGELOG.md` **entirely from
-commit messages** on `main`. A commit that doesn't follow the format is
-silently ignored for the changelog — so mislabelled work never surfaces
-in release notes and can't bump the version.
+Commit messages on `main` are the raw material for `CHANGELOG.md` and
+the version bump at release time, so keep them in this format.
 
 Format:
 
@@ -77,19 +74,15 @@ feat!: drop iOS 13 support
 
 ## How a release ships
 
-You don't tag or edit `VERSION` by hand — release-please does it:
+Releases are cut by hand:
 
-1. Commits land on `main` (via squash-merged PRs).
-2. release-please opens/updates a **"chore: release X.Y.Z"** PR that
-   bumps `version.txt` (the repo-root `VERSION` symlinks to it) and
-   updates `CHANGELOG.md`.
-3. Merging that PR pushes a `vX.Y.Z` tag and creates the GitHub Release.
-4. The tag fires `release.yml`, which builds + attaches the XCFramework
-   and pushes the CocoaPods trunk spec. SwiftPM consumers get the new
-   version the moment the tag exists.
-
-To force a specific version (e.g. graduate to `1.0.0`), add a
-`Release-As: 1.0.0` line to a commit body on `main`.
+1. On a branch, bump `version.txt` (the repo-root `VERSION` symlinks to
+   it) and add the `CHANGELOG.md` section from the commits since the
+   last tag. Merge via PR.
+2. Tag the merged commit `vX.Y.Z` (must equal `VERSION`) and push the tag.
+3. The tag fires `release.yml`, which builds + attaches the XCFramework,
+   creates the GitHub Release, and pushes the CocoaPods trunk spec.
+   SwiftPM consumers get the new version the moment the tag exists.
 
 ## Terminology firewall
 

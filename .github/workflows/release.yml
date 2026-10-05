@@ -31,7 +31,7 @@ permissions:
   contents: write          # required for softprops/action-gh-release
 
 jobs:
-  # Belt-and-suspenders pre-publish gate (ADR-018). The release PR
+  # Belt-and-suspenders pre-publish gate (ADR-018). The release commit
   # already passed ci.yml before merge, but a terminology leak or wire
   # regression in a *public* artifact is expensive to walk back, so we
   # re-run the two cheapest high-value checks before building anything.
@@ -111,12 +111,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          # The release itself is created by release-please when the
-          # release PR merges (it carries the generated CHANGELOG notes).
-          # softprops upserts by tag: here we only attach the built
-          # artifacts, leaving those notes intact. If the tag was pushed
-          # by hand (no release-please), this creates the release with
-          # GitHub's default notes. The per-release SHA-256 for
+          # softprops upserts by tag: it creates the release (GitHub's
+          # default notes) on a hand-pushed tag, or only attaches the
+          # artifacts if the release already exists. The per-release SHA-256 for
           # .binaryTarget(url:checksum:) ships as the attached
           # EdgeRum.xcframework.zip.sha256 asset.
           fail_on_unmatched_files: true
