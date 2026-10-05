@@ -130,8 +130,8 @@ key, so the SDK does **not** send it.
 - `timestamp`: ISO 8601 string of the batch flush time. Includes
   fractional seconds. Never Unix ms.
 - `location`: optional per-app/install string (City/Country). Set via
-  `EdgeRumConfig.location`. (`resolveLocation` is dead config — never
-  wired; deleted in tranche 4.)
+  `EdgeRumConfig.location`. (`resolveLocation` / `locationProviderUrl`
+  were removed in F29 — the SDK never resolves a location itself.)
 - `batch_size`: integer equal to `events.count` — included for parity
   with web/Android.
 - `sdk.thread_time_ms`: integer, cumulative caller-thread wall-time (ms)
@@ -254,18 +254,18 @@ and logged when `debug == true`.
 | Resource timing                              | (`metric`, `metricName` = `"resource_timing"`)   | same file (`URLSessionTaskMetrics`)                                           |
 | App launch → first frame                     | `page_load`                                      | `EdgeRumCapture/PageLoadCapture.swift`                                        |
 | Tap / interaction                            | `user.interaction`                               | `EdgeRumCapture/InteractionCapture.swift` (`UIWindow.sendEvent` swizzle)      |
-| Swift/NSError reported by host               | `app.crash` with `cause = "AppError"`            | `EdgeRum.captureError(_:context:)`                                            |
-| NSException                                  | `app.crash` (cause=NativeCrash, runtime=native)  | `EdgeRumCrash/PLCrashIntegration.swift` (replayed on next launch)             |
-| Mach signal (SIGSEGV/SIGABRT/SIGBUS/SIGILL)  | `app.crash` (cause=NativeCrash, runtime=native)  | same file                                                                     |
-| Main-thread hang                             | `app.crash` (cause=Hang, runtime=native)         | `EdgeRumCrash/HangDetector.swift` (`CFRunLoopObserver` watchdog)              |
+| Swift/NSError reported by host               | `app.error` (sampled, normal flush)              | `EdgeRum.captureError(_:context:)`                                            |
+| NSException                                  | `app.crash` (runtime=native; forced, flushes)    | `EdgeRumCrash/PLCrashIntegration.swift` (replayed on next launch)             |
+| Mach signal (SIGSEGV/SIGABRT/SIGBUS/SIGILL)  | `app.crash` (runtime=native; forced, flushes)    | same file                                                                     |
+| Main-thread hang                             | `app.hang` (sampled, normal flush)               | `EdgeRumCrash/HangDetector.swift` (`CFRunLoopObserver` watchdog)              |
 | Frame render time                            | (`metric`, `metricName` = `"frame_render_time"`) | `EdgeRumCapture/FrameSampler.swift` (`CADisplayLink`)                         |
 | Memory usage                                 | (`metric`, `metricName` = `"memory_usage"`)      | `EdgeRumCapture/MemorySampler.swift` (`mach_task_basic_info` + pressure src)  |
 | Long task                                    | (`metric`, `metricName` = `"long_task"`)         | `EdgeRumCapture/RunLoopObserverCapture.swift`                                 |
 | Session begins                               | `session.started`                                | `EdgeRum.start()` + `UIApplication.didBecomeActiveNotification`               |
-| Session ends                                 | `session.finalized`                              | `UIApplication.willResignActiveNotification` (immediate flush)                |
+| Session ends (rotation only)                 | `session.finalized`                              | `Recorder` on idle / max-duration rotation, or at next `start()` (flushes)    |
 | `EdgeRum.identify()`                         | `user.profile.update`                            | `Sources/EdgeRum/EdgeRum.swift`                                               |
 | `EdgeRum.track()`                            | `custom_event`                                   | same                                                                          |
-| `EdgeRum.time().end()`                       | (`metric`, custom `metricName`)                  | `Sources/EdgeRum/RumTimer.swift`                                              |
+| `EdgeRum.time().end()`                       | (`metric`, `metricName` = `"custom_timer"` + `timer.name`) | `Sources/EdgeRum/RumTimer.swift`                                    |
 | Foreground / background                      | `app_lifecycle`                                  | `EdgeRumCapture/LifecycleCapture.swift`                                       |
 | Connectivity change                          | `network_change`                                 | `EdgeRumCapture/NetworkPathCapture.swift` (`NWPathMonitor`)                   |
 
@@ -275,7 +275,14 @@ and logged when `debug == true`.
 > `PLAN-iOS.md` § "Backend asks" item 3.
 >
 > **Not emitted on iOS:** any `eventName` outside this table. The
-> backend silently drops unknowns.
+> backend silently drops unknowns. The allowlist is exactly 13 names;
+> `metricName` has its own 6-name allowlist (`Recorder.allowedMetricNames`:
+> `resource_timing`, `long_task`, `frame_render_time`, `memory_usage`,
+> `cpu_usage`, `custom_timer`).
+>
+> **Forced-emit set** (bypasses `sampleRate`): `session.started`,
+> `session.finalized`, `app.crash`, `network_change`. `app.crash` is
+> native-crash replay only; `app.error` and `app.hang` are sampled.
 
 ---
 
@@ -284,7 +291,7 @@ and logged when `debug == true`.
 A complete 4-event reference batch (`navigation`, `http.request`,
 `metric:resource_timing`, `metric:frame_render_time`) lives in
 `docs/payload-example.jsonc`. iOS does **not** emit `screen.duration`
-(the Processor synthesizes it from `navigation` — see #144). All other event shapes — `app.crash`,
+(the Processor synthesizes it from `navigation` — see #144). All other event shapes — `app.error`, `app.hang`, `app.crash`,
 `user.profile.update`, `custom_event`, `app_lifecycle`, `page_load`,
 `network_change`, `session.started`, `session.finalized`, and the
 `metric` items from `EdgeRum.time()`, `memory_usage`, `long_task`,
@@ -415,9 +422,6 @@ public struct EdgeRumConfig {
     public var appBuild: String?                  // used as app.build_number; omitted when nil
     public var environment: Environment?          // .production, .staging, .development
     public var location: String?                  // batch envelope location, e.g. "Nairobi/Kenya"
-    public var resolveLocation: Bool = false      // dead config: never wired, no request is made;
-                                                  // deleted in tranche 4 (W7)
-    public var locationProviderUrl: URL? = URL(string: "https://ipapi.co/json/")
     public var sampleRate: Double = 1.0           // 0.0–1.0; per-session
     public var ignoreUrls: [NSRegularExpression] = []
     public var maxQueueSize: Int = 200
@@ -639,9 +643,15 @@ its hex section is 128 bits and breaks the format.
   (transport ack). Stored alongside `session.id` in UserDefaults under
   an `NSLock`.
 - `session.start_time` is captured at session creation and never updates.
-- `session.finalized` is emitted on `willResignActive` and triggers an
-  immediate flush. On flush failure the batch goes to the offline
-  queue and the background uploader drains it.
+- Max session duration is 4 h; past it the session rotates
+  (`session.rotation = "max_duration"`; idle rotation is `"idle"`).
+- `session.finalized` is emitted **only on rotation** (one per ended
+  session), carries `session.end_time` (the ended session's last
+  activity) and `session.rotation`, and triggers an immediate flush.
+  A session that expired while the app was not running is finalized
+  at the next `start()`. `willResignActive` / terminate / `stop()`
+  only flush — they emit nothing. On flush failure the batch goes to
+  the offline queue and the background uploader drains it.
 
 **Crash sidecar**
 
@@ -683,7 +693,7 @@ Attempt 4: +30s → push to OfflineQueue
 - Retry on: status `0` (network error), `429` (respect `Retry-After`,
   cap at 60s), `503`. 5xx other than 503 → treat as 503.
 - Never retry: other `4xx`. Drop the batch and log when `debug == true`.
-- Errors and `session.finalized` flush immediately. All other events
+- `app.crash` and `session.finalized` flush immediately. All other events
   follow `flushInterval` (default 5.0s) or `batchSize` (default 30)
   whichever fires first.
 - Background flush uses a separately-configured `URLSession` with

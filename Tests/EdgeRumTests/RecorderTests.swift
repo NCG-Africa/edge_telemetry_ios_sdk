@@ -195,6 +195,17 @@ final class RecorderTests: XCTestCase {
         XCTAssertEqual(attributes["long_task.threshold_ms"], .double(50))
     }
 
+    func testRecordPerformanceAcceptsIntValue() {
+        let (recorder, sink, _) = makeRecorder()
+        recorder.recordPerformance(name: "long_task", attributes: ["value": .int(80)])
+        recorder.flush(reason: .manual)
+        guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.events.first else {
+            return XCTFail("Expected a metric Event")
+        }
+        XCTAssertEqual(value, 80)
+        XCTAssertNil(attributes["value"])
+    }
+
 
     // MARK: Sampling
 

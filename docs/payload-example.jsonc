@@ -44,9 +44,8 @@
         "user.id": "user_1717100000000_deadbeefcafef00d",
         "sdk.version": "1.0.0",
         "sdk.platform": "ios-native",
-        "navigation.to_screen": "CartViewController",
-        "navigation.from_screen": "ProductListViewController",
-        "navigation.method": "push",
+        "navigation.screen": "CartViewController",
+        "navigation.previous_screen": "ProductListViewController",
         "navigation.kind": "uikit"
       }
     },
@@ -72,23 +71,24 @@
         "user.id": "user_1717100000000_deadbeefcafef00d",
         "sdk.version": "1.0.0",
         "sdk.platform": "ios-native",
-        "http.url": "https://api.example.com/products",
         "http.method": "GET",
         "http.host": "api.example.com",
         "http.path": "/products",
         "http.status_code": 200,
-        "http.success": true,
         "http.duration_ms": 342,
         "http.request_size": 0,
         "http.response_size": 18244,
         "http.from_cache": false
+        // No full URL is sent (query strings carry PII). On failure the
+        // event adds "http.error_domain" (string) + "http.error_code" (int).
       }
     },
 
     // ── metric: resource_timing (companion of http.request above) ──────
     // Emitted immediately after the http.request event for the same
-    // URLSession task. The five resource.*_ms fields are derived from
-    // URLSessionTaskMetrics' last transactionMetrics entry.
+    // URLSession task. The resource.*_ms fields are derived from
+    // URLSessionTaskMetrics' last transactionMetrics entry. The `value`
+    // lives on the item only — it is not copied into `attributes`.
     {
       "type": "metric",
       "metricName": "resource_timing",
@@ -105,13 +105,12 @@
         "user.id": "user_1717100000000_deadbeefcafef00d",
         "sdk.version": "1.0.0",
         "sdk.platform": "ios-native",
-        "resource.url": "https://api.example.com/products",
         "resource.host": "api.example.com",
         "resource.dns_ms": 12,
         "resource.connect_ms": 31,
         "resource.tls_ms": 45,
         "resource.ttfb_ms": 240,
-        "resource.response_ms": 14
+        "resource.download_ms": 14
       }
     },
 
@@ -132,7 +131,6 @@
         "user.id": "user_1717100000000_deadbeefcafef00d",
         "sdk.version": "1.0.0",
         "sdk.platform": "ios-native",
-        "frame.dropped": true,
         "frame.max_ms": 33,
         "frame.p95_ms": 28,
         "frame.dropped_count": 1,
@@ -143,8 +141,10 @@
   ]
 }
 
-// Other event shapes (app.crash, user.profile.update, custom_event,
-// app_lifecycle, page_load, network_change, session.started,
-// session.finalized, plus metric items from EdgeRum.time(),
-// memory_usage, long_task, resource_timing) follow the same
-// envelope and identity-attribute rules.
+// Other event shapes (app.error, app.hang, app.crash, user.profile.update,
+// custom_event, app_lifecycle, page_load, network_change, session.started,
+// session.finalized, plus metric items memory_usage, long_task and
+// custom_timer from EdgeRum.time()) follow the same envelope and
+// identity-attribute rules. metricName is one of exactly six allowlisted
+// values: resource_timing, long_task, frame_render_time, memory_usage,
+// cpu_usage (allowlisted, not yet emitted), custom_timer.

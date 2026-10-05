@@ -41,11 +41,13 @@ even before the bundle's `Info.plist` is fully consulted.
 
 ``EdgeRumConfig/sampleRate`` is per-session, decided once at session
 start. The forced-emit set — `session.started`, `session.finalized`,
-`app.crash`, `network_change` — always emits regardless.
+`app.crash`, `network_change` — always emits regardless. `app.crash` is
+native crash replay only; handled errors (`app.error`) and hangs
+(`app.hang`) follow `sampleRate` like every other event.
 
 ``EdgeRumConfig/flushInterval`` (seconds) and
 ``EdgeRumConfig/batchSize`` (events) gate normal flushes — whichever
-fires first. Errors and session-finalize events always flush
+fires first. `app.crash` and `session.finalized` always flush
 immediately.
 
 ``EdgeRumConfig/maxQueueSize`` caps the offline queue at 200 events by

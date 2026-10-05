@@ -159,6 +159,18 @@ final class EdgeRumAPITests: XCTestCase {
         XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
     }
 
+    func testTrackScreenDropsHostKeysUnderReservedPrefixes() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.trackScreen("Home", attributes: ["navigation.kind": "Forged", "app.name": "x"])
+        let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .event("navigation", attributes) = call { return attributes }
+            return nil
+        }.first
+        XCTAssertEqual(attrs?["navigation.kind"], .string("manual"))
+        XCTAssertNil(attrs?["app.name"])
+        XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
+    }
+
     func testTimerDropsHostKeysUnderReservedPrefixes() {
         EdgeRum.start(Self.validConfig())
         EdgeRum.time("t").end(attributes: ["timer.name": "Forged", "session.id": "x"])

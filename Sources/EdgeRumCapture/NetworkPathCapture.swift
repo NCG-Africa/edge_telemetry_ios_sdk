@@ -11,8 +11,8 @@
 //      PLAN-iOS.md §6.19:
 //        - network.type
 //        - network.effectiveType
-//        - network.is_expensive
-//        - network.is_constrained
+//        - network.expensive
+//        - network.constrained
 //        - network.unsatisfied_reason (iOS 14.2+, omitted on 14.0/14.1
 //          and omitted when path is satisfied)
 //

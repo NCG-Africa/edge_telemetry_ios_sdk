@@ -349,12 +349,15 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshSession(SessionContextSnapshot(session))
         writeSidecar()
 
+        // A rotation pair carries `session.rotation` on both halves.
+        var startedAttrs: [String: AttributeValue] = [:]
         if let pendingFinalized {
             recordEventInternal(name: "session.finalized", attributes: pendingFinalized)
+            startedAttrs["session.rotation"] = pendingFinalized["session.rotation"]
         }
         // Emit `session.started`. This bypasses the sampler (forced
         // emit) so it always lands in the next batch.
-        recordEvent(name: "session.started", attributes: [:])
+        recordEvent(name: "session.started", attributes: startedAttrs)
 
         // If `configure(_:)` was not called (older host apps), still
         // ensure the wire-required app keys are populated from
@@ -438,8 +441,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         // leaves `attributes` (#146). `duration_ms` is the fallback.
         var attributes = attributes
         let value: Double?
-        if let v = attributes.removeValue(forKey: "value"), case let .double(d) = v {
+        let headline = attributes.removeValue(forKey: "value")
+        if case let .double(d) = headline {
             value = d
+        } else if case let .int(i) = headline {
+            value = Double(i)
         } else if let v = attributes["duration_ms"], case let .int(i) = v {
             value = Double(i)
         } else if let v = attributes["duration_ms"], case let .double(d) = v {
