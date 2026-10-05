@@ -10,7 +10,8 @@
 //
 //   - `hang.duration_ms`    — observed stall length in ms
 //   - `hang.threshold_ms`   — configured `hangTimeout` in ms
-//   - `hang.cpu_usage`      — task CPU usage at detection (0.0-1.0)
+//   - `hang.cpu_usage`      — whole-process CPU over the stall window,
+//                             per-core percent (may exceed 100)
 //   - `crash.thread.main_stack` — best-effort symbolicated stack
 //   - `crash.timestamp`     — ISO 8601 time of detection
 //
@@ -42,8 +43,9 @@ internal enum HangEventEncoder {
     /// - Parameters:
     ///   - durationMs: observed stall length in milliseconds.
     ///   - thresholdMs: configured `hangTimeout` in milliseconds.
-    ///   - cpuUsage: optional task CPU usage at detection. `nil` if
-    ///     the call site could not read `mach_task_basic_info`.
+    ///   - cpuUsage: whole-process CPU over the stall window, per-core
+    ///     percent (may exceed 100), from `ProcessCPUReader`. `nil` if the Mach
+    ///     read failed.
     ///   - stackFrames: ordered main-thread frames captured at
     ///     detection. Empty when the snapshot helper failed; in that
     ///     case we fall back to a single placeholder frame so the

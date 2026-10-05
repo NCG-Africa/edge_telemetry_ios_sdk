@@ -13,11 +13,14 @@
 //      unknown names and logs when `config.debug == true`.
 //   3. Applies a `Sampler` decision (per-session uniform random vs
 //      `config.sampleRate`); forced-emit events bypass.
-//   4. Buffers `Event` values on a serial queue
-//      `edge.rum.recorder` (QoS `.utility`).
+//   4. Buffers `Event` values under `stateLock`. Ingress, merge and
+//      flush run synchronously on the caller's thread (main for taps
+//      and `viewDidAppear`); the transport hops to its own queue for
+//      encode + POST.
 //   5. Flushes on `config.batchSize` reached, `config.flushInterval`
-//      timer fired, immediate-flush trigger (error / `session.finalized`),
-//      or `shutdown()` / `stop()`.
+//      timer fired (armed while enabled, on a global utility queue),
+//      immediate-flush trigger (error / `session.finalized`), or
+//      `shutdown()` / `stop()`.
 //   6. Hands each batch to the `TransportSink`. F3 ships
 //      `NoopTransportSink`; F4 plugs in `HTTPTransportSink`.
 //
@@ -90,7 +93,6 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     private let stateLock = NSLock()
     private let sidecarLock = NSLock()
-    private let queue: DispatchQueue
     private let log = OSLog(subsystem: "com.edge.rum", category: "Recorder")
 
     private let _clock: Clock
@@ -115,6 +117,10 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// re-touch the session manager (which would recurse).
     private var _insideRotationEmission: Bool = false
 
+    /// `flushInterval` timer. Armed while enabled; cancelled by
+    /// `setEnabled(false)` / `stop()` / `shutdown()`.
+    private var flushTimer: DispatchSourceTimer?
+
     /// `sdk.thread_time_ms` accumulator — caller-thread wall-time spent
     /// inside `recordEvent` / `recordPerformance` for the current
     /// session. Reset at every session boundary.
@@ -136,7 +142,6 @@ public final class Recorder: Recording, @unchecked Sendable {
         sidecar: SessionSidecarWriting? = nil
     ) {
         self._clock = clock
-        self.queue = DispatchQueue(label: "edge.rum.recorder", qos: .utility)
         let resolvedSessionManager = sessionManager ?? SessionManager(clock: clock)
         self.sessionManager = resolvedSessionManager
         self.sampler = sampler ?? Sampler(sampleRate: 1.0)
@@ -173,6 +178,8 @@ public final class Recorder: Recording, @unchecked Sendable {
             )
         }
     }
+
+    deinit { flushTimer?.cancel() }
 
     /// Optional sidecar that mirrors session + identity to a file the
     /// crash backend (F14) reads on next launch. F4 ships the writer;
@@ -260,6 +267,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         // Re-roll the per-session sampler with the host-supplied
         // `sampleRate` so the in/out decision reflects the config.
         self.sampler = Sampler(sampleRate: config.sampleRate)
+        setFlushTimerLocked(armed: _enabled)
         stateLock.unlock()
 
         let appCtx = AppContext.snapshot(
@@ -285,6 +293,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         if let rate = _config?.sampleRate {
             self.sampler = Sampler(sampleRate: rate)
         }
+        setFlushTimerLocked(armed: true)
         stateLock.unlock()
 
         // Rotate to a fresh session — `start()` is the lifecycle
@@ -318,14 +327,13 @@ public final class Recorder: Recording, @unchecked Sendable {
         // the event passes the enabled gate.
         recordEvent(name: "session.finalized", attributes: [:])
         flush(reason: .shutdown)
-        stateLock.lock()
-        _enabled = false
-        stateLock.unlock()
+        setEnabled(false)
     }
 
     public func setEnabled(_ enabled: Bool) {
         stateLock.lock()
         _enabled = enabled
+        setFlushTimerLocked(armed: enabled)
         stateLock.unlock()
     }
 
@@ -416,8 +424,8 @@ public final class Recorder: Recording, @unchecked Sendable {
     // MARK: Flush
 
     /// Build an envelope from the current buffer and hand it to the
-    /// `TransportSink`. Exposed to F4 (transport) so it can drive
-    /// timer-fired flushes from outside. Safe to call when the buffer
+    /// `TransportSink`. Driven by the `flushInterval` timer, batch
+    /// size, immediate triggers and shutdown. Safe to call when the buffer
     /// is empty — short-circuits to a no-op.
     public func flush(reason: FlushReason) {
         stateLock.lock()
@@ -464,9 +472,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// expiration hook.
     public func shutdown() {
         flush(reason: .shutdown)
-        stateLock.lock()
-        _enabled = false
-        stateLock.unlock()
+        setEnabled(false)
     }
 
     /// Called by the transport layer after a successful (`2xx`) batch
@@ -497,6 +503,28 @@ public final class Recorder: Recording, @unchecked Sendable {
         guard let sidecar else { return }
         sidecarLock.lock(); defer { sidecarLock.unlock() }
         sidecar.write(snapshot: context.snapshot())
+    }
+
+    /// (Re-)arm or cancel the `flushInterval` timer. Caller holds
+    /// `stateLock`, so the timer state always matches `_enabled`. A
+    /// tick on an empty buffer is a no-op flush.
+    // ponytail: ticks while idle (one wakeup per flushInterval); arm on
+    // first enqueue instead if the idle wakeups ever show up in energy logs.
+    private func setFlushTimerLocked(armed: Bool) {
+        flushTimer?.cancel()
+        flushTimer = nil
+        guard armed else { return }
+        let interval = max(0.01, _config?.flushInterval ?? 5.0)
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.setEventHandler { [weak self] in self?.flush(reason: .timer) }
+        timer.resume()
+        flushTimer = timer
+    }
+
+    internal var _flushTimerArmedForTests: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return flushTimer != nil
     }
 
     private func addThreadTime(since t0: UInt64) {

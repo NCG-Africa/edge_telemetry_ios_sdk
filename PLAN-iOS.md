@@ -1512,6 +1512,13 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     only). Confirm this matches the Android SDK's definition of
     "cellular fallback under multipath".
 
+13. **F26 `hang.cpu_usage` first on the wire (#213).** Whole-process
+    CPU over the stall window, **per-core percent, may exceed 100**
+    (roadmap §10 row 3) — not the never-shipped 0.0–1.0 doc. Also
+    informational: quiet sessions now flush on `flushInterval`, and the
+    offline backlog ceiling drops from ~6,000 to `maxQueueSize` (200)
+    events. Confirm the Processor stores the double untouched.
+
 ---
 
 ## 15. Risks and open questions

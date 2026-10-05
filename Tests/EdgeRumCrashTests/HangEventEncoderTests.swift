@@ -40,11 +40,11 @@ final class HangEventEncoderTests: XCTestCase {
         let attrs = HangEventEncoder.encode(
             durationMs: 5_240,
             thresholdMs: 5_000,
-            cpuUsage: 0.83,
+            cpuUsage: 83.0,
             stackFrames: ["frame"],
             timestamp: referenceTimestamp
         )
-        XCTAssertEqual(attrs["hang.cpu_usage"], .double(0.83))
+        XCTAssertEqual(attrs["hang.cpu_usage"], .double(83.0))
     }
 
     func testEncodeOmitsCpuUsageWhenUnavailable() {

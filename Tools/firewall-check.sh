@@ -62,6 +62,8 @@ WIRE_LITERAL_ALLOWLIST='telemetry_batch|/collector/telemetry'
 INTERNAL_DOCS=(
     "docs/data-flow.md"
     "docs/decisions.md"
+    "docs/specs/.*"       # internal design specs (wayfinder maps)
+    "docs/catalogue/.*"   # internal wire catalogue
 )
 
 # Where to look in step 2.

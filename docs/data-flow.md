@@ -782,7 +782,7 @@ that wiring, background flushing degrades to next-foreground replay.
 
 On the next foreground, on `NWPathMonitor` reporting `.satisfied`, or
 on `EdgeRum.enable()`, `OfflineQueue` drains files under
-`Library/Caches/edge-rum/queue/<epochMs>-<seq>.json` sequentially. Each
+`Library/Caches/edge-rum/queue/<epochMs>-<seq>-<n>.json` sequentially. Each
 file is a complete batch payload, ready to POST verbatim.
 
 No new event types are emitted by this stage — the payloads are the
