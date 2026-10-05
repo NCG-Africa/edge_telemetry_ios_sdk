@@ -98,11 +98,9 @@ button's on-screen title is used only when you opt in with
 ``EdgeRumConfig/captureButtonTitles``; taps that land in a secure text
 field are never recorded.
 
-``EdgeRumConfig/resolveLocation`` and
-``EdgeRumConfig/locationProviderUrl`` are not wired up: the SDK never
-contacts a location provider and never sends the device IP to a third
-party. Both settings will be removed; set ``EdgeRumConfig/location``
-yourself.
+The SDK never contacts a location provider and never sends the device
+IP to a third party. To tag batches with a location, set
+``EdgeRumConfig/location`` yourself.
 
 Every key that may appear on the wire, with its personal-data class,
 and the list of identifiers the SDK never collects, live in the

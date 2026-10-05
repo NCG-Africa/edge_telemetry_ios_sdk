@@ -53,7 +53,6 @@ final class PageLoadWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "page_load", attributes: [
             "page_load.duration_ms": .int(842),
-            "page_load.cold_start": .bool(true),
             "page_load.prewarmed": .bool(false),
             "page_load.source": .string("displaylink")
         ])
@@ -70,7 +69,7 @@ final class PageLoadWireConformanceTests: XCTestCase {
         try WireAssertions.assertIdentityAttributes(attrs)
 
         XCTAssertEqual(attrs["page_load.duration_ms"] as? Int, 842)
-        XCTAssertEqual(attrs["page_load.cold_start"] as? Bool, true)
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertEqual(attrs["page_load.prewarmed"] as? Bool, false)
         XCTAssertEqual(attrs["page_load.source"] as? String, "displaylink")
     }
@@ -86,7 +85,6 @@ final class PageLoadWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "page_load", attributes: [
             "page_load.duration_ms": .int(41),
-            "page_load.cold_start": .bool(false),
             "page_load.prewarmed": .bool(true),
             "page_load.source": .string("displaylink")
         ])
@@ -100,7 +98,7 @@ final class PageLoadWireConformanceTests: XCTestCase {
         try WireAssertions.assertIdentityAttributes(attrs)
 
         XCTAssertEqual(attrs["page_load.duration_ms"] as? Int, 41)
-        XCTAssertEqual(attrs["page_load.cold_start"] as? Bool, false)
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertEqual(attrs["page_load.prewarmed"] as? Bool, true)
         XCTAssertEqual(attrs["page_load.source"] as? String, "displaylink")
     }
@@ -117,7 +115,6 @@ final class PageLoadWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "page_load", attributes: [
             "page_load.duration_ms": .int(1234),
-            "page_load.cold_start": .bool(true),
             "page_load.prewarmed": .bool(false),
             "page_load.source": .string("displaylink")
         ])
@@ -130,7 +127,7 @@ final class PageLoadWireConformanceTests: XCTestCase {
 
         // Spot-check each F12-owned key — must be String|Int|Bool.
         XCTAssertNotNil(attrs["page_load.duration_ms"] as? Int)
-        XCTAssertNotNil(attrs["page_load.cold_start"] as? Bool)
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertNotNil(attrs["page_load.prewarmed"] as? Bool)
         XCTAssertNotNil(attrs["page_load.source"] as? String)
 
@@ -159,7 +156,6 @@ final class PageLoadWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "page_load", attributes: [
             "page_load.duration_ms": .int(900),
-            "page_load.cold_start": .bool(true),
             "page_load.prewarmed": .bool(false),
             "page_load.source": .string("displaylink")
         ])

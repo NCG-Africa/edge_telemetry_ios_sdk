@@ -55,7 +55,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "http.request", attributes: [
             "http.method": .string("GET"),
-            "http.url": .string("https://api.example.com/v1/users?page=2"),
             "http.host": .string("api.example.com"),
             "http.path": .string("/v1/users"),
             "http.status_code": .int(200),
@@ -87,7 +86,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         try WireAssertions.assertIdentityAttributes(attrs)
 
         XCTAssertEqual(attrs["http.method"] as? String, "GET")
-        XCTAssertEqual(attrs["http.url"] as? String, "https://api.example.com/v1/users?page=2")
+        XCTAssertNil(attrs["http.url"])
         XCTAssertEqual(attrs["http.host"] as? String, "api.example.com")
         XCTAssertEqual(attrs["http.path"] as? String, "/v1/users")
         XCTAssertEqual(attrs["http.status_code"] as? Int, 200)
@@ -112,7 +111,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "http.request", attributes: [
             "http.method": .string("GET"),
-            "http.url": .string("https://api.example.com/u"),
             "http.host": .string("api.example.com"),
             "http.path": .string("/u"),
             "http.status_code": .int(200),
@@ -144,7 +142,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         let (recorder, sink) = makeRecorder()
 
         recorder.recordPerformance(name: "resource_timing", attributes: [
-            "resource.url": .string("https://api.example.com/v1/users"),
             "resource.host": .string("api.example.com"),
             "resource.dns_ms": .int(12),
             "resource.connect_ms": .int(31),
@@ -173,7 +170,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         XCTAssertEqual(attrs["resource.tls_ms"] as? Int, 45)
         XCTAssertEqual(attrs["resource.ttfb_ms"] as? Int, 54)
         XCTAssertEqual(attrs["resource.download_ms"] as? Int, 1)
-        XCTAssertEqual(attrs["resource.url"] as? String, "https://api.example.com/v1/users")
+        XCTAssertNil(attrs["resource.url"])
         XCTAssertEqual(attrs["resource.protocol"] as? String, "h2")
         XCTAssertEqual(attrs["resource.redirect_count"] as? Int, 0)
         XCTAssertEqual(attrs["resource.transaction_count"] as? Int, 1)
@@ -190,7 +187,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "http.request", attributes: [
             "http.method": .string("POST"),
-            "http.url": .string("https://api.example.com/orders"),
             "http.host": .string("api.example.com"),
             "http.path": .string("/orders"),
             "http.status_code": .int(201),
@@ -200,7 +196,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
             "http.from_cache": .bool(false)
         ])
         recorder.recordPerformance(name: "resource_timing", attributes: [
-            "resource.url": .string("https://api.example.com/orders"),
             "resource.host": .string("api.example.com"),
             "resource.dns_ms": .int(5),
             "resource.connect_ms": .int(12),
@@ -230,7 +225,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "http.request", attributes: [
             "http.method": .string("GET"),
-            "http.url": .string("https://api.example.com/v1/users"),
             "http.host": .string("api.example.com"),
             "http.path": .string("/v1/users"),
             "http.status_code": .int(200),
@@ -246,7 +240,6 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
             "http.request_body_bytes_before_encoding": .int(0)
         ])
         recorder.recordPerformance(name: "resource_timing", attributes: [
-            "resource.url": .string("https://api.example.com/v1/users"),
             "resource.host": .string("api.example.com"),
             "resource.dns_ms": .int(8),
             "resource.connect_ms": .int(22),

@@ -59,14 +59,6 @@ public struct EdgeRumConfig: Sendable {
     /// (e.g. `"Nairobi/Kenya"`). Sent as-is on every batch.
     public var location: String?
 
-    /// Not wired up: setting it has no effect and the SDK makes no
-    /// location request. Will be removed — set `location` yourself.
-    public var resolveLocation: Bool = false
-
-    /// Not wired up: the SDK never contacts this URL. Will be removed
-    /// together with `resolveLocation`.
-    public var locationProviderUrl: URL? = URL(string: "https://ipapi.co/json/")
-
     // MARK: Sampling + queuing
 
     /// Per-session sample rate in `0.0...1.0`. `1.0` records every

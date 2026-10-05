@@ -107,7 +107,7 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
 
         recorder.recordEvent(name: "navigation", attributes: [
             "navigation.kind": "uikit",
-            "navigation.name": "Cart"
+            "navigation.screen": "Cart"
         ])
         recorder.flush(reason: .manual)
 

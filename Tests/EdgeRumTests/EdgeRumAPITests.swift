@@ -133,8 +133,42 @@ final class EdgeRumAPITests: XCTestCase {
         }
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.0, "navigation")
-        XCTAssertEqual(events.first?.1["navigation.name"], .string("Home"))
+        XCTAssertEqual(events.first?.1["navigation.screen"], .string("Home"))
+        XCTAssertEqual(events.first?.1["navigation.kind"], .string("manual"))
+        XCTAssertNil(events.first?.1["navigation.name"], "F29: renamed")
         XCTAssertEqual(events.first?.1["funnel.step"], .int(1))
+    }
+
+    // F29 acceptance: a host `track` with a `device.` key is dropped.
+    func testTrackDropsHostKeysUnderReservedPrefixes() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.track("buy", attributes: [
+            "device.model": "Forged",
+            "user.email": "a@b.c",
+            "cart.total": 3
+        ])
+
+        let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .event("custom_event", attributes) = call { return attributes }
+            return nil
+        }.first
+        XCTAssertNil(attrs?["device.model"])
+        XCTAssertNil(attrs?["user.email"])
+        XCTAssertEqual(attrs?["cart.total"], .int(3))
+        XCTAssertEqual(attrs?["event.name"], .string("buy"))
+        XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
+    }
+
+    func testTimerDropsHostKeysUnderReservedPrefixes() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.time("t").end(attributes: ["timer.name": "Forged", "session.id": "x"])
+        let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .performance(_, attributes) = call { return attributes }
+            return nil
+        }.first
+        XCTAssertEqual(attrs?["timer.name"], .string("t"))
+        XCTAssertNil(attrs?["session.id"])
+        XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
     }
 
     func testTrackScreenWritesTheCurrentScreenBox() {
@@ -174,7 +208,8 @@ final class EdgeRumAPITests: XCTestCase {
             return nil
         }
         XCTAssertEqual(perfs.count, 1)
-        XCTAssertEqual(perfs.first?.0, "checkout.submit")
+        XCTAssertEqual(perfs.first?.0, "custom_timer", "F29: bounded metric name")
+        XCTAssertEqual(perfs.first?.1["timer.name"], .string("checkout.submit"))
         XCTAssertEqual(perfs.first?.1["payment.method"], .string("card"))
         XCTAssertNotNil(perfs.first?.1["duration_ms"])
     }

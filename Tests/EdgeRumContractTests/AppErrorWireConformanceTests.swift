@@ -189,7 +189,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
         // assert both events ride the same envelope.
         recorder.recordEvent(name: "navigation", attributes: [
             "navigation.kind": .string("uikit"),
-            "navigation.name": .string("Cart")
+            "navigation.screen": .string("Cart")
         ])
         let crashAttrs = AppErrorBuilder.build(
             error: NSError(domain: "x", code: 1),

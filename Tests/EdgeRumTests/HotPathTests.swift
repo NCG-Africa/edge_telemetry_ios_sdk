@@ -227,9 +227,7 @@ final class HotPathTests: XCTestCase {
         EdgeRum.track("buy")
         EdgeRum.captureError(NSError(domain: "x", code: 1))
         timer.end()
-        let store = SwiftUIScreenStartStore()
-        SwiftUIEmitter.emitScreenAppear(name: "S", attributes: nil, recorder: recorder, clock: recorder.clock, startStore: store)
-        SwiftUIEmitter.emitScreenDisappear(name: "S", attributes: nil, recorder: recorder, clock: recorder.clock, startStore: store)
+        SwiftUIEmitter.emitScreenAppear(name: "S", attributes: nil, recorder: recorder, riders: Riders())
         SwiftUIEmitter.emitTap(name: "t", attributes: nil, recorder: recorder)
         recorder.flush(reason: .manual)
 

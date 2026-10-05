@@ -13,7 +13,8 @@
 // Session lifecycle:
 //   - First `recordEvent` after `start()` creates a session if none
 //     exists, or rotates if the last-active timestamp is older than
-//     30 minutes.
+//     30 minutes (`idle`) or the session is 4 hours old
+//     (`max_duration`).
 //   - `session.sequence` increments on every successful transport ack
 //     — F4 calls `incrementSequence()` after a 2xx response.
 //   - `session.start_time` is captured at creation and never updates.
@@ -70,6 +71,10 @@ public final class SessionManager: @unchecked Sendable {
     /// 30 minutes of inactivity rotates the session.
     public static let idleRotationInterval: TimeInterval = 30 * 60
 
+    /// A session older than 4 hours rotates on the next touch, so a
+    /// continuously-used app still ends sessions (F29).
+    public static let maxSessionDuration: TimeInterval = 4 * 60 * 60
+
     private let lock = NSLock()
     private let store: SessionStore
     private let clock: Clock
@@ -86,23 +91,31 @@ public final class SessionManager: @unchecked Sendable {
     }
 
     /// Returns the current session state, creating a new one if no
-    /// session exists or if the last-active timestamp is older than
-    /// `idleRotationInterval`. Updates `lastActiveAt` to "now" and
-    /// returns whether this call started a fresh session.
+    /// session exists, the last-active timestamp is older than
+    /// `idleRotationInterval`, or the session is older than
+    /// `maxSessionDuration`. Updates `lastActiveAt` to "now".
+    /// `ended` carries the session this call ended and why (`idle` or
+    /// `max_duration`); `nil` when nothing ended (first session).
     @discardableResult
-    public func touch() -> (state: SessionState, rotated: Bool) {
+    public func touch() -> (state: SessionState, rotated: Bool, ended: (state: SessionState, reason: String)?) {
         lock.lock(); defer { lock.unlock() }
         let now = clock.now
-        if let existing = store.load(),
-           now.timeIntervalSince(existing.lastActiveAt) < Self.idleRotationInterval {
-            var updated = existing
-            updated.lastActiveAt = now
-            store.save(updated)
-            return (updated, false)
+        var ended: (state: SessionState, reason: String)?
+        if let existing = store.load() {
+            if now.timeIntervalSince(existing.lastActiveAt) >= Self.idleRotationInterval {
+                ended = (existing, "idle")
+            } else if now.timeIntervalSince(existing.startTime) >= Self.maxSessionDuration {
+                ended = (existing, "max_duration")
+            } else {
+                var updated = existing
+                updated.lastActiveAt = now
+                store.save(updated)
+                return (updated, false, nil)
+            }
         }
         let fresh = createSession(at: now)
         store.save(fresh)
-        return (fresh, true)
+        return (fresh, true, ended)
     }
 
     /// Increment the `session.sequence` counter — called by the
@@ -119,16 +132,6 @@ public final class SessionManager: @unchecked Sendable {
     public func currentState() -> SessionState? {
         lock.lock(); defer { lock.unlock() }
         return store.load()
-    }
-
-    /// Force a fresh session — used on `session.finalized` to make
-    /// sure the *next* event starts a brand-new session id rather
-    /// than reusing the just-ended one.
-    public func rotate() -> SessionState {
-        lock.lock(); defer { lock.unlock() }
-        let fresh = createSession(at: clock.now)
-        store.save(fresh)
-        return fresh
     }
 
     // MARK: ID generation

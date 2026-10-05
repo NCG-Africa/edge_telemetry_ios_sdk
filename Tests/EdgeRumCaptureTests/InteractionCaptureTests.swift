@@ -6,12 +6,11 @@
 //   - base-class swizzle landing on UIWindow (the IMP for the base
 //     differs from a subclass override's IMP)
 //   - decideEmission for a UIButton with accessibilityIdentifier
-//     (T9.1 acceptance) — interaction.kind / target / target_id /
-//     screen
+//     (T9.1 acceptance) — interaction.kind / target / name
 //   - F27: button title is default-off — an un-annotated button emits
-//     name_source = none and no target_id; opt-in falls back to
+//     name_source = none and no interaction.name; opt-in falls back to
 //     UIButton.currentTitle with name_source = button_title
-//   - target_id omitted when neither a11y id nor button title exists
+//   - interaction.name omitted when neither a11y id nor button title exists
 //   - UITableViewCell / UICollectionViewCell target resolution
 //   - UIControl wins over an enclosing cell in the chain
 //   - reflected class name in interaction.target
@@ -19,8 +18,7 @@
 //   - secure text field reached via the responder chain is skipped
 //     (T9.2 acceptance — full chain)
 //   - the capture path never reads .text from a secure field
-//   - interaction.screen sourced from F6 navigation state
-//   - interaction.screen omitted when no screen has appeared
+//   - no interaction.screen (F29: the screen.name rider replaces it)
 //   - handleSendEvent emits exactly once for a single .ended touch
 //   - handleSendEvent ignores .began-only events
 //   - Recorder.isEnabled = false halts emission while leaving the
@@ -241,15 +239,14 @@ final class InteractionCaptureTests: XCTestCase {
         button.accessibilityIdentifier = "checkout"
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: "Cart"
+            for: button
         ) else {
             return XCTFail("Expected an attribute bag for a non-secure button tap")
         }
         XCTAssertEqual(attrs["interaction.kind"], .string("tap"))
-        XCTAssertEqual(attrs["interaction.target_id"], .string("checkout"))
+        XCTAssertEqual(attrs["interaction.name"], .string("checkout"))
         XCTAssertEqual(attrs["interaction.name_source"], .string("accessibility_identifier"))
-        XCTAssertEqual(attrs["interaction.screen"], .string("Cart"))
+        XCTAssertNil(attrs["interaction.screen"], "F29: replaced by the screen.name rider")
         if case let .string(target) = attrs["interaction.target"] {
             XCTAssertTrue(
                 target.contains("UIButton"),
@@ -265,12 +262,11 @@ final class InteractionCaptureTests: XCTestCase {
         button.setTitle("Buy", for: .normal)
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: nil
+            for: button
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        XCTAssertNil(attrs["interaction.target_id"], "rendered button text must not ship by default")
+        XCTAssertNil(attrs["interaction.name"], "rendered button text must not ship by default")
         XCTAssertEqual(attrs["interaction.name_source"], .string("none"))
     }
 
@@ -280,24 +276,22 @@ final class InteractionCaptureTests: XCTestCase {
 
         guard let attrs = InteractionCapture.decideEmission(
             for: button,
-            currentScreen: nil,
             captureButtonTitles: true
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        XCTAssertEqual(attrs["interaction.target_id"], .string("Buy"))
+        XCTAssertEqual(attrs["interaction.name"], .string("Buy"))
         XCTAssertEqual(attrs["interaction.name_source"], .string("button_title"))
     }
 
     func test_decideEmission_omitsTargetIdWhenNoIdOrTitle() {
         let view = UIView()
         guard let attrs = InteractionCapture.decideEmission(
-            for: view,
-            currentScreen: nil
+            for: view
         ) else {
             return XCTFail("Expected an attribute bag for a plain view tap")
         }
-        XCTAssertNil(attrs["interaction.target_id"])
+        XCTAssertNil(attrs["interaction.name"])
         XCTAssertEqual(attrs["interaction.name_source"], .string("none"))
     }
 
@@ -307,8 +301,7 @@ final class InteractionCaptureTests: XCTestCase {
         cell.contentView.addSubview(label)
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: label,
-            currentScreen: nil
+            for: label
         ) else {
             return XCTFail("Expected an attribute bag")
         }
@@ -328,8 +321,7 @@ final class InteractionCaptureTests: XCTestCase {
         cell.contentView.addSubview(label)
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: label,
-            currentScreen: nil
+            for: label
         ) else {
             return XCTFail("Expected an attribute bag")
         }
@@ -353,12 +345,11 @@ final class InteractionCaptureTests: XCTestCase {
         cell.contentView.addSubview(button)
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: nil
+            for: button
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        XCTAssertEqual(attrs["interaction.target_id"], .string("subscribe"))
+        XCTAssertEqual(attrs["interaction.name"], .string("subscribe"))
         if case let .string(target) = attrs["interaction.target"] {
             XCTAssertTrue(
                 target.contains("UIButton"),
@@ -374,8 +365,7 @@ final class InteractionCaptureTests: XCTestCase {
         let button = TestCheckoutButton(type: .system)
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: nil
+            for: button
         ) else {
             return XCTFail("Expected an attribute bag")
         }
@@ -397,8 +387,7 @@ final class InteractionCaptureTests: XCTestCase {
         field.text = "should-never-be-read"
 
         XCTAssertNil(InteractionCapture.decideEmission(
-            for: field,
-            currentScreen: "Login"
+            for: field
         ))
     }
 
@@ -408,12 +397,11 @@ final class InteractionCaptureTests: XCTestCase {
         field.accessibilityIdentifier = "email"
 
         guard let attrs = InteractionCapture.decideEmission(
-            for: field,
-            currentScreen: nil
+            for: field
         ) else {
             return XCTFail("Expected a non-secure text field to emit")
         }
-        XCTAssertEqual(attrs["interaction.target_id"], .string("email"))
+        XCTAssertEqual(attrs["interaction.name"], .string("email"))
     }
 
     func test_decideEmission_secureFieldReachedViaResponderChainIsSkipped() {
@@ -428,8 +416,7 @@ final class InteractionCaptureTests: XCTestCase {
         leaf.forwardedNext = secureField
 
         XCTAssertNil(InteractionCapture.decideEmission(
-            for: leaf,
-            currentScreen: nil
+            for: leaf
         ))
     }
 
@@ -445,8 +432,7 @@ final class InteractionCaptureTests: XCTestCase {
 
         // Secure → bag is nil, so we cannot possibly have leaked text.
         XCTAssertNil(InteractionCapture.decideEmission(
-            for: field,
-            currentScreen: nil
+            for: field
         ))
     }
 
@@ -460,49 +446,6 @@ final class InteractionCaptureTests: XCTestCase {
         let field = UITextField()
         field.isSecureTextEntry = false
         XCTAssertFalse(InteractionCapture.responderChainContainsSecureField(startingAt: field))
-    }
-
-    // MARK: decideEmission — screen sourcing
-
-    func test_decideEmission_screenIncludedWhenSet() {
-        Riders.shared.enterScreen("Cart")
-        let button = UIButton(type: .system)
-        button.accessibilityIdentifier = "checkout"
-
-        guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: UIViewControllerCapture.currentScreen()
-        ) else {
-            return XCTFail("Expected an attribute bag")
-        }
-        XCTAssertEqual(attrs["interaction.screen"], .string("Cart"))
-    }
-
-    func test_decideEmission_screenOmittedWhenNoneSet() {
-        UIViewControllerCapture._resetCurrentScreenForTesting()
-        let button = UIButton(type: .system)
-        button.accessibilityIdentifier = "checkout"
-
-        guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: UIViewControllerCapture.currentScreen()
-        ) else {
-            return XCTFail("Expected an attribute bag")
-        }
-        XCTAssertNil(attrs["interaction.screen"])
-    }
-
-    func test_decideEmission_emptyScreenIsOmitted() {
-        let button = UIButton(type: .system)
-        button.accessibilityIdentifier = "checkout"
-
-        guard let attrs = InteractionCapture.decideEmission(
-            for: button,
-            currentScreen: ""
-        ) else {
-            return XCTFail("Expected an attribute bag")
-        }
-        XCTAssertNil(attrs["interaction.screen"])
     }
 
     // MARK: handleSendEvent integration
@@ -524,7 +467,7 @@ final class InteractionCaptureTests: XCTestCase {
         }
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.0, "user.interaction")
-        XCTAssertEqual(events.first?.1["interaction.target_id"], .string("checkout"))
+        XCTAssertEqual(events.first?.1["interaction.name"], .string("checkout"))
     }
 
     func test_handleSendEvent_beganOnlyIsIgnored() {
@@ -622,7 +565,7 @@ final class InteractionCaptureTests: XCTestCase {
         }
         XCTAssertEqual(events.count, 2)
         let ids = Set(events.compactMap { attrs -> String? in
-            if case let .string(s) = attrs["interaction.target_id"] { return s }
+            if case let .string(s) = attrs["interaction.name"] { return s }
             return nil
         })
         XCTAssertEqual(ids, ["left", "right"])
@@ -648,7 +591,7 @@ final class InteractionCaptureTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?["interaction.target_id"], .string("only-this-one"))
+        XCTAssertEqual(events.first?["interaction.name"], .string("only-this-one"))
     }
 
     func test_handleSendEvent_screenSourcedFromNavigationState() {
@@ -666,7 +609,7 @@ final class InteractionCaptureTests: XCTestCase {
         guard case let .event(_, attrs) = probe.calls.first else {
             return XCTFail("Expected a user.interaction event")
         }
-        XCTAssertEqual(attrs["interaction.screen"], .string("Profile"))
+        XCTAssertNil(attrs["interaction.screen"], "F29: replaced by the screen.name rider")
     }
 
     #endif
