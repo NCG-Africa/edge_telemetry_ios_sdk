@@ -237,7 +237,7 @@ Every other field has a documented default tuned for production use.
 | `captureNativeCrashes`         | `Bool`                              | `true`                               | Register PLCrashReporter. |
 | `enableHangDetection`          | `Bool`                              | `true`                               | Register runloop watchdog. |
 | `hangTimeout`                  | `TimeInterval`                      | `5.0`                                | Hang threshold (seconds). |
-| `captureScreens`               | `Bool`                              | `true`                               | UIKit screen-entry / dwell swizzle. |
+| `captureScreens`               | `Bool`                              | `true`                               | UIKit screen-entry swizzle. |
 | `captureHTTP`                  | `Bool`                              | `true`                               | URLSession capture. |
 | `captureTaps`                  | `Bool`                              | `true`                               | Top-level tap capture. |
 | `captureButtonTitles`          | `Bool`                              | `false`                              | Label taps on buttons without an `accessibilityIdentifier` with their on-screen title. |
@@ -255,8 +255,8 @@ for the full field declarations.
 Once `EdgeRum.start(_:)` runs, the capture stack arms itself without
 any per-call code. Each one is independently togglable on the config.
 
-- **Screens.** UIKit `viewDidAppear` emits `navigation`; the paired
-  `viewWillDisappear` emits a `screen.duration` metric. Container view
+- **Screens.** UIKit `viewDidAppear` emits `navigation`; screen exits
+  emit nothing (dwell is derived server-side). Container view
   controllers are skipped. SwiftUI screens emit the same shape via
   `.edgeRumScreen(_:)` and via `UIHostingController` auto-detection.
 - **HTTP.** Every `URLSession` request emits `http.request` and a
@@ -274,8 +274,9 @@ any per-call code. Each one is independently togglable on the config.
   first frame after `.active`.
 - **Native crashes.** PLCrashReporter with replay on next launch — the
   emitted `app.crash` carries the **previous** session's identity.
-- **Hangs.** Runloop watchdog emits `app.crash` with `cause = "Hang"`
-  for any main-thread stall longer than `hangTimeout`.
+- **Hangs.** Runloop watchdog emits `app.hang` for any main-thread
+  stall longer than `hangTimeout`. Handled errors from `captureError`
+  emit `app.error`; `app.crash` is reserved for replayed native crashes.
 
 ## Recipes
 
@@ -306,7 +307,7 @@ func recipeTrack() {
     EdgeRum.track("checkout_started", attributes: [
         "cart.size": 3,
         "cart.total": 49.95,
-        "user.is_member": true,
+        "loyalty.is_member": true,
         "ab.bucket": "treatment"
     ])
 }
@@ -457,8 +458,8 @@ final class RecipeBackgroundFlushAppDelegate: UIResponder, UIApplicationDelegate
 ## What gets sent
 
 Every batch is a JSON `telemetry_batch` envelope. A complete reference
-batch — `navigation`, `screen.duration`, `http.request`, and two
-metrics — lives at [`docs/payload-example.jsonc`](docs/payload-example.jsonc).
+batch — `navigation`, `http.request`, and two metrics
+(`resource_timing`, `frame_render_time`) — lives at [`docs/payload-example.jsonc`](docs/payload-example.jsonc).
 
 Excerpt:
 

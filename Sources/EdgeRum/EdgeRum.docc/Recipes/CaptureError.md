@@ -4,12 +4,17 @@ Report a thrown `Error` from a `do / catch` block.
 
 ## Overview
 
-Use ``EdgeRum/captureError(_:context:)`` to attach an
-`app.crash` event with `cause = "AppError"` for any `Error` your code
-catches. The SDK flattens the error's type, domain (for `NSError`),
-code, and `localizedDescription` automatically; the call-site stack is
+Use ``EdgeRum/captureError(_:context:)`` to record an
+`app.error` event for any `Error` your code catches. The SDK flattens
+the error's type (`error.class`), domain (for `NSError`), code, and
+`localizedDescription` automatically; the call-site stack is
 snapshotted synchronously before the queue handoff so the frames in
-the report match the throw site.
+`error.stack` match the throw site. Frames read
+`image +0x<offset> <hint>`, with the referenced images listed in
+`error.binary_images`.
+
+`app.error` follows ``EdgeRumConfig/sampleRate`` and ships with the
+next normal flush; it does not force an immediate upload.
 
 ```swift
 import EdgeRum
@@ -30,7 +35,9 @@ The `context` map is intended for the call-site state that the error
 itself cannot carry — what the user was doing, what cart they had,
 which experiment bucket they were in. Each key is prefixed
 `crash.context.` on the wire so it cannot collide with the standard
-`error.*` payload.
+`error.*` payload. Because of that prefix, these keys are exempt from
+the reserved-prefix rule that drops SDK-namespaced keys from other
+attribute maps.
 
 Values must conform to ``AttributeValue``, matching the rule for every
 other public API entry point — primitives only, no nesting.

@@ -10,13 +10,13 @@
 //   interaction.target     — reflected class name of the resolved target
 //                            (UIControl / cell / hit view), e.g.
 //                            "UIKit.UIButton"
-//   interaction.target_id  — accessibilityIdentifier; UIButton current
+//   interaction.name  — accessibilityIdentifier; UIButton current
 //                            title only when the host opted in via
 //                            `captureButtonTitles` (F27, default-off —
 //                            rendered text is user-visible content);
 //                            omitted when neither applies
 //   interaction.name_source — `accessibility_identifier | button_title |
-//                            none`: which branch produced target_id
+//                            none`: which branch produced interaction.name
 //   interaction.screen     — current navigation screen name (from F6's
 //                            UIViewControllerCapture); omitted when no
 //                            screen has appeared yet
@@ -88,7 +88,7 @@ public enum InteractionCapture {
     nonisolated(unsafe) private static var _installed: Bool = false
 
     /// F27 opt-in: `true` lets an un-annotated `UIButton`'s rendered
-    /// title ship as `interaction.target_id`. Set by `install(...)`.
+    /// title ship as `interaction.name`. Set by `install(...)`.
     nonisolated(unsafe) private static var _captureButtonTitles: Bool = false
 
     /// `true` once `install(...)` has performed the IMP swap. Read by
@@ -290,7 +290,7 @@ public enum InteractionCapture {
     ///    `captureButtonTitles` is set (F27: default-off).
     ///
     /// Returns the identifier (`nil` when neither applies; the caller
-    /// omits `interaction.target_id` rather than emitting an empty
+    /// omits `interaction.name` rather than emitting an empty
     /// string) and its `interaction.name_source` value.
     static func resolveTargetIdentifier(
         _ target: UIView,

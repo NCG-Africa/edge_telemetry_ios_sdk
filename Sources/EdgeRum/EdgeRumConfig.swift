@@ -129,7 +129,7 @@ public struct EdgeRumConfig: Sendable {
 
     /// Capture network connectivity changes — emits one event per
     /// transition carrying `network.type`, `network.effectiveType`,
-    /// `network.is_expensive`, `network.is_constrained`, and (iOS 14.2+)
+    /// `network.expensive`, `network.constrained`, and (iOS 14.2+)
     /// `network.unsatisfied_reason`. Default `true`.
     public var captureNetworkChanges: Bool = true
 

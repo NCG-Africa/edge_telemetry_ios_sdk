@@ -13,9 +13,11 @@ main thread when ``EdgeRum/start(_:)`` runs.
 
 ## Navigation
 
-UIKit screen entries produce a `navigation` event; paired exits produce
-a `screen.duration` performance metric. The capture is installed on the
-base `UIViewController`, so every subclass inherits it.
+UIKit screen entries produce a `navigation` event carrying
+`navigation.screen` and `navigation.previous_screen`. Screen exits emit
+nothing — dwell time is derived server-side from consecutive
+`navigation` events. The capture is installed on the base
+`UIViewController`, so every subclass inherits it.
 
 Container view controllers — `UINavigationController`,
 `UITabBarController`, `UIPageViewController` — are skipped; the
@@ -26,7 +28,9 @@ renames), falling back to the reflected type name.
 SwiftUI screens emit the same wire shape through the
 `View.edgeRumScreen(_:attributes:)` modifier, tagged with
 `navigation.kind = "swiftui"`. SwiftUI screens routed through
-`UIHostingController` are also detected automatically.
+`UIHostingController` are also detected automatically. Manual
+``EdgeRum/trackScreen(_:attributes:)`` calls are tagged
+`navigation.kind = "manual"`.
 
 Opt out via ``EdgeRumConfig/captureScreens``.
 
@@ -38,13 +42,14 @@ companion `resource_timing` metric — no per-call code required.
 .default, delegate:, ...)` flows are both intercepted at the protocol
 layer; the SDK never wraps or replaces your delegate.
 
-What's captured: `http.method`, `http.url`, `http.host`, `http.path`,
+What's captured: `http.method`, `http.host`, `http.path`,
 `http.status_code`, `http.duration_ms`, `http.request_size`,
-`http.response_size`, `http.from_cache`, and `http.error` (only on
-failure). The companion `resource_timing` metric carries
-`resource.dns_ms`, `resource.connect_ms`, `resource.tls_ms`,
-`resource.ttfb_ms`, and `resource.response_ms` derived from
-`URLSessionTaskMetrics`.
+`http.response_size`, `http.from_cache`, and — only on failure —
+`http.error_domain` (string) plus `http.error_code` (int). No full URL
+or query string is sent. The companion `resource_timing` metric carries
+`resource.host`, `resource.dns_ms`, `resource.connect_ms`,
+`resource.tls_ms`, `resource.ttfb_ms`, and `resource.download_ms`
+derived from `URLSessionTaskMetrics`.
 
 Background URLSession traffic is **not** instrumented — the OS provides
 no in-process delegate window for `URLSessionTaskMetrics`, so emitting
@@ -65,12 +70,12 @@ capture is installed on the base `UIWindow.sendEvent(_:)` so every
 subclass inherits it, and emits exactly once per `.ended` touch.
 
 What's captured: `interaction.kind`, `interaction.target` (the
-reflected class name of the resolved target view), `interaction.target_id`
+reflected class name of the resolved target view), `interaction.name`
 (the `accessibilityIdentifier`; a `UIButton`'s current title only when
-``EdgeRumConfig/captureButtonTitles`` is `true`), `interaction.name_source`
-(`accessibility_identifier`, `button_title`, or `none` when no label was
-sent), and `interaction.screen` (the current screen name from the navigation
-pointer; omitted when no screen has appeared yet).
+``EdgeRumConfig/captureButtonTitles`` is `true`), and
+`interaction.name_source` (`accessibility_identifier`, `button_title`,
+`host` for `edgeRumTrackTap`, or `none` when no label was sent). The
+current screen rides on every event as `screen.name`.
 
 Secure-entry text fields are never recorded — if the tap's responder
 chain reaches a `UITextField` with `isSecureTextEntry == true`, the
@@ -97,12 +102,16 @@ Three independent samplers emit `metric` items on a steady cadence:
   (`phys_footprint`) every ten seconds; in parallel a
   `DispatchSource.makeMemoryPressureSource(eventMask: .all)` emits an
   out-of-band sample tagged `memory.pressure ∈ "normal" / "warning" /
-  "critical"` on every transition. All sizes in kB.
+  "critical"` on every transition. The `memory.*_kb` attributes are
+  in kB; the metric `value` is in MB.
 - **`long_task`** — a `CFRunLoopObserver` measures the interval between
   `.afterWaiting` and the next `.beforeWaiting`. Any work segment ≥ 50 ms
   emits a `long_task` metric with `value` (ms),
   `long_task.threshold_ms`, and a `long_task.stack` snapshot
-  (truncated to 4 KiB).
+  (truncated to 4 KiB; `long_task.stack.truncated` counts the bytes
+  removed). Frames read `image +0x<offset> <hint>`;
+  `long_task.binary_images` lists the referenced images (`name`,
+  `uuid`) as a JSON string so offsets can be symbolicated.
 
 Opt out via ``EdgeRumConfig/captureRenderingPerformance``.
 
@@ -114,8 +123,8 @@ transitions also force an immediate flush so the in-memory buffer is
 shipped before the OS suspends the process.
 
 `network_change` events fire on every `NWPathMonitor` transition, carrying
-`network.type`, `network.effectiveType`, `network.is_expensive`,
-`network.is_constrained`, and (iOS 14.2+) `network.unsatisfied_reason`.
+`network.type`, `network.effectiveType`, `network.expensive`,
+`network.constrained`, and (iOS 14.2+) `network.unsatisfied_reason`.
 
 Opt out via ``EdgeRumConfig/captureLifecycle`` and
 ``EdgeRumConfig/captureNetworkChanges``.
@@ -139,10 +148,12 @@ the current one.
 
 The hang watchdog observes `CFRunLoopObserver` activity on the main
 runloop; any work segment longer than ``EdgeRumConfig/hangTimeout``
-(default 5.0 s) emits an `app.crash` with `cause = "Hang"`,
-`runtime = "native"`, and a best-effort stack snapshot. Hangs are not
-fatal — they sit alongside the `long_task` metric for the steady-state
-samplers and the fatal `app.crash` events for PLCR.
+(default 5.0 s) emits an `app.hang` event with `hang.timestamp`,
+`hang.duration_ms`, and a best-effort `hang.stack` snapshot (same
+`image +0x<offset> <hint>` frame format, with `hang.binary_images`).
+Hangs are not fatal: `app.hang` follows ``EdgeRumConfig/sampleRate`` and
+the normal flush, while `app.crash` is reserved for replayed native
+crashes and flushes immediately.
 
 Opt out via ``EdgeRumConfig/captureNativeCrashes`` and
 ``EdgeRumConfig/enableHangDetection``.

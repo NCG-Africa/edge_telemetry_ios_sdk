@@ -115,7 +115,8 @@ public enum StackFrames {
         var seen = Set<StackImage>()
         var list: [[String: String]] = []
         for case let image? in frames.map(\.image) where seen.insert(image).inserted {
-            list.append(["name": image.name, "uuid": image.uuid])
+            // Omit, never substitute: no LC_UUID → no `uuid` key.
+            list.append(image.uuid.isEmpty ? ["name": image.name] : ["name": image.name, "uuid": image.uuid])
         }
         guard !list.isEmpty,
               let data = try? JSONSerialization.data(withJSONObject: list, options: [.sortedKeys]) else {
@@ -142,6 +143,7 @@ public enum StackFrames {
                     bytes.map { String(format: "%02x", $0) }.joined()
                 }
             }
+            guard lc.cmdsize > 0 else { return nil } // malformed header: stop, never loop
             cmd += Int(lc.cmdsize)
         }
         return nil

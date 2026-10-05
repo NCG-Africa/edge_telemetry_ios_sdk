@@ -87,6 +87,11 @@ final class StackFramesTests: XCTestCase {
 
     // MARK: - binaryImagesJSON
 
+    func testUnreadableUUIDIsOmittedNotEmpty() {
+        let frames = [StackFrame(text: "Lib +0x1", image: StackImage(name: "Lib", uuid: ""))]
+        XCTAssertEqual(StackFrames.binaryImagesJSON(frames), #"[{"name":"Lib"}]"#)
+    }
+
     func testBinaryImagesDeduplicatedInFirstSeenOrder() {
         let a = StackImage(name: "App", uuid: "aa")
         let b = StackImage(name: "UIKitCore", uuid: "bb")

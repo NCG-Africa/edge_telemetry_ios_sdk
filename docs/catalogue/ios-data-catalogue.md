@@ -631,6 +631,7 @@ Plus `traceparent.outcome` (§5.6) and `trace.root_expired` (§5.10). Outbound h
 | key | type | on events | scope | presence | cardinality | pii | delta | notes |
 |---|---|---|---|---|---|---|---|---|
 | *host key* | any scalar | `custom_event` (`track`), `navigation` (`trackScreen`, `.edgeRumScreen`), `user.interaction` (`.edgeRumTrackTap`), host metrics → `custom_timer` (`RumTimer.end`) | event | optional | **open** | content | iOS-only | Merged verbatim; SDK-owned keys applied last so they cannot be overwritten. The SDK asserts nothing about the contents. **~T4 breaking batch:** keys beginning with an SDK prefix — `app.` `device.` `network.` `session.` `user.` `sdk.` `navigation.` `interaction.` `http.` `resource.` `crash.` `error.` `hang.` `action.` `trace.` `span.` `rum.` `screen.` (and the rest of the reserved set) — are **dropped at the public entry**, counted, and logged in `debug`. As-is `track("user.email", …)` shadows an SDK key |
+| `host_attributes.dropped` | number (int) | every event and metric with host keys (above) | event | optional | numeric | none | iOS-only | **+T4 breaking batch.** Host keys removed by the reserved-prefix rule on this event (§0 clause 8 marker). Omitted when zero. Spelling ruled by the T4 epic (ADR-020); an envelope total may follow in T7 |
 
 ### 5.16 Crash and hang replay override set
 
@@ -977,7 +978,7 @@ wins. Each of its 21 rows and where this catalogue carries it:
 |---|---|
 | Whether `app.error` carries trace join keys (v3 §12 annotates crash and hang only) | T11 epic |
 | Byte cap for `error_type` ([W11][W11] and the roadmap: "byte-capped", no number) | T8 epic |
-| Counter spelling for host keys dropped by the reserved-prefix rule (they are keys, not events) | T4 epic |
+| ~~Counter spelling for host keys dropped by the reserved-prefix rule~~ | **Resolved (T4, ADR-020):** event-level `host_attributes.dropped`, §5.15 |
 | Name of the button-title opt-in flag | T2 epic |
 | Exact envelope placement of §2.2 counters (top-level keys vs a nested object) — Processor delta P17 | T7 epic |
 | Whether `runtime`, `duration_ms` and `crash.context.*` on `app.error` survive a later breaking batch | next breaking batch |

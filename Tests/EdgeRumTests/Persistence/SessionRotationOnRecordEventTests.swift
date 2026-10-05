@@ -176,6 +176,8 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         XCTAssertEqual(events.map(\.name).prefix(2), ["session.finalized", "session.started"])
         XCTAssertEqual(events.first?.attributes["session.id"], .string(first.id))
         XCTAssertEqual(events.first?.attributes["session.end_time"], .string(WireDateFormatter.string(from: first.lastActiveAt)))
+        XCTAssertEqual(events.first?.attributes["session.rotation"], .string("idle"))
+        XCTAssertEqual(events.dropFirst().first?.attributes["session.rotation"], .string("idle"))
     }
 
     // MARK: didAckBatch — issue #43 acceptance

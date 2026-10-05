@@ -1690,3 +1690,51 @@ Two choices in it are not obvious from the code.
    tranche 4 (W18), so it is not wired here.
 3. **Sidecar filters on read as well as write**, so a file left by a
    pre-F27 build cannot replay host identity onto a crash event.
+
+---
+
+## ADR-020 — Breaking batch (F29): drop counter spelling, image UUID format, between-launch finalize
+
+**Date:** 2026-10-05
+
+**Status:** Accepted. Supersedes ADR-011 decision 1 (`crash.thread.main_stack`).
+
+**Context.** Tranche 4 of `docs/specs/rum-coverage-roadmap.md` (#216),
+contract in `docs/catalogue/ios-data-catalogue.md` §9. Four choices the
+spec and catalogue left open or that the code made on the way.
+
+**Decision.**
+
+1. **Reserved-prefix drop counter is event-level `host_attributes.dropped`.**
+   Catalogue §10 left the spelling to the T4 epic. A host key on `track`,
+   `trackScreen`, `RumTimer.end`, `.edgeRumScreen` or `.edgeRumTrackTap`
+   that starts with an SDK prefix is dropped; the event carries the count
+   (int, omitted when zero; logged under `debug`). Event-level follows the
+   §0 clause 8 `.dropped` marker convention and needs no envelope change.
+   T7 may add an envelope-level total alongside the other SDK health
+   counters. `captureError(context:)` keys are exempt — they are already
+   namespaced `crash.context.`.
+2. **`*.binary_images` UUID = PLCrashReporter's `imageUUID` format**
+   (32 lowercase hex, no dashes). One key format serves `crash.report_json`
+   and the three stacks (`error.stack`, `long_task.stack`, `hang.stack`), so
+   backend symbolication (catalogue §10 P18) has a single lookup key.
+3. **A session that expired between launches is finalized at the next
+   `start()`.** `session.finalized` is emitted only on rotation; with no
+   resign-time emit, an idle- or max-duration expiry detected on launch
+   would otherwise never be finalized. The event carries the ended
+   session's `session.end_time` (its last activity), not the launch time.
+4. **`hang.stack` supersedes ADR-011's `crash.thread.main_stack`** (and
+   `hang.timestamp` supersedes `crash.timestamp`) on `app.hang`. A `crash.*`
+   key on a non-crash event was an incoherence created by the split
+   (roadmap §10 row 11); `hang.stack` aligns with `long_task.stack`,
+   `error.stack` and `hang.binary_images`.
+5. **Unreadable image UUID is omitted, never `""`** (catalogue §0 clause 9);
+   the backend normalises `dwarfdump --uuid` (uppercase, hyphenated) to this
+   lowercase 32-hex form.
+6. **Off-list `metricName`s are dropped and debug-logged only.** The
+   counter the catalogue asks for is T7's `sdk.events_dropped.unknown_name`,
+   which also covers off-list event names; T4 adds no interim counter.
+
+**Consequences.** Wire-breaking; Processor rolls out first (catalogue §10
+P3–P5, P8, P14, P18). Migration note:
+`docs/migration/1.0.0-alpha.2-to-alpha.N.md`.
