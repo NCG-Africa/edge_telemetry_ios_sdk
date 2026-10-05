@@ -3,7 +3,8 @@
 // Per-session probabilistic filter. PLAN-iOS.md §9.6:
 //
 //     Per-session uniform random vs `sampleRate`. Excluded sessions
-//     emit only `session.started`, `session.finalized`, `app.crash`,
+//     emit only `session.started`, `session.finalized`, `app.crash`
+//     (native crash replay only — `app.error` / `app.hang` are sampled),
 //     and `network_change`.
 //
 // One coin flip per session. The forced-emit allowlist always passes

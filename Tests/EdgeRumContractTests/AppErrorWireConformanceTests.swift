@@ -1,10 +1,10 @@
 // Tests/EdgeRumContractTests/AppErrorWireConformanceTests.swift
 //
 // F13 — End-to-end wire conformance for the application-error
-// (`app.crash` with `cause = "AppError"`) emit shape.
+// (`app.error`) emit shape.
 //
 // The unit-level `AppErrorBuilderTests` lock the attribute keys +
-// types. This contract test pipes a synthesized `app.crash` event
+// types. This contract test pipes a synthesized `app.error` event
 // built by `AppErrorBuilder` through a real `Recorder` +
 // `RecordingTransportSink` and validates the assembled envelope
 // against `WireAssertions`.
@@ -37,7 +37,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
         return (recorder, sink)
     }
 
-    // MARK: - NSError → app.crash (T13.2 acceptance)
+    // MARK: - NSError → app.error (T13.2 acceptance)
 
     func testNSErrorAppCrashEnvelopeIsWireValid() throws {
         let (recorder, sink) = makeRecorder()
@@ -49,27 +49,30 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: err,
             context: ["payment.method": .string("card")],
-            stack: ["0   EdgeRum   0x0001  +[F13 captureError:_:context:]",
-                    "1   EdgeRum   0x0002  caller_frame"],
+            stack: [StackFrame(text: "EdgeRum +0x1a2b captureError",
+                               image: StackImage(name: "EdgeRum", uuid: "0123456789abcdef0123456789abcdef")),
+                    StackFrame(text: "EdgeRum +0x2b3c caller_frame",
+                               image: StackImage(name: "EdgeRum", uuid: "0123456789abcdef0123456789abcdef"))],
             debug: false
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
+        recorder.flush(reason: .immediate)
 
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?["type"] as? String, "event")
-        XCTAssertEqual(events.first?["eventName"] as? String, "app.crash")
+        XCTAssertEqual(events.first?["eventName"] as? String, "app.error")
 
         let wireAttrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(wireAttrs)
 
         // Fixed payload contract
-        XCTAssertEqual(wireAttrs["cause"] as? String, "AppError")
+        XCTAssertNil(wireAttrs["cause"])
         XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
         XCTAssertEqual(wireAttrs["error.kind"] as? String, "nserror")
-        XCTAssertEqual(wireAttrs["error.type"] as? String, "NSError")
+        XCTAssertEqual(wireAttrs["error.class"] as? String, "NSError")
         XCTAssertEqual(wireAttrs["error.domain"] as? String, "PaymentDomain")
         XCTAssertEqual(wireAttrs["error.code"] as? Int, 42)
         XCTAssertEqual(wireAttrs["error.message"] as? String, "Card declined")
@@ -90,9 +93,16 @@ final class AppErrorWireConformanceTests: XCTestCase {
 
         // Stack present
         XCTAssertNotNil(wireAttrs["error.stack"] as? String)
+        // binary_images rides as a JSON *string* of {name, uuid}, deduplicated.
+        let imagesJSON = try XCTUnwrap(wireAttrs["error.binary_images"] as? String)
+        let images = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(imagesJSON.utf8)) as? [[String: String]]
+        )
+        XCTAssertEqual(images, [["name": "EdgeRum", "uuid": "0123456789abcdef0123456789abcdef"]])
+        XCTAssertNil(wireAttrs["error.stack.truncated"], "omitted when zero")
     }
 
-    // MARK: - Swift Error → app.crash (T13.1 acceptance)
+    // MARK: - Swift Error → app.error (T13.1 acceptance)
 
     func testSwiftErrorAppCrashEnvelopeIsWireValid() throws {
         let (recorder, sink) = makeRecorder()
@@ -100,10 +110,11 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: DecodingFailure.keyNotFound("invoice_id"),
             context: ["screen": .string("Receipt")],
-            stack: ["0   EdgeRum   0x0001  test_frame"],
+            stack: [StackFrame(text: "EdgeRum +0x1 test_frame")],
             debug: false
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
+        recorder.flush(reason: .immediate)
 
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
@@ -111,10 +122,10 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let wireAttrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(wireAttrs)
 
-        XCTAssertEqual(wireAttrs["cause"] as? String, "AppError")
+        XCTAssertNil(wireAttrs["cause"])
         XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
         XCTAssertEqual(wireAttrs["error.kind"] as? String, "swift")
-        XCTAssertEqual(wireAttrs["error.type"] as? String, "DecodingFailure")
+        XCTAssertEqual(wireAttrs["error.class"] as? String, "DecodingFailure")
         XCTAssertEqual(wireAttrs["crash.context.screen"] as? String, "Receipt")
         XCTAssertNil(wireAttrs["screen"])
 
@@ -137,10 +148,11 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: outer,
             context: [:],
-            stack: ["0   x   y"],
+            stack: [StackFrame(text: "x +0x1 y")],
             debug: false
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
+        recorder.flush(reason: .immediate)
 
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
@@ -161,10 +173,11 @@ final class AppErrorWireConformanceTests: XCTestCase {
                 "s": "string", "i": 7, "d": 1.5, "b": true
             ]),
             context: ["c": .string("v")],
-            stack: ["0   y   z"],
+            stack: [StackFrame(text: "y +0x1 z")],
             debug: false
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
+        recorder.flush(reason: .immediate)
 
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (data, _) = try WireAssertions.assertValidEnvelope(envelope)
@@ -181,25 +194,26 @@ final class AppErrorWireConformanceTests: XCTestCase {
 
     func testAppCrashInSameBatchWithOtherEvents() throws {
         let (recorder, sink) = makeRecorder()
-        // `app.crash` triggers an immediate flush, so emit it last and
+        // flush explicitly after both events (`app.error` never forces a flush) and
         // assert both events ride the same envelope.
         recorder.recordEvent(name: "navigation", attributes: [
             "navigation.kind": .string("uikit"),
-            "navigation.name": .string("Cart")
+            "navigation.screen": .string("Cart")
         ])
         let crashAttrs = AppErrorBuilder.build(
             error: NSError(domain: "x", code: 1),
             context: [:],
-            stack: ["0   x   y"],
+            stack: [StackFrame(text: "x +0x1 y")],
             debug: false
         )
-        recorder.recordEvent(name: "app.crash", attributes: crashAttrs)
+        recorder.recordEvent(name: "app.error", attributes: crashAttrs)
+        recorder.flush(reason: .immediate)
 
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 2)
         let names = events.compactMap { $0["eventName"] as? String }
-        XCTAssertEqual(Set(names), Set(["navigation", "app.crash"]))
+        XCTAssertEqual(Set(names), Set(["navigation", "app.error"]))
     }
 }

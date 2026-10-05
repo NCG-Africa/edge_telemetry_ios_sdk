@@ -24,9 +24,7 @@ final class CrashWireConformanceTests: XCTestCase {
         // the envelope stays compact; size truncation is exercised in
         // `CrashReportEncoderTests`.
         let attrs: [String: AttributeValue] = [
-            "cause": .string("NativeCrash"),
             "runtime": .string("native"),
-            "crash.fatal": .bool(true),
             "crash.report_format_version": .string("edgerum.crash.v1"),
             "crash.signal": .string("SIGSEGV"),
             "crash.signal_code": .string("SEGV_MAPERR"),
@@ -84,9 +82,9 @@ final class CrashWireConformanceTests: XCTestCase {
         let event0 = try XCTUnwrap(events.first)
         XCTAssertEqual(event0["eventName"] as? String, "app.crash")
         let evAttrs = try XCTUnwrap(event0["attributes"] as? [String: Any])
-        XCTAssertEqual(evAttrs["cause"] as? String, "NativeCrash")
+        XCTAssertNil(evAttrs["cause"], "F29: the event name discriminates")
         XCTAssertEqual(evAttrs["runtime"] as? String, "native")
-        XCTAssertEqual(evAttrs["crash.fatal"] as? Bool, true)
+        XCTAssertNil(evAttrs["crash.fatal"])
         XCTAssertEqual(evAttrs["crash.report_format_version"] as? String, "edgerum.crash.v1")
 
         // Event-level identity OVERRIDES the context, as required for

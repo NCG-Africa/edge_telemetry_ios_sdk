@@ -26,8 +26,6 @@ final class EdgeRumConfigTests: XCTestCase {
         XCTAssertNil(config.environment)
         XCTAssertNil(config.location)
 
-        XCTAssertEqual(config.resolveLocation, false)
-        XCTAssertEqual(config.locationProviderUrl?.absoluteString, "https://ipapi.co/json/")
         XCTAssertEqual(config.sampleRate, 1.0)
         XCTAssertEqual(config.ignoreUrls.count, 0)
         XCTAssertEqual(config.maxQueueSize, 200)

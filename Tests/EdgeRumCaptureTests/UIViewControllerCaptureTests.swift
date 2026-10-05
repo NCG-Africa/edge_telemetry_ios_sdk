@@ -12,8 +12,7 @@
 //   - UIHostingController<Content> is detected and emits with
 //     `navigation.kind = "swiftui"` and the Content type as the name
 //   - `navigation.previous_screen` chains across appears
-//   - `screen.duration` emits the right `value` and `screen.duration_ms`
-//     when paired (FixedClock-driven so timing is deterministic)
+//   - disappear emits no `screen.duration` (F29, #144)
 //   - viewWillDisappear without a paired appear is a silent no-op
 //   - Recorder.isEnabled = false halts emission while leaving the
 //     swizzle installed
@@ -265,7 +264,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.0, "navigation")
         XCTAssertEqual(events.first?.1["navigation.kind"], .string("uikit"))
-        XCTAssertEqual(events.first?.1["navigation.type"], .string("viewDidAppear"))
+        XCTAssertNil(events.first?.1["navigation.type"], "F29: deleted")
         XCTAssertNotNil(events.first?.1["navigation.screen"])
     }
 
@@ -471,9 +470,9 @@ final class UIViewControllerCaptureTests: XCTestCase {
         )
     }
 
-    // 9. screen.duration math
+    // 9. No screen.duration (F29: the Processor synthesizes dwell)
 
-    func test_screenDuration_emitsCorrectMsAndValue() {
+    func test_disappear_emitsNoScreenDuration() {
         let clock = FixedClock(Date(timeIntervalSince1970: 1_000_000))
         let probe = CaptureProbeRecorder(clock: clock)
         Recorder.installShared(probe)
@@ -485,20 +484,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
         clock.advance(by: 4.3)
         vc.viewWillDisappear(false)
 
-        let metrics = probe.calls.compactMap { call -> (String, [String: AttributeValue])? in
-            if case let .performance(name, attrs) = call { return (name, attrs) }
-            return nil
-        }
-        XCTAssertEqual(metrics.count, 1)
-        XCTAssertEqual(metrics.first?.0, "screen.duration")
-        XCTAssertEqual(metrics.first?.1["screen.name"], .string("DwellTest"))
-        XCTAssertEqual(metrics.first?.1["screen.kind"], .string("uikit"))
-        XCTAssertEqual(metrics.first?.1["screen.duration_ms"], .int(4300))
-        if case let .double(seconds) = metrics.first?.1["value"] {
-            XCTAssertEqual(seconds, 4.3, accuracy: 0.001)
-        } else {
-            XCTFail("value must be a double")
-        }
+        XCTAssertFalse(probe.calls.contains { if case .performance = $0 { return true }; return false })
     }
 
     // 10. viewWillDisappear without a paired appear → no-op

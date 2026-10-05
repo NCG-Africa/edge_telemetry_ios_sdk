@@ -119,7 +119,65 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         if let finalized = allEvents.first(where: { $0.name == "session.finalized" }) {
             XCTAssertEqual(finalized.attributes["session.id"], originalSession)
             XCTAssertEqual(finalized.attributes["session.rotation"], .string("idle"))
+            // F29: end_time = the ended session's last activity, not detection time.
+            XCTAssertEqual(
+                finalized.attributes["session.end_time"],
+                .string(WireDateFormatter.string(from: clock.now.addingTimeInterval(-(SessionManager.idleRotationInterval + 1))))
+            )
         }
+    }
+
+    // MARK: F29 session semantics
+
+    func testMaxDurationRotationEmitsFinalizedWithReason() {
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
+        let (recorder, sink, _) = makeRecorder(clock: clock, randomBytes: SeqRandom().next)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        for _ in 0..<16 { // 16 × 15 min = 4 h of continuous use
+            clock.advance(by: 15 * 60)
+            recorder.recordEvent(name: "navigation", attributes: [:])
+        }
+        recorder.flush(reason: .manual)
+        let events = sink.envelopes.flatMap(\.events)
+        let finalized = events.filter { $0.name == "session.finalized" }
+        XCTAssertEqual(finalized.count, 1)
+        XCTAssertEqual(finalized.first?.attributes["session.rotation"], .string("max_duration"))
+        let started = events.first { $0.name == "session.started" }
+        XCTAssertEqual(started?.attributes["session.rotation"], .string("max_duration"))
+    }
+
+    func testStopFlushesWithoutFinalized() {
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
+        let (recorder, sink, _) = makeRecorder(clock: clock)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        recorder.stop()
+        let names = sink.envelopes.flatMap(\.events).map(\.name)
+        XCTAssertEqual(names, ["navigation"])
+        XCTAssertEqual(sink.sends.last?.reason, .shutdown)
+    }
+
+    func testSessionExpiredBetweenLaunchesIsFinalizedAtNextStart() {
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
+        let store = InMemorySessionStore()
+        let first = SessionManager(store: store, clock: clock).touch().state
+        clock.advance(by: SessionManager.idleRotationInterval + 1)
+
+        // Next launch.
+        let (recorder, sink, _) = makeRecorder(clock: clock, randomBytes: SeqRandom().next)
+        recorder.installPersistedStores(
+            identityProvider: IdentityProvider(keychain: InMemoryKeychainStore(), defaults: InMemoryUserDefaultsStore(), clock: clock),
+            sessionStore: store,
+            sidecar: nil
+        )
+        recorder.start(apiKey: "edge_test_abc", endpoint: URL(string: "https://collect.example.com")!, debug: false)
+        recorder.flush(reason: .manual)
+
+        let events = sink.envelopes.flatMap(\.events)
+        XCTAssertEqual(events.map(\.name).prefix(2), ["session.finalized", "session.started"])
+        XCTAssertEqual(events.first?.attributes["session.id"], .string(first.id))
+        XCTAssertEqual(events.first?.attributes["session.end_time"], .string(WireDateFormatter.string(from: first.lastActiveAt)))
+        XCTAssertEqual(events.first?.attributes["session.rotation"], .string("idle"))
+        XCTAssertEqual(events.dropFirst().first?.attributes["session.rotation"], .string("idle"))
     }
 
     // MARK: didAckBatch — issue #43 acceptance

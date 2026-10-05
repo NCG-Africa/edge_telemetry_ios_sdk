@@ -27,6 +27,8 @@ final class SamplerTests: XCTestCase {
         XCTAssertFalse(s.shouldEmit(eventName: "navigation"))
         XCTAssertFalse(s.shouldEmit(eventName: "http.request"))
         XCTAssertFalse(s.shouldEmit(eventName: "user.interaction"))
+        XCTAssertFalse(s.shouldEmit(eventName: "app.error"), "F29: handled errors are sampled")
+        XCTAssertFalse(s.shouldEmit(eventName: "app.hang"), "F29: hangs are sampled")
     }
 
     func testSampleRateZeroStillEmitsForcedEvents() {

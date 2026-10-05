@@ -21,17 +21,17 @@ final class HangEventEncoderTests: XCTestCase {
             durationMs: 5_240,
             thresholdMs: 5_000,
             cpuUsage: nil,
-            stackFrames: ["frameA", "frameB"],
+            stackFrames: [StackFrame(text: "frameA"), StackFrame(text: "frameB")],
             timestamp: referenceTimestamp
         )
 
-        XCTAssertEqual(attrs["cause"], .string("Hang"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("native"))
-        XCTAssertEqual(attrs["crash.fatal"], .bool(false))
+        XCTAssertNil(attrs["crash.fatal"])
         XCTAssertEqual(attrs["hang.duration_ms"], .double(5_240))
         XCTAssertEqual(attrs["hang.threshold_ms"], .double(5_000))
         XCTAssertEqual(
-            attrs["crash.timestamp"],
+            attrs["hang.timestamp"],
             .string(WireDateFormatter.string(from: referenceTimestamp))
         )
     }
@@ -41,7 +41,7 @@ final class HangEventEncoderTests: XCTestCase {
             durationMs: 5_240,
             thresholdMs: 5_000,
             cpuUsage: 83.0,
-            stackFrames: ["frame"],
+            stackFrames: [StackFrame(text: "frame")],
             timestamp: referenceTimestamp
         )
         XCTAssertEqual(attrs["hang.cpu_usage"], .double(83.0))
@@ -52,14 +52,14 @@ final class HangEventEncoderTests: XCTestCase {
             durationMs: 5_240,
             thresholdMs: 5_000,
             cpuUsage: nil,
-            stackFrames: ["frame"],
+            stackFrames: [StackFrame(text: "frame")],
             timestamp: referenceTimestamp
         )
         XCTAssertNil(attrs["hang.cpu_usage"])
     }
 
     func testStackFallsBackToPlaceholderWhenSnapshotIsEmpty() {
-        // T15.2 acceptance — `crash.thread.main_stack` must always be
+        // T15.2 acceptance — `hang.stack` must always be
         // non-empty. When the Mach snapshot fails (empty array), the
         // encoder substitutes a placeholder so the wire still carries
         // a value.
@@ -70,15 +70,19 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: [],
             timestamp: referenceTimestamp
         )
-        guard case let .string(stack) = attrs["crash.thread.main_stack"] else {
-            return XCTFail("crash.thread.main_stack must be set with a string value")
+        guard case let .string(stack) = attrs["hang.stack"] else {
+            return XCTFail("hang.stack must be set with a string value")
         }
         XCTAssertEqual(stack, HangEventEncoder.unavailableFrame)
         XCTAssertFalse(stack.isEmpty)
     }
 
-    func testStackTruncatesAtTopFramesAndAppendsMarker() {
-        let bigStack = (0..<60).map { "frame#\($0)" }
+    func testStackTruncatesAtTopFramesAndCountsDroppedFrames() {
+        let early = StackImage(name: "App", uuid: "aa")
+        let late = StackImage(name: "Late", uuid: "bb")
+        let bigStack = (0..<60).map {
+            StackFrame(text: "frame#\($0)", image: $0 < HangEventEncoder.topFrames ? early : late)
+        }
         let attrs = HangEventEncoder.encode(
             durationMs: 5_240,
             thresholdMs: 5_000,
@@ -86,17 +90,32 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: bigStack,
             timestamp: referenceTimestamp
         )
-        guard case let .string(stack) = attrs["crash.thread.main_stack"] else {
-            return XCTFail("crash.thread.main_stack must be set with a string value")
+        guard case let .string(stack) = attrs["hang.stack"] else {
+            return XCTFail("hang.stack must be set with a string value")
         }
         let lines = stack.components(separatedBy: "\n")
-        XCTAssertEqual(lines.count, HangEventEncoder.topFrames + 1,
-                       "expected topFrames frames + one omission marker")
+        XCTAssertEqual(lines.count, HangEventEncoder.topFrames,
+                       "no in-string omission marker on hang.stack")
         XCTAssertEqual(lines.first, "frame#0")
         XCTAssertEqual(lines[HangEventEncoder.topFrames - 1],
                        "frame#\(HangEventEncoder.topFrames - 1)")
-        XCTAssertEqual(lines.last,
-                       CrashStackTruncator.marker(for: 60 - HangEventEncoder.topFrames))
+        XCTAssertFalse(stack.contains(CrashStackTruncator.omissionSuffix))
+        XCTAssertEqual(attrs["hang.stack.truncated"], .int(60 - HangEventEncoder.topFrames))
+        // Only images referenced by KEPT frames are listed.
+        XCTAssertEqual(attrs["hang.binary_images"], .string(#"[{"name":"App","uuid":"aa"}]"#))
+    }
+
+    func testShortStackOmitsTruncatedAndImagelessOmitsBinaryImages() {
+        let attrs = HangEventEncoder.encode(
+            durationMs: 5_240,
+            thresholdMs: 5_000,
+            cpuUsage: nil,
+            stackFrames: [StackFrame(text: "0x1234")],
+            timestamp: referenceTimestamp
+        )
+        XCTAssertEqual(attrs["hang.stack"], .string("0x1234"))
+        XCTAssertNil(attrs["hang.stack.truncated"])
+        XCTAssertNil(attrs["hang.binary_images"])
     }
 
     func testAllAttributeValuesAreWirePrimitives() {
@@ -108,7 +127,7 @@ final class HangEventEncoderTests: XCTestCase {
             durationMs: 5_240,
             thresholdMs: 5_000,
             cpuUsage: 0.5,
-            stackFrames: ["frame"],
+            stackFrames: [StackFrame(text: "frame")],
             timestamp: referenceTimestamp
         )
         for (_, value) in attrs {

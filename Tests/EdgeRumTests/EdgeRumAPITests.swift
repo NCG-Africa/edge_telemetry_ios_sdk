@@ -133,8 +133,54 @@ final class EdgeRumAPITests: XCTestCase {
         }
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.0, "navigation")
-        XCTAssertEqual(events.first?.1["navigation.name"], .string("Home"))
+        XCTAssertEqual(events.first?.1["navigation.screen"], .string("Home"))
+        XCTAssertEqual(events.first?.1["navigation.kind"], .string("manual"))
+        XCTAssertNil(events.first?.1["navigation.name"], "F29: renamed")
         XCTAssertEqual(events.first?.1["funnel.step"], .int(1))
+    }
+
+    // F29 acceptance: a host `track` with a `device.` key is dropped.
+    func testTrackDropsHostKeysUnderReservedPrefixes() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.track("buy", attributes: [
+            "device.model": "Forged",
+            "user.email": "a@b.c",
+            "cart.total": 3
+        ])
+
+        let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .event("custom_event", attributes) = call { return attributes }
+            return nil
+        }.first
+        XCTAssertNil(attrs?["device.model"])
+        XCTAssertNil(attrs?["user.email"])
+        XCTAssertEqual(attrs?["cart.total"], .int(3))
+        XCTAssertEqual(attrs?["event.name"], .string("buy"))
+        XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
+    }
+
+    func testTrackScreenDropsHostKeysUnderReservedPrefixes() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.trackScreen("Home", attributes: ["navigation.kind": "Forged", "app.name": "x"])
+        let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .event("navigation", attributes) = call { return attributes }
+            return nil
+        }.first
+        XCTAssertEqual(attrs?["navigation.kind"], .string("manual"))
+        XCTAssertNil(attrs?["app.name"])
+        XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
+    }
+
+    func testTimerDropsHostKeysUnderReservedPrefixes() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.time("t").end(attributes: ["timer.name": "Forged", "session.id": "x"])
+        let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .performance(_, attributes) = call { return attributes }
+            return nil
+        }.first
+        XCTAssertEqual(attrs?["timer.name"], .string("t"))
+        XCTAssertNil(attrs?["session.id"])
+        XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
     }
 
     func testTrackScreenWritesTheCurrentScreenBox() {
@@ -174,7 +220,8 @@ final class EdgeRumAPITests: XCTestCase {
             return nil
         }
         XCTAssertEqual(perfs.count, 1)
-        XCTAssertEqual(perfs.first?.0, "checkout.submit")
+        XCTAssertEqual(perfs.first?.0, "custom_timer", "F29: bounded metric name")
+        XCTAssertEqual(perfs.first?.1["timer.name"], .string("checkout.submit"))
         XCTAssertEqual(perfs.first?.1["payment.method"], .string("card"))
         XCTAssertNotNil(perfs.first?.1["duration_ms"])
     }
@@ -207,16 +254,16 @@ final class EdgeRumAPITests: XCTestCase {
         EdgeRum.captureError(err, context: ["payment.method": "card"])
 
         let crashEvents = probe.calls.compactMap { call -> [String: AttributeValue]? in
-            if case let .event(name, attributes) = call, name == "app.crash" {
+            if case let .event(name, attributes) = call, name == "app.error" {
                 return attributes
             }
             return nil
         }
         XCTAssertEqual(crashEvents.count, 1)
         guard let attrs = crashEvents.first else {
-            return XCTFail("Expected an app.crash routing call")
+            return XCTFail("Expected an app.error routing call")
         }
-        XCTAssertEqual(attrs["cause"], .string("AppError"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("swift"))
         XCTAssertEqual(attrs["error.kind"], .string("nserror"))
         XCTAssertEqual(attrs["error.domain"], .string("PaymentDomain"))
@@ -231,6 +278,10 @@ final class EdgeRumAPITests: XCTestCase {
             XCTAssertTrue(stack.contains("testCaptureErrorRoutesAppCrashEventToRecorder")
                           || stack.contains("EdgeRumTests"),
                           "stack should include a frame from the calling test target")
+            // F29 offset frame format: `image +0x<offset> <hint>`.
+            XCTAssertTrue(stack.components(separatedBy: "\n").contains { $0.contains(" +0x") },
+                          "frames must use the image-relative offset format")
+            XCTAssertNotNil(attrs["error.binary_images"], "referenced images must be listed")
         } else {
             XCTFail("error.stack missing or wrong type")
         }
@@ -241,7 +292,7 @@ final class EdgeRumAPITests: XCTestCase {
         EdgeRum.start(Self.validConfig())
         EdgeRum.captureError(DemoError(detail: "nope"))
         let kinds = probe.calls.compactMap { call -> AttributeValue? in
-            if case let .event(name, attributes) = call, name == "app.crash" {
+            if case let .event(name, attributes) = call, name == "app.error" {
                 return attributes["error.kind"]
             }
             return nil

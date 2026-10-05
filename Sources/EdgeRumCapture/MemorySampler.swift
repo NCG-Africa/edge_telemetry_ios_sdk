@@ -16,7 +16,7 @@
 //      dashboard can correlate the spike with the system pressure
 //      event that triggered it.
 //
-// All values are in kB (Int) per PLAN-iOS §6.11. The pure
+// The `memory.*_kb` keys are kB (Int); the metric `value` is MB (F29). The pure
 // `makeAttributes(rss:vsz:footprint:pressure:)` builder is the
 // shared seam — both feeds route through it so the on-the-wire
 // attribute shape is identical.
@@ -98,8 +98,8 @@ public enum MemorySampler {
     // MARK: Pure attribute builder
 
     /// Translate a raw mach snapshot + pressure level into the
-    /// wire-canonical attribute bag. Inputs are in bytes; the bag
-    /// emits kB (PLAN-iOS §6.11). All values are primitives — the
+    /// wire-canonical attribute bag. Inputs are in bytes; the `_kb`
+    /// keys are kB and `value` (resident set) is MB. All values are primitives — the
     /// type system enforces "no nested attributes" already.
     public static func makeAttributes(
         rssBytes: UInt64,
@@ -115,11 +115,9 @@ public enum MemorySampler {
             "memory.virtual_kb": .int(vszKb),
             "memory.footprint_kb": .int(footKb),
             "memory.pressure": .string(pressure.rawValue),
-            // Recorder.recordPerformance pulls `value` off the bag as
-            // the headline scalar — we expose `resident_kb` as the most
-            // actionable number so a dashboard can sort by RSS without
-            // unrolling the attribute bag.
-            "value": .double(Double(rssKb))
+            // Recorder.recordPerformance moves `value` to the envelope
+            // as the headline scalar: resident set in MB (F29 unit).
+            "value": .double(Double(rssKb) / 1024.0)
         ]
     }
 

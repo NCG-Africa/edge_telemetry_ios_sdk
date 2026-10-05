@@ -136,8 +136,8 @@ final class NetworkPathCaptureTests: XCTestCase {
         )
         XCTAssertEqual(attrs["network.type"], .string("wifi"))
         XCTAssertEqual(attrs["network.effectiveType"], .string("wifi"))
-        XCTAssertEqual(attrs["network.is_expensive"], .bool(false))
-        XCTAssertEqual(attrs["network.is_constrained"], .bool(false))
+        XCTAssertEqual(attrs["network.expensive"], .bool(false))
+        XCTAssertEqual(attrs["network.constrained"], .bool(false))
         XCTAssertNil(attrs["network.unsatisfied_reason"],
                      "Reason key must be entirely absent — never a sentinel string")
         XCTAssertEqual(attrs.count, 4)
@@ -151,8 +151,8 @@ final class NetworkPathCaptureTests: XCTestCase {
             unsatisfiedReason: nil
         )
         XCTAssertEqual(attrs["network.type"], .string("cellular"))
-        XCTAssertEqual(attrs["network.is_expensive"], .bool(true))
-        XCTAssertEqual(attrs["network.is_constrained"], .bool(false))
+        XCTAssertEqual(attrs["network.expensive"], .bool(true))
+        XCTAssertEqual(attrs["network.constrained"], .bool(false))
     }
 
     func test_makeAttributes_none_with_unsatisfied_reason() {
@@ -175,7 +175,7 @@ final class NetworkPathCaptureTests: XCTestCase {
             unsatisfiedReason: nil
         )
         XCTAssertEqual(attrs["network.type"], .string("wired"))
-        XCTAssertEqual(attrs["network.is_constrained"], .bool(true))
+        XCTAssertEqual(attrs["network.constrained"], .bool(true))
     }
 
     func test_makeAttributes_unknown_type_path() {
@@ -262,7 +262,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events[0].0, "network_change")
         XCTAssertEqual(events[0].1["network.type"], .string("cellular"))
-        XCTAssertEqual(events[0].1["network.is_expensive"], .bool(true))
+        XCTAssertEqual(events[0].1["network.expensive"], .bool(true))
     }
 
     // MARK: dedupe

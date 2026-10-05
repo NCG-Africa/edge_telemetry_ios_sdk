@@ -31,8 +31,10 @@ final class RumTimerTests: XCTestCase {
         guard case let .performance(name, attributes) = calls[0] else {
             return XCTFail("Expected a .performance call, got \(calls[0])")
         }
-        XCTAssertEqual(name, "checkout.submit")
+        XCTAssertEqual(name, "custom_timer")
+        XCTAssertEqual(attributes["timer.name"], .string("checkout.submit"))
         XCTAssertEqual(attributes["duration_ms"], .int(250))
+        XCTAssertEqual(attributes["value"], .double(250))
     }
 
     func testSecondEndIsNoOp() {

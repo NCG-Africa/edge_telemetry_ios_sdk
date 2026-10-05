@@ -58,7 +58,8 @@ final class SessionContextTests: XCTestCase {
             clock: clock,
             randomBytes: { Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]) }
         )
-        let (state, rotated) = m.touch()
+        let (state, rotated, ended) = m.touch()
+        XCTAssertNil(ended, "a first session ends nothing")
         XCTAssertTrue(rotated)
         XCTAssertEqual(state.sequence, 0)
         XCTAssertEqual(state.startTime, state.lastActiveAt)
@@ -85,6 +86,26 @@ final class SessionContextTests: XCTestCase {
         let second = m.touch()
         XCTAssertNotEqual(first.state.id, second.state.id)
         XCTAssertTrue(second.rotated)
+        XCTAssertEqual(second.ended?.state.id, first.state.id)
+        XCTAssertEqual(second.ended?.reason, "idle")
+        XCTAssertEqual(second.ended?.state.lastActiveAt, first.state.lastActiveAt)
+    }
+
+    // F29: a continuously-used session still ends at the 4 h cap.
+    func testTouchRotatesAtMaxDurationDespiteActivity() {
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_000_000))
+        let m = SessionManager(store: InMemorySessionStore(), clock: clock)
+        let first = m.touch()
+        for _ in 0..<15 { // 15 × 16 min = 4 h, never idle for 30 min
+            clock.advance(by: 16 * 60)
+            let r = m.touch()
+            if r.rotated {
+                XCTAssertEqual(r.ended?.state.id, first.state.id)
+                XCTAssertEqual(r.ended?.reason, "max_duration")
+                return
+            }
+        }
+        XCTFail("no rotation at the 4 h cap")
     }
 
     func testIncrementSequence() {

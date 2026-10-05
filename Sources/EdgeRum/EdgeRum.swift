@@ -351,21 +351,24 @@ public enum EdgeRum {
     /// Record a custom event. The user-supplied `name` travels on the
     /// wire as the `event.name` attribute under the wire-required
     /// `custom_event` event name — the backend dispatcher routes
-    /// custom events through that single channel.
+    /// custom events through that single channel. Attribute keys under
+    /// a reserved SDK prefix (such as `device.` or `user.`) are dropped.
     public static func track(_ name: String, attributes: [String: AttributeValue]? = nil) {
         guard requireStarted("track") else { return }
-        var merged: [String: AttributeValue] = attributes ?? [:]
+        var merged = HostAttributes.sanitize(attributes, debug: Recorder.shared.debug)
         merged["event.name"] = .string(name)
         Recorder.shared.recordEvent(name: "custom_event", attributes: merged)
     }
 
     /// Record a screen entry. Equivalent to the SwiftUI
     /// `.edgeRumScreen(_:)` modifier — provided for UIKit screens
-    /// that don't go through the auto-capture swizzle.
+    /// that don't go through the auto-capture swizzle. Attribute keys
+    /// under a reserved SDK prefix are dropped.
     public static func trackScreen(_ name: String, attributes: [String: AttributeValue]? = nil) {
         guard requireStarted("trackScreen") else { return }
-        var merged: [String: AttributeValue] = attributes ?? [:]
-        merged["navigation.name"] = .string(name)
+        var merged = HostAttributes.sanitize(attributes, debug: Recorder.shared.debug)
+        merged["navigation.screen"] = .string(name)
+        merged["navigation.kind"] = .string("manual")
         Riders.shared.enterScreen(name)
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }
@@ -385,8 +388,9 @@ public enum EdgeRum {
         return timer
     }
 
-    /// Report a thrown `Error` as an `app.crash` event with
-    /// `cause = "AppError"`. The error's type, domain, code,
+    /// Report a thrown `Error` as an `app.error` event. It follows
+    /// `sampleRate` and the normal flush cadence — it never forces an
+    /// upload. The error's type, domain, code,
     /// `localizedDescription`, and (for `NSError`) the primitive
     /// entries of `userInfo` are flattened into wire attributes
     /// automatically. A snapshot of the call-site stack — captured
@@ -402,7 +406,7 @@ public enum EdgeRum {
         guard requireStarted("captureError") else { return }
         // Call-site stack capture — taken here, before the Recorder
         // call, so SDK frames stay out of the captured stack.
-        let stack = Thread.callStackSymbols
+        let stack = StackFrames.symbolicate(Thread.callStackReturnAddresses.map(\.uintValue))
         let recorder = Recorder.shared
         let attrs = AppErrorBuilder.build(
             error: error,
@@ -410,7 +414,7 @@ public enum EdgeRum {
             stack: stack,
             debug: recorder.debug
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
     }
 
     // MARK: Enable / disable

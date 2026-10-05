@@ -24,21 +24,23 @@ final class HangWireConformanceTests: XCTestCase {
         // encoder change that drifts is caught by this contract test
         // in addition to the encoder unit tests.
         let attrs: [String: AttributeValue] = [
-            "cause": .string("Hang"),
             "runtime": .string("native"),
-            "crash.fatal": .bool(false),
             "hang.duration_ms": .double(5_240),
             "hang.threshold_ms": .double(5_000),
             "hang.cpu_usage": .double(83.0),
-            "crash.thread.main_stack": .string(
-                "EdgeRumCrashSampleApp 0x0000000104a00000 -[ViewController hangButtonTapped:] + 24\n" +
-                "EdgeRumCrashSampleApp 0x0000000104a00100 main + 80"
+            "hang.stack": .string(
+                "EdgeRumCrashSampleApp +0x1a2b8 -[ViewController hangButtonTapped:]\n" +
+                "EdgeRumCrashSampleApp +0x4f10 main"
             ),
-            "crash.timestamp": .string(WireDateFormatter.string(from: now))
+            "hang.stack.truncated": .int(12),
+            "hang.binary_images": .string(
+                #"[{"name":"EdgeRumCrashSampleApp","uuid":"0123456789abcdef0123456789abcdef"}]"#
+            ),
+            "hang.timestamp": .string(WireDateFormatter.string(from: now))
         ]
 
         let event = Event.event(
-            name: "app.crash",
+            name: "app.hang",
             timestamp: now,
             attributes: AttributeBag(attrs)
         )
@@ -77,13 +79,12 @@ final class HangWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         let event0 = try XCTUnwrap(events.first)
-        XCTAssertEqual(event0["eventName"] as? String, "app.crash")
+        XCTAssertEqual(event0["eventName"] as? String, "app.hang")
 
         let evAttrs = try XCTUnwrap(event0["attributes"] as? [String: Any])
-        XCTAssertEqual(evAttrs["cause"] as? String, "Hang")
+        XCTAssertNil(evAttrs["cause"], "F29: the event name discriminates")
         XCTAssertEqual(evAttrs["runtime"] as? String, "native")
-        XCTAssertEqual(evAttrs["crash.fatal"] as? Bool, false,
-                       "hangs are non-fatal — distinct from native crashes")
+        XCTAssertNil(evAttrs["crash.fatal"])
 
         let durationMs = try XCTUnwrap(evAttrs["hang.duration_ms"] as? Double)
         let thresholdMs = try XCTUnwrap(evAttrs["hang.threshold_ms"] as? Double)
@@ -91,11 +92,15 @@ final class HangWireConformanceTests: XCTestCase {
                                     "hang.duration_ms must meet or exceed threshold")
         XCTAssertEqual(evAttrs["hang.cpu_usage"] as? Double, 83.0)
 
-        let stack = try XCTUnwrap(evAttrs["crash.thread.main_stack"] as? String)
+        let stack = try XCTUnwrap(evAttrs["hang.stack"] as? String)
         XCTAssertFalse(stack.isEmpty,
-                       "T15.2 acceptance: crash.thread.main_stack must be non-empty")
+                       "T15.2 acceptance: hang.stack must be non-empty")
+        XCTAssertEqual(evAttrs["hang.stack.truncated"] as? Int, 12)
+        // binary_images is a JSON *string*, never a nested array.
+        let imagesJSON = try XCTUnwrap(evAttrs["hang.binary_images"] as? String)
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(imagesJSON.utf8)) as? [[String: String]])
 
-        let timestamp = try XCTUnwrap(evAttrs["crash.timestamp"] as? String)
+        let timestamp = try XCTUnwrap(evAttrs["hang.timestamp"] as? String)
         XCTAssertNotNil(WireDateFormatter.date(from: timestamp))
     }
 }

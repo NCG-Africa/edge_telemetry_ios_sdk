@@ -104,7 +104,7 @@ final class RidersTests: XCTestCase {
         let (recorder, sink) = makeRecorder(riders: riders)
         riders.enterScreen("Next")
 
-        recorder.recordPerformance(name: "screen.duration", attributes: ["screen.name": .string("Leaving")])
+        recorder.recordPerformance(name: "custom_timer", attributes: ["screen.name": .string("Leaving")])
         recorder.flush(reason: .manual)
 
         let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.events.first))
@@ -119,10 +119,10 @@ final class RidersTests: XCTestCase {
 
         // Sidecar-sourced crash-time values; app.state absent on purpose.
         recorder.recordEvent(name: "app.crash", attributes: [
-            "cause": .string("NativeCrash"),
             "screen.name": .string("Checkout")
         ])
-        recorder.recordEvent(name: "app.crash", attributes: ["cause": .string("AppError")])
+        recorder.recordEvent(name: "app.error", attributes: [:])
+        recorder.flush(reason: .manual)
 
         let events = sink.envelopes.flatMap(\.events)
         XCTAssertEqual(events.count, 2)
@@ -188,19 +188,14 @@ final class RidersTests: XCTestCase {
         let riders = Riders()
         let probe = ProbeRecorder()
         SwiftUIEmitter.emitScreenAppear(
-            name: "Cart", attributes: nil, recorder: probe,
-            startStore: SwiftUIScreenStartStore(), riders: riders
+            name: "Cart", attributes: nil, recorder: probe, riders: riders
         )
         XCTAssertEqual(riders.currentScreen, "Cart")
 
         SwiftUIEmitter.emitScreenAppear(
-            name: "Sheet", attributes: nil, recorder: probe,
-            startStore: SwiftUIScreenStartStore(), riders: riders
+            name: "Sheet", attributes: nil, recorder: probe, riders: riders
         )
-        SwiftUIEmitter.emitScreenDisappear(
-            name: "Sheet", attributes: nil, recorder: probe,
-            startStore: SwiftUIScreenStartStore(), riders: riders
-        )
+        SwiftUIEmitter.emitScreenDisappear(name: "Sheet", riders: riders)
         XCTAssertEqual(riders.currentScreen, "Cart", ".sheet dismissal restores the presenter")
     }
 

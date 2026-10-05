@@ -41,11 +41,13 @@ even before the bundle's `Info.plist` is fully consulted.
 
 ``EdgeRumConfig/sampleRate`` is per-session, decided once at session
 start. The forced-emit set — `session.started`, `session.finalized`,
-`app.crash`, `network_change` — always emits regardless.
+`app.crash`, `network_change` — always emits regardless. `app.crash` is
+native crash replay only; handled errors (`app.error`) and hangs
+(`app.hang`) follow `sampleRate` like every other event.
 
 ``EdgeRumConfig/flushInterval`` (seconds) and
 ``EdgeRumConfig/batchSize`` (events) gate normal flushes — whichever
-fires first. Errors and session-finalize events always flush
+fires first. `app.crash` and `session.finalized` always flush
 immediately.
 
 ``EdgeRumConfig/maxQueueSize`` caps the offline queue at 200 events by
@@ -66,11 +68,7 @@ URL is reflected on both the `http.request` event and the companion
 
 ``EdgeRumConfig/location`` sets the batch envelope's `location` field
 to a literal `"City/Country"` string.
-
-> Note: ``EdgeRumConfig/resolveLocation`` and
-> ``EdgeRumConfig/locationProviderUrl`` are not wired up — setting them
-> has no effect and no request is made. They will be removed; set
-> `location` yourself.
+The SDK never resolves a location itself.
 
 ## Capture toggles
 

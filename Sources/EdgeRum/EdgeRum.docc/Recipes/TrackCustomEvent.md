@@ -15,7 +15,7 @@ import EdgeRum
 EdgeRum.track("checkout_started", attributes: [
     "cart.size": 3,
     "cart.total": 49.95,
-    "user.is_member": true,
+    "loyalty.is_member": true,
     "ab.bucket": "treatment"
 ])
 ```

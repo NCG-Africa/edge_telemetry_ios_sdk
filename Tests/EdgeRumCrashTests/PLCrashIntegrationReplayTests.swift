@@ -7,7 +7,7 @@
 // one).
 //
 // Refs: PLAN-iOS.md §6.7, §F14/T14.3 ("Crash → relaunch → first
-// batch contains `app.crash` with `crash.fatal = true` carrying the
+// batch contains `app.crash` carrying the
 // crashed session's `session.id`").
 //
 
@@ -115,9 +115,9 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         XCTAssertEqual(probe.calls.count, 1, "replay must emit exactly one event")
         let call = try XCTUnwrap(probe.calls.first)
         XCTAssertEqual(call.name, "app.crash")
-        XCTAssertEqual(call.attributes["cause"], .string("NativeCrash"))
+        XCTAssertNil(call.attributes["cause"])
         XCTAssertEqual(call.attributes["runtime"], .string("native"))
-        XCTAssertEqual(call.attributes["crash.fatal"], .bool(true))
+        XCTAssertNil(call.attributes["crash.fatal"])
         XCTAssertEqual(
             call.attributes["session.id"],
             .string("session_1717234870002_ff009988aabbccdd_ios"),

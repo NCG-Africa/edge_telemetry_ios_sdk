@@ -8,8 +8,8 @@
 //   2. A dedicated background `HangWatchdogThread` polls the counter
 //      every `tickIntervalSeconds` (250 ms). If the counter has not
 //      advanced for longer than the configured `hangTimeout`, the
-//      watchdog records one `app.crash` event with `cause = "Hang"`,
-//      `crash.thread.main_stack`, `hang.duration_ms`, and
+//      watchdog records one `app.hang` event with
+//      `hang.stack`, `hang.duration_ms`, and
 //      `hang.threshold_ms` (see `HangEventEncoder`).
 //
 // Idempotent install (NSLock-protected `installed` flag mirrors
@@ -25,9 +25,9 @@
 // capture (`MainThreadStackSnapshot.capture`) runs on the watchdog
 // thread, suspends the main thread for a few microseconds while it
 // walks the frame-pointer chain, then resumes. `Recorder.recordEvent`
-// runs synchronously on the calling (watchdog) thread; `app.crash`
-// forces a flush, whose encode + POST hop to the transport's own
-// queue, so recording never touches the stalled main thread.
+// runs synchronously on the calling (watchdog) thread and only
+// buffers (`app.hang` is sampled, no forced flush), so recording
+// never touches the stalled main thread.
 //
 // Refs: PLAN-iOS.md §6.8, §F15/T15.1, §F15/T15.2;
 //       docs/decisions.md ADR-011; CLAUDE.md "Touching crash code?"
@@ -121,7 +121,7 @@ public enum HangDetector {
         debug: Bool,
         recorder: Recording,
         clock: Clock,
-        stackProvider: (() -> [String])?,
+        stackProvider: (() -> [StackFrame])?,
         cpuProvider: (() -> Double?)?
     ) {
         installLock.lock()
@@ -258,7 +258,7 @@ internal final class HangWatchdog {
     let threshold: TimeInterval
     private let clock: Clock
     private let recorder: Recording
-    private let stackProvider: () -> [String]
+    private let stackProvider: () -> [StackFrame]
     private let cpuProvider: () -> Double?
     private let debug: Bool
     private let log: OSLog
@@ -272,7 +272,7 @@ internal final class HangWatchdog {
         threshold: TimeInterval,
         clock: Clock,
         recorder: Recording,
-        stackProvider: @escaping () -> [String],
+        stackProvider: @escaping () -> [StackFrame],
         cpuProvider: @escaping () -> Double?,
         debug: Bool,
         log: OSLog
@@ -336,7 +336,7 @@ internal final class HangWatchdog {
             stackFrames: stackProvider(),
             timestamp: now
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.hang", attributes: attrs)
         firedForCurrentStall = true
 
         if debug {

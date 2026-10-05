@@ -10,13 +10,13 @@
 //   interaction.target     — reflected class name of the resolved target
 //                            (UIControl / cell / hit view), e.g.
 //                            "UIKit.UIButton"
-//   interaction.target_id  — accessibilityIdentifier; UIButton current
+//   interaction.name  — accessibilityIdentifier; UIButton current
 //                            title only when the host opted in via
 //                            `captureButtonTitles` (F27, default-off —
 //                            rendered text is user-visible content);
 //                            omitted when neither applies
 //   interaction.name_source — `accessibility_identifier | button_title |
-//                            none`: which branch produced target_id
+//                            none`: which branch produced interaction.name
 //   interaction.screen     — current navigation screen name (from F6's
 //                            UIViewControllerCapture); omitted when no
 //                            screen has appeared yet
@@ -88,7 +88,7 @@ public enum InteractionCapture {
     nonisolated(unsafe) private static var _installed: Bool = false
 
     /// F27 opt-in: `true` lets an un-annotated `UIButton`'s rendered
-    /// title ship as `interaction.target_id`. Set by `install(...)`.
+    /// title ship as `interaction.name`. Set by `install(...)`.
     nonisolated(unsafe) private static var _captureButtonTitles: Bool = false
 
     /// `true` once `install(...)` has performed the IMP swap. Read by
@@ -182,7 +182,6 @@ public enum InteractionCapture {
         guard event.type == .touches else { return }
         guard let touches = event.allTouches, !touches.isEmpty else { return }
 
-        let screen = UIViewControllerCapture.currentScreen()
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
         os_unfair_lock_lock(installLock)
@@ -193,7 +192,6 @@ public enum InteractionCapture {
             guard let hitView = touch.view else { continue }
             guard let attrs = decideEmission(
                 for: hitView,
-                currentScreen: screen,
                 captureButtonTitles: captureButtonTitles
             ) else {
                 continue
@@ -217,7 +215,6 @@ public enum InteractionCapture {
     /// and forwards into this function once a hit view is in hand.
     static func decideEmission(
         for hitView: UIView,
-        currentScreen: String?,
         captureButtonTitles: Bool = false
     ) -> [String: AttributeValue]? {
         // 1. Privacy: any secure-entry field in the responder chain
@@ -240,10 +237,7 @@ public enum InteractionCapture {
         let (id, source) = resolveTargetIdentifier(target, captureButtonTitles: captureButtonTitles)
         attrs["interaction.name_source"] = .string(source)
         if let id {
-            attrs["interaction.target_id"] = .string(id)
-        }
-        if let screen = currentScreen, !screen.isEmpty {
-            attrs["interaction.screen"] = .string(screen)
+            attrs["interaction.name"] = .string(id)
         }
         return attrs
     }
@@ -296,7 +290,7 @@ public enum InteractionCapture {
     ///    `captureButtonTitles` is set (F27: default-off).
     ///
     /// Returns the identifier (`nil` when neither applies; the caller
-    /// omits `interaction.target_id` rather than emitting an empty
+    /// omits `interaction.name` rather than emitting an empty
     /// string) and its `interaction.name_source` value.
     static func resolveTargetIdentifier(
         _ target: UIView,

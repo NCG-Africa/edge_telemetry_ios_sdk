@@ -4,17 +4,16 @@
 //
 // Installs once from `EdgeRum.start()`. Swizzles base
 // `UIViewController.viewDidAppear(_:)` and `viewWillDisappear(_:)`
-// so every screen produces:
+// so every screen produces one `navigation` event on appear, carrying:
 //
-//   - One `navigation` event on appear, carrying:
 //       navigation.screen          — accessibilityIdentifier (preferred)
 //                                    or `String(reflecting: type(of: vc))`
 //       navigation.kind            — "uikit" or "swiftui"
-//       navigation.type            — "viewDidAppear"
 //       navigation.previous_screen — last entered screen (omitted if nil)
-//   - One `screen.duration` performance metric on disappear, carrying
-//     `value` (seconds, Double) and `screen.duration_ms` (Int) plus
-//     `screen.name` and `screen.kind`.
+//
+// Disappear emits nothing (F29 deleted `screen.duration`; the
+// Processor synthesizes dwell from `navigation`, #144). It only
+// restores the presenter in the screen box on dismissal.
 //
 // The current screen lives in the `Riders` box (F28), shared with
 // `.edgeRumScreen` and `trackScreen`; it is written before `navigation`
@@ -182,12 +181,8 @@ public enum UIViewControllerCapture {
     /// Swift-side `[ObjectIdentifier: …]` dictionary would.
     final class ScreenState: NSObject {
         let name: String
-        let kind: String
-        let appearedAt: Date
-        init(name: String, kind: String, appearedAt: Date) {
+        init(name: String) {
             self.name = name
-            self.kind = kind
-            self.appearedAt = appearedAt
         }
     }
 
@@ -275,10 +270,9 @@ public enum UIViewControllerCapture {
         if isContainerController(vc) { return }
 
         let (name, kind) = resolveScreenName(vc)
-        let now = recorder.clock.now
 
         // Save per-controller state for the disappear pair.
-        let state = ScreenState(name: name, kind: kind, appearedAt: now)
+        let state = ScreenState(name: name)
         objc_setAssociatedObject(
             vc,
             &screenStateKey,
@@ -289,8 +283,7 @@ public enum UIViewControllerCapture {
         // Build the navigation attribute bag.
         var attrs: [String: AttributeValue] = [
             "navigation.screen": .string(name),
-            "navigation.kind": .string(kind),
-            "navigation.type": .string("viewDidAppear")
+            "navigation.kind": .string(kind)
         ]
         // Box first, so this event's `screen.name` is the screen entered.
         // The from-edge is the last screen entered, not the restored one.
@@ -313,18 +306,6 @@ public enum UIViewControllerCapture {
             // path was intercepted by an early-return branch.
             return
         }
-
-        let dwell = recorder.clock.now.timeIntervalSince(state.appearedAt)
-        let safeDwell = max(0.0, dwell)
-        let ms = Int((safeDwell * 1000.0).rounded())
-
-        let attrs: [String: AttributeValue] = [
-            "screen.name": .string(state.name),
-            "screen.kind": .string(state.kind),
-            "screen.duration_ms": .int(ms),
-            "value": .double(safeDwell)
-        ]
-        recorder.recordPerformance(name: "screen.duration", attributes: attrs)
 
         // Push/tab switches leave the box to the next appear; a dismissal
         // or pop restores the presenter, whose appear may not re-fire.
