@@ -175,12 +175,12 @@ final class InteractionCaptureTests: XCTestCase {
     override func setUp() {
         super.setUp()
         InteractionCapture.install(debug: true)
-        UIViewControllerCapture._resetPreviousScreenForTesting()
+        UIViewControllerCapture._resetCurrentScreenForTesting()
     }
 
     override func tearDown() {
         Recorder.resetShared()
-        UIViewControllerCapture._resetPreviousScreenForTesting()
+        UIViewControllerCapture._resetCurrentScreenForTesting()
         super.tearDown()
     }
 
@@ -465,13 +465,13 @@ final class InteractionCaptureTests: XCTestCase {
     // MARK: decideEmission — screen sourcing
 
     func test_decideEmission_screenIncludedWhenSet() {
-        UIViewControllerCapture.setPreviousScreen("Cart")
+        Riders.shared.enterScreen("Cart")
         let button = UIButton(type: .system)
         button.accessibilityIdentifier = "checkout"
 
         guard let attrs = InteractionCapture.decideEmission(
             for: button,
-            currentScreen: UIViewControllerCapture.currentPreviousScreen()
+            currentScreen: UIViewControllerCapture.currentScreen()
         ) else {
             return XCTFail("Expected an attribute bag")
         }
@@ -479,13 +479,13 @@ final class InteractionCaptureTests: XCTestCase {
     }
 
     func test_decideEmission_screenOmittedWhenNoneSet() {
-        UIViewControllerCapture._resetPreviousScreenForTesting()
+        UIViewControllerCapture._resetCurrentScreenForTesting()
         let button = UIButton(type: .system)
         button.accessibilityIdentifier = "checkout"
 
         guard let attrs = InteractionCapture.decideEmission(
             for: button,
-            currentScreen: UIViewControllerCapture.currentPreviousScreen()
+            currentScreen: UIViewControllerCapture.currentScreen()
         ) else {
             return XCTFail("Expected an attribute bag")
         }
@@ -652,7 +652,7 @@ final class InteractionCaptureTests: XCTestCase {
     }
 
     func test_handleSendEvent_screenSourcedFromNavigationState() {
-        UIViewControllerCapture.setPreviousScreen("Profile")
+        Riders.shared.enterScreen("Profile")
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
 

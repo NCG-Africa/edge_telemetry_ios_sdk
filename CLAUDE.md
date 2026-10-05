@@ -654,6 +654,12 @@ mirrored (F27). It is written only at identity mutations (`installPersistedStore
 emitted `app.crash` event carries the **previous** session's identity,
 not the current one.
 
+A second, **volatile** zone (F28) holds the riders `screen.name`,
+`device.orientation`, `app.state` — written on change by `Riders`
+(`Sources/EdgeRumCore/Riders.swift`), coalesced on a serial queue,
+best-effort. `EdgeRum.start()` reads the file before this launch's first
+write so the replayed crash carries crash-time riders.
+
 ---
 
 ## Transport rules

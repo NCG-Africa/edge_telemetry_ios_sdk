@@ -100,6 +100,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     private var transport: TransportSink
     private let payloadBuilder: PayloadBuilder
     private let context: ContextProvider
+    private let riders: Riders
 
     /// Sampler is rebuilt on `configure(_:)` so the per-session
     /// decision reflects the host-supplied `sampleRate`. The
@@ -143,9 +144,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         contextProvider: ContextProvider? = nil,
         sdkVersion: String = "0.0.0",
         identityProvider: IdentityProvider? = nil,
-        sidecar: SessionSidecarWriting? = nil
+        sidecar: SessionSidecarWriting? = nil,
+        riders: Riders = .shared
     ) {
         self._clock = clock
+        self.riders = riders
         let resolvedSessionManager = sessionManager ?? SessionManager(clock: clock)
         self.sessionManager = resolvedSessionManager
         self.sampler = sampler ?? Sampler(sampleRate: 1.0)
@@ -218,6 +221,9 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshSession(SessionContextSnapshot(session))
 
         writeSidecar()
+        // After the identity write, so volatile writes never land in a
+        // file that lacks this process's identity.
+        riders.attach(sidecar: sidecar)
     }
 
     /// F5 production wiring: swap the in-memory `NoopTransportSink` for
@@ -626,8 +632,10 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     /// Single choke point for every emission. Never writes the sidecar
     /// (O1, #212) — identity changes only at the mutation sites that
-    /// call `writeSidecar()`.
+    /// call `writeSidecar()`. Stamps the riders (F28) into the event's
+    /// own attributes, so they carry enqueue-time values.
     private func enqueue(_ event: Event) {
+        let event = stampRiders(event)
         stateLock.lock()
         // Consent guard: `disable()` silences every emitter at once.
         guard _enabled else { stateLock.unlock(); return }
@@ -637,6 +645,18 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.unlock()
         if count >= cap {
             flush(reason: .batchSize)
+        }
+    }
+
+    private func stampRiders(_ event: Event) -> Event {
+        switch event {
+        case let .event(name, timestamp, attributes):
+            // A native crash is replayed from the previous process; its
+            // riders come from the sidecar, never from this launch.
+            if name == "app.crash", attributes["cause"] == .string("NativeCrash") { return event }
+            return .event(name: name, timestamp: timestamp, attributes: riders.stamp(attributes))
+        case let .metric(name, value, timestamp, attributes):
+            return .metric(name: name, value: value, timestamp: timestamp, attributes: riders.stamp(attributes))
         }
     }
 }

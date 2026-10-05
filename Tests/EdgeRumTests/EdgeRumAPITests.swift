@@ -137,6 +137,14 @@ final class EdgeRumAPITests: XCTestCase {
         XCTAssertEqual(events.first?.1["funnel.step"], .int(1))
     }
 
+    func testTrackScreenWritesTheCurrentScreenBox() {
+        Riders.shared._resetForTesting()
+        defer { Riders.shared._resetForTesting() }
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.trackScreen("Home")
+        XCTAssertEqual(Riders.shared.currentScreen, "Home")
+    }
+
     // MARK: - identify
 
     func testIdentifyRoutesUser() {

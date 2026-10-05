@@ -43,9 +43,12 @@ internal enum SwiftUIEmitter {
         attributes: [String: AttributeValue]?,
         recorder: Recording = Recorder.shared,
         clock: Clock = Recorder.shared.clock,
-        startStore: SwiftUIScreenStartStore = .shared
+        startStore: SwiftUIScreenStartStore = .shared,
+        riders: Riders = .shared
     ) {
         startStore.recordStart(name: name, at: clock.now)
+        // Box first, so this event's `screen.name` is the screen entered.
+        riders.enterScreen(name)
         var payload: [String: AttributeValue] = attributes ?? [:]
         // SDK-owned keys win on conflict — apply last.
         payload["navigation.screen"] = .string(name)
@@ -67,8 +70,11 @@ internal enum SwiftUIEmitter {
         attributes: [String: AttributeValue]?,
         recorder: Recording = Recorder.shared,
         clock: Clock = Recorder.shared.clock,
-        startStore: SwiftUIScreenStartStore = .shared
+        startStore: SwiftUIScreenStartStore = .shared,
+        riders: Riders = .shared
     ) {
+        // Sheet dismissal does not re-fire the presenter's onAppear.
+        riders.leaveScreen(name)
         guard let dwell = startStore.consumeDwell(name: name, now: clock.now) else {
             return
         }

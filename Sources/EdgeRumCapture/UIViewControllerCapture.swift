@@ -11,10 +11,14 @@
 //                                    or `String(reflecting: type(of: vc))`
 //       navigation.kind            — "uikit" or "swiftui"
 //       navigation.type            — "viewDidAppear"
-//       navigation.previous_screen — last appeared screen (omitted if nil)
+//       navigation.previous_screen — screen showing before (omitted if nil)
 //   - One `screen.duration` performance metric on disappear, carrying
 //     `value` (seconds, Double) and `screen.duration_ms` (Int) plus
 //     `screen.name` and `screen.kind`.
+//
+// The current screen lives in the `Riders` box (F28), shared with
+// `.edgeRumScreen` and `trackScreen`; it is written before `navigation`
+// emits. Dismissing a sheet or popping restores the presenter (one level).
 //
 // Container view controllers (`UINavigationController`,
 // `UITabBarController`, `UIPageViewController`) are skipped — the
@@ -187,25 +191,11 @@ public enum UIViewControllerCapture {
         }
     }
 
-    // MARK: Previous-screen pointer
+    // MARK: Current screen
 
-    nonisolated(unsafe) private static let prevLock: UnsafeMutablePointer<os_unfair_lock> = {
-        let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
-        p.initialize(to: os_unfair_lock())
-        return p
-    }()
-    nonisolated(unsafe) private static var _previousScreen: String?
-
-    static func currentPreviousScreen() -> String? {
-        os_unfair_lock_lock(prevLock)
-        defer { os_unfair_lock_unlock(prevLock) }
-        return _previousScreen
-    }
-
-    static func setPreviousScreen(_ name: String?) {
-        os_unfair_lock_lock(prevLock)
-        _previousScreen = name
-        os_unfair_lock_unlock(prevLock)
+    /// The screen showing now — the `screen.name` rider box.
+    static func currentScreen() -> String? {
+        Riders.shared.currentScreen
     }
 
     // MARK: Name resolution
@@ -302,12 +292,13 @@ public enum UIViewControllerCapture {
             "navigation.kind": .string(kind),
             "navigation.type": .string("viewDidAppear")
         ]
-        if let previous = currentPreviousScreen() {
+        if let previous = currentScreen() {
             attrs["navigation.previous_screen"] = .string(previous)
         }
 
+        // Box first, so this event's `screen.name` is the screen entered.
+        Riders.shared.enterScreen(name)
         recorder.recordEvent(name: "navigation", attributes: attrs)
-        setPreviousScreen(name)
     }
 
     static func handleViewWillDisappear(_ vc: UIViewController) {
@@ -336,21 +327,39 @@ public enum UIViewControllerCapture {
         ]
         recorder.recordPerformance(name: "screen.duration", attributes: attrs)
 
+        // Push/tab switches leave the box to the next appear; a dismissal
+        // or pop restores the presenter, whose appear may not re-fire.
+        if isLeaving(vc) {
+            Riders.shared.leaveScreen(state.name)
+        }
+
         // Per-controller state is consumed; clear so a future appear/
         // disappear cycle on the same controller pairs cleanly.
         objc_setAssociatedObject(vc, &screenStateKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    /// `true` when `vc` (or an ancestor, e.g. a presented navigation
+    /// controller) is being dismissed, or `vc` is being popped.
+    static func isLeaving(_ vc: UIViewController) -> Bool {
+        if vc.isMovingFromParent { return true }
+        var node: UIViewController? = vc
+        while let current = node {
+            if current.isBeingDismissed { return true }
+            node = current.parent
+        }
+        return false
     }
     #endif
 
     // MARK: Test-only helpers
 
     #if DEBUG
-    /// Clear the global `previousScreen` pointer so each test starts
-    /// from a known state. The swizzle install itself is intentionally
-    /// NOT reset — IMP swaps cannot be safely undone on Objective-C
-    /// classes, and a partial undo would deadlock with system frames.
-    public static func _resetPreviousScreenForTesting() {
-        setPreviousScreen(nil)
+    /// Clear the current-screen box so each test starts from a known
+    /// state. The swizzle install itself is intentionally NOT reset —
+    /// IMP swaps cannot be safely undone on Objective-C classes, and a
+    /// partial undo would deadlock with system frames.
+    public static func _resetCurrentScreenForTesting() {
+        Riders.shared._resetForTesting()
     }
 
     /// Mark the swizzle as "not installed" so tests that want to

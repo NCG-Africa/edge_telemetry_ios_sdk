@@ -182,7 +182,7 @@ public enum InteractionCapture {
         guard event.type == .touches else { return }
         guard let touches = event.allTouches, !touches.isEmpty else { return }
 
-        let screen = UIViewControllerCapture.currentPreviousScreen()
+        let screen = UIViewControllerCapture.currentScreen()
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
         os_unfair_lock_lock(installLock)

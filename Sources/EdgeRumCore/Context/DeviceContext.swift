@@ -26,6 +26,7 @@
 //   device.locale               — Locale.current.identifier            (F16/T16.5)
 //   device.timezone             — TimeZone.current.identifier          (F16/T16.5)
 //   device.timezone_offset_min  — TimeZone.current.secondsFromGMT()/60 (F16/T16.5)
+//   device.family               — userInterfaceIdiom: phone|pad|mac|unknown (F28)
 //
 // Note: `device.id` is owned by `IdentityProvider` (F4) and merged
 // in alongside; this struct holds only the immutable / cheap reads.
@@ -54,6 +55,7 @@ public struct DeviceContext: Sendable, Hashable {
     public var locale: String?
     public var timezone: String?
     public var timezoneOffsetMin: Int?
+    public var family: String?
 
     public init(
         platform: String = "ios",
@@ -69,7 +71,8 @@ public struct DeviceContext: Sendable, Hashable {
         batteryCharging: Bool? = nil,
         locale: String? = nil,
         timezone: String? = nil,
-        timezoneOffsetMin: Int? = nil
+        timezoneOffsetMin: Int? = nil,
+        family: String? = nil
     ) {
         self.platform = platform
         self.manufacturer = manufacturer
@@ -85,6 +88,7 @@ public struct DeviceContext: Sendable, Hashable {
         self.locale = locale
         self.timezone = timezone
         self.timezoneOffsetMin = timezoneOffsetMin
+        self.family = family
     }
 
     public static func snapshot() -> DeviceContext {
@@ -142,7 +146,8 @@ public struct DeviceContext: Sendable, Hashable {
             batteryCharging: batteryCharging,
             locale: localeId,
             timezone: tzId,
-            timezoneOffsetMin: tzOffset
+            timezoneOffsetMin: tzOffset,
+            family: deviceFamily(device.userInterfaceIdiom)
         )
         #else
         let (localeId, tzId, tzOffset) = readLocaleAndTimezone()
@@ -169,6 +174,7 @@ public struct DeviceContext: Sendable, Hashable {
         bag.setIfPresent("device.locale", locale.map { .string($0) })
         bag.setIfPresent("device.timezone", timezone.map { .string($0) })
         bag.setIfPresent("device.timezone_offset_min", timezoneOffsetMin.map { .int($0) })
+        bag.setIfPresent("device.family", family.map { .string($0) })
     }
 }
 
@@ -231,5 +237,16 @@ private func readScreenMetricsOnMain() -> (Int?, Int?, Double?) {
     let bounds = UIScreen.main.nativeBounds
     let scale = Double(UIScreen.main.scale)
     return (Int(bounds.width), Int(bounds.height), scale)
+}
+
+/// Not derivable from `device.model` on the simulator, an iPad app on
+/// Apple Silicon, or Catalyst — hence its own key.
+internal func deviceFamily(_ idiom: UIUserInterfaceIdiom) -> String {
+    switch idiom {
+    case .phone: return "phone"
+    case .pad: return "pad"
+    case .mac: return "mac"
+    default: return "unknown"
+    }
 }
 #endif

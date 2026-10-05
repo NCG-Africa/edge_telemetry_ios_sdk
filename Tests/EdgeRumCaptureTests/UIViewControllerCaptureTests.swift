@@ -165,13 +165,13 @@ final class UIViewControllerCaptureTests: XCTestCase {
 
     // MARK: previousScreen pointer
 
-    func test_previousScreen_setAndClear() {
-        UIViewControllerCapture._resetPreviousScreenForTesting()
-        XCTAssertNil(UIViewControllerCapture.currentPreviousScreen())
-        UIViewControllerCapture.setPreviousScreen("Cart")
-        XCTAssertEqual(UIViewControllerCapture.currentPreviousScreen(), "Cart")
-        UIViewControllerCapture._resetPreviousScreenForTesting()
-        XCTAssertNil(UIViewControllerCapture.currentPreviousScreen())
+    func test_currentScreen_setAndClear() {
+        UIViewControllerCapture._resetCurrentScreenForTesting()
+        XCTAssertNil(UIViewControllerCapture.currentScreen())
+        Riders.shared.enterScreen("Cart")
+        XCTAssertEqual(UIViewControllerCapture.currentScreen(), "Cart")
+        UIViewControllerCapture._resetCurrentScreenForTesting()
+        XCTAssertNil(UIViewControllerCapture.currentScreen())
     }
 
     // MARK: UIKit-driven tests — iOS only
@@ -184,12 +184,12 @@ final class UIViewControllerCaptureTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UIViewControllerCapture.install(debug: true)
-        UIViewControllerCapture._resetPreviousScreenForTesting()
+        UIViewControllerCapture._resetCurrentScreenForTesting()
     }
 
     override func tearDown() {
         Recorder.resetShared()
-        UIViewControllerCapture._resetPreviousScreenForTesting()
+        UIViewControllerCapture._resetCurrentScreenForTesting()
         super.tearDown()
     }
 
@@ -358,7 +358,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
 
     // 8. previous_screen chains
 
-    func test_previousScreen_chainsAcrossNavigations() {
+    func test_currentScreen_chainsAcrossNavigations() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
 
@@ -384,10 +384,41 @@ final class UIViewControllerCaptureTests: XCTestCase {
         XCTAssertEqual(screenBEvent?["navigation.previous_screen"], .string("ScreenA"))
     }
 
+    // F28 — sheet dismissal restores the presenter (its appear does not re-fire).
+    func test_sheetDismissal_restoresPresenterScreen() {
+        Recorder.installShared(CaptureProbeRecorder())
+        UIViewControllerCapture._resetCurrentScreenForTesting()
+
+        let presenter = UIViewController()
+        presenter.view.accessibilityIdentifier = "Settings"
+        let sheet = DismissingViewController()
+        sheet.view.accessibilityIdentifier = "Picker"
+
+        presenter.viewDidAppear(false)
+        sheet.viewDidAppear(false)
+        XCTAssertEqual(UIViewControllerCapture.currentScreen(), "Picker")
+        sheet.viewWillDisappear(false)
+        XCTAssertEqual(UIViewControllerCapture.currentScreen(), "Settings")
+    }
+
+    func test_pushDisappear_leavesBoxToNextAppear() {
+        Recorder.installShared(CaptureProbeRecorder())
+        UIViewControllerCapture._resetCurrentScreenForTesting()
+
+        let a = UIViewController()
+        a.view.accessibilityIdentifier = "A"
+        let b = UIViewController()
+        b.view.accessibilityIdentifier = "B"
+        b.viewDidAppear(false)
+        a.viewDidAppear(false)
+        a.viewWillDisappear(false)   // covered, not dismissed
+        XCTAssertEqual(UIViewControllerCapture.currentScreen(), "A")
+    }
+
     func test_firstNavigation_hasNoPreviousScreen() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
-        UIViewControllerCapture._resetPreviousScreenForTesting()
+        UIViewControllerCapture._resetCurrentScreenForTesting()
 
         let vc = UIViewController()
         vc.view.accessibilityIdentifier = "Home"
@@ -502,3 +533,9 @@ final class UIViewControllerCaptureTests: XCTestCase {
 
     #endif // canImport(UIKit) && os(iOS)
 }
+
+#if canImport(UIKit) && os(iOS)
+private final class DismissingViewController: UIViewController {
+    override var isBeingDismissed: Bool { true }
+}
+#endif
