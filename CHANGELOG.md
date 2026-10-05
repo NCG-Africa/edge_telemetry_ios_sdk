@@ -11,6 +11,18 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [1.3.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.2.0-alpha.2...v1.3.0-alpha.2) (2026-10-05)
+
+
+### Features
+
+* **F29:** breaking batch — RUM coverage tranche 4 ([#234](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/234)) ([5bf60b9](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/5bf60b93c2a98397c0e43d172048c69eb53156fc))
+* **F30:** sampler cut — RUM coverage tranche 5 ([#235](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/235)) ([4002028](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/4002028bc68c6a9ed9dce45390631475107aed90))
+* **F31:** breadcrumbs — RUM coverage tranche 6 ([#236](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/236)) ([672781d](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/672781df0c7a4e9cdd89426a9b9721bf369fc88a))
+* **F32:** SDK health — RUM coverage tranche 7 ([#237](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/237)) ([94e5aef](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/94e5aefb4ac00555bcf4e63d8ba0c005bdf9af1e))
+* **F33:** error evidence + two-phase hang — RUM coverage tranche 8 ([#238](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/238)) ([d737b29](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/d737b2944e6a1ac7bfbb5131732a8bc45f362a10))
+* **F34:** launch — RUM coverage tranche 9 ([#239](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/239)) ([b2717d8](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/b2717d8f2061f57a672653bd4bc60266f199dac4))
+
 ## [1.2.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.1.0-alpha.2...v1.2.0-alpha.2) (2026-10-05)
 
 
