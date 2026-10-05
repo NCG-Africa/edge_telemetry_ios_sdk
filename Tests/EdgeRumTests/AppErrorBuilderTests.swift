@@ -18,7 +18,7 @@ final class AppErrorBuilderTests: XCTestCase {
             debug: false
         )
         XCTAssertEqual(attrs["error.kind"], .string("swift"))
-        XCTAssertEqual(attrs["cause"], .string("AppError"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("swift"))
         XCTAssertNil(attrs.first(where: { $0.key.hasPrefix("error.userInfo.") }),
                      "Swift errors must not surface error.userInfo.* on the wire")
@@ -37,7 +37,7 @@ final class AppErrorBuilderTests: XCTestCase {
         XCTAssertEqual(attrs["error.code"], .int(7))
     }
 
-    // MARK: - error.type
+    // MARK: - error.class
 
     func testErrorTypeIsSwiftTypeName() {
         enum CheckoutFailure: Error { case cardDeclined }
@@ -47,7 +47,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: [],
             debug: false
         )
-        XCTAssertEqual(attrs["error.type"], .string("CheckoutFailure"))
+        XCTAssertEqual(attrs["error.class"], .string("CheckoutFailure"))
     }
 
     func testErrorTypeForNSErrorIsClassName() {
@@ -58,7 +58,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: [],
             debug: false
         )
-        XCTAssertEqual(attrs["error.type"], .string("NSError"))
+        XCTAssertEqual(attrs["error.class"], .string("NSError"))
     }
 
     // MARK: - userInfo flattening (T13.2)
@@ -154,7 +154,7 @@ final class AppErrorBuilderTests: XCTestCase {
         )
         XCTAssertEqual(attrs["error.domain"], .string("Real"),
                        "Standard error.domain must reflect the actual error")
-        XCTAssertEqual(attrs["cause"], .string("AppError"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["crash.context.error.domain"], .string("Forged"))
         XCTAssertEqual(attrs["crash.context.cause"], .string("Forged"))
     }
@@ -222,7 +222,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: [],
             debug: false
         )
-        XCTAssertEqual(attrs["cause"], .string("AppError"))
+        XCTAssertNil(attrs["cause"])
         XCTAssertEqual(attrs["runtime"], .string("swift"))
     }
 

@@ -98,13 +98,14 @@ final class RecorderPipelineContractTests: XCTestCase {
             stack: ["0  edge_rum_ios  test_frame"],
             debug: false
         )
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
+        recorder.recordEvent(name: "app.error", attributes: attrs)
+        recorder.flush(reason: .immediate)
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
-        XCTAssertEqual(events.first?["eventName"] as? String, "app.crash")
+        XCTAssertEqual(events.first?["eventName"] as? String, "app.error")
         let wireAttrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
-        XCTAssertEqual(wireAttrs["cause"] as? String, "AppError")
+        XCTAssertNil(wireAttrs["cause"])
         XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
         XCTAssertEqual(wireAttrs["error.kind"] as? String, "nserror")
         XCTAssertEqual(wireAttrs["error.domain"] as? String, "PaymentDomain")

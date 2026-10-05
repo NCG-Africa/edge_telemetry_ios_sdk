@@ -2,8 +2,8 @@
 //
 // T14.4 — top-N frames per thread truncation. Mirrors the UTF-8-safe
 // truncation pattern in `Sources/EdgeRumCore/AppErrorBuilder.swift`
-// so behaviour is consistent across `cause = "AppError"` and
-// `cause = "NativeCrash"` payloads.
+// so behaviour is consistent across `app.hang` and `app.crash`
+// payloads.
 //
 // Pure function — no I/O, no global state, no PLCR types. The encoder
 // hands us already-parsed thread dictionaries (frame strings) so this

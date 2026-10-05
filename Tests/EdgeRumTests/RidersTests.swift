@@ -119,10 +119,10 @@ final class RidersTests: XCTestCase {
 
         // Sidecar-sourced crash-time values; app.state absent on purpose.
         recorder.recordEvent(name: "app.crash", attributes: [
-            "cause": .string("NativeCrash"),
             "screen.name": .string("Checkout")
         ])
-        recorder.recordEvent(name: "app.crash", attributes: ["cause": .string("AppError")])
+        recorder.recordEvent(name: "app.error", attributes: [:])
+        recorder.flush(reason: .manual)
 
         let events = sink.envelopes.flatMap(\.events)
         XCTAssertEqual(events.count, 2)

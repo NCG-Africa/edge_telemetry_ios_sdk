@@ -54,12 +54,13 @@ public final class Recorder: Recording, @unchecked Sendable {
         "app_lifecycle",
         "page_load",
         "navigation",
-        "screen.duration",
         "http.request",
         "user.interaction",
         "network_change",
         "user.profile.update",
         "custom_event",
+        "app.error",
+        "app.hang",
         "app.crash"
     ]
 
@@ -377,10 +378,9 @@ public final class Recorder: Recording, @unchecked Sendable {
         let event = Event.event(name: name, timestamp: now, attributes: AttributeBag(attributes))
         enqueue(event)
 
-        // Per CLAUDE.md "Transport rules": errors and
-        // `session.finalized` flush immediately. `app.crash` covers
-        // both `recordError()`-supplied app errors and native crash
-        // replays from `EdgeRumCrash`.
+        // `session.finalized` and `app.crash` (native crash replay —
+        // the process died) flush immediately. `app.error` and
+        // `app.hang` are sampled and ride the normal flush (F29).
         if name == "session.finalized" || name == "app.crash" {
             flush(reason: .immediate)
         }
@@ -653,7 +653,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         case let .event(name, timestamp, attributes):
             // A native crash is replayed from the previous process; its
             // riders come from the sidecar, never from this launch.
-            if name == "app.crash", attributes["cause"] == .string("NativeCrash") { return event }
+            if name == "app.crash" { return event }
             return .event(name: name, timestamp: timestamp, attributes: riders.stamp(attributes))
         case let .metric(name, value, timestamp, attributes):
             return .metric(name: name, value: value, timestamp: timestamp, attributes: riders.stamp(attributes))

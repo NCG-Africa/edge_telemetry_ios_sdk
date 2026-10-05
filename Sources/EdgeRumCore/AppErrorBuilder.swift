@@ -3,8 +3,8 @@
 // Pure helper that flattens an `Error` value into the wire-attribute
 // bag emitted by `EdgeRum.captureError`. Owns:
 //
-//   - `cause = "AppError"`, `runtime = "swift"`
-//   - `error.type` (Swift type name or NSError class)
+//   - `runtime = "swift"`
+//   - `error.class` (Swift type name or NSError class)
 //   - `error.kind` discriminator (`"swift"` / `"nserror"`)
 //   - `error.domain`, `error.code`, `error.message`
 //   - `error.userInfo.<key>` flattening for NSError, dropping any
@@ -32,8 +32,7 @@ public enum AppErrorBuilder {
     /// stack can't balloon a batch.
     public static let maxStackBytes: Int = 4_096
 
-    /// Build the full wire-attribute bag for an `app.crash` event with
-    /// `cause = "AppError"`.
+    /// Build the full wire-attribute bag for an `app.error` event.
     ///
     /// - Parameters:
     ///   - error: the value reported via `EdgeRum.captureError`.
@@ -51,9 +50,8 @@ public enum AppErrorBuilder {
         debug: Bool
     ) -> [String: AttributeValue] {
         var attrs: [String: AttributeValue] = [:]
-        attrs["cause"] = .string("AppError")
         attrs["runtime"] = .string("swift")
-        attrs["error.type"] = .string(String(describing: type(of: error)))
+        attrs["error.class"] = .string(String(describing: type(of: error)))
         attrs["error.message"] = .string(messageString(for: error))
 
         // Every `Error` bridges to `NSError` on Apple platforms with a
