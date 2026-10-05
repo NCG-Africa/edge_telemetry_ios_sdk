@@ -232,9 +232,11 @@ final class RidersTests: XCTestCase {
         riders.enterScreen("Checkout")
         riders.setOrientation("landscape")
         riders.setAppState("background")
+        riders.setActionId("action_1717234876000_0123456789abcdef")  // F36
         riders._drainForTesting()
 
         let read = try XCTUnwrap(sidecar.read())
+        XCTAssertEqual(read["action.id"], .string("action_1717234876000_0123456789abcdef"))
         XCTAssertEqual(read["screen.name"], .string("Checkout"))
         XCTAssertEqual(read["device.orientation"], .string("landscape"))
         XCTAssertEqual(read["app.state"], .string("background"))

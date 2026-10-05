@@ -95,7 +95,9 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         "screen.name",
         "screen.name.truncated",
         "device.orientation",
-        "app.state"
+        "app.state",
+        // F36 — the open action at death.
+        "action.id"
     ]
 
     private let url: URL?

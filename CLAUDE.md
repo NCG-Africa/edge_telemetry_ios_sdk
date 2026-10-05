@@ -279,6 +279,8 @@ and logged when `debug == true`.
 | `EdgeRum.time().end()`                       | (`metric`, `metricName` = `"custom_timer"` + `timer.name`) | `Sources/EdgeRum/RumTimer.swift`                                    |
 | Foreground / background                      | `app_lifecycle`                                  | `EdgeRumCapture/LifecycleCapture.swift`                                       |
 | Connectivity change                          | `network_change`                                 | `EdgeRumCapture/NetworkPathCapture.swift` (`NWPathMonitor`)                   |
+| `EdgeRum.startAction()`                      | `action.started`                                 | `Sources/EdgeRum/RumAction.swift` (stack: `EdgeRumCore/Actions.swift`)        |
+| `RumAction.complete()` / `fail()` / abandon  | `action.ended` (`action.outcome`)                | same; abandon on rotation, next launch (`process_death`), 600 s `timeout`     |
 
 > **Not emitted on iOS:** `LCP`, `FCP`, `CLS`, `INP`, `TTFB`. iOS has
 > no native analogue to Web Vitals. Confirmation that the backend
@@ -286,7 +288,7 @@ and logged when `debug == true`.
 > `PLAN-iOS.md` § "Backend asks" item 3.
 >
 > **Not emitted on iOS:** any `eventName` outside this table. The
-> backend silently drops unknowns. The allowlist is exactly 13 names;
+> backend silently drops unknowns. The allowlist is exactly 15 names;
 > `metricName` has its own 6-name allowlist (`Recorder.allowedMetricNames`:
 > `resource_timing`, `long_task`, `frame_render_time`, `memory_usage`,
 > `cpu_usage`, `custom_timer`).
@@ -470,6 +472,7 @@ public enum EdgeRum {
     public static func trackScreen(_ name: String,
                                    attributes: [String: AttributeValue]? = nil)
     public static func time(_ name: String) -> RumTimer
+    public static func startAction(_ name: String) -> RumAction  // F36: complete() / fail(reason:)
     public static func captureError(_ error: Error,
                                     type: String? = nil,  // F33: error_type
                                     context: [String: AttributeValue]? = nil)
@@ -696,6 +699,12 @@ prior file into `previous_session.*` + `device.boot_time` on the launch
 `session.started`. An open hang lives in `Library/Caches/edge-rum/pending-hang.json`
 (written by the watchdog thread from threshold to stall end); `EdgeRum.start()`
 replays a leftover one as `app.hang` + `hang.terminated` on the sidecar identity.
+
+F36 open actions live in `Library/Caches/edge-rum/open-actions.json`
+(`Sources/EdgeRumCore/Actions.swift`, coalesced, deleted when empty); only
+the top `action.id` rides the volatile zone. `EdgeRum.start()` reads and
+deletes the file and closes each as `action.ended` `abandoned` /
+`process_death` on the sidecar identity (ADR-027).
 
 ---
 

@@ -67,9 +67,10 @@ final class RecorderTests: XCTestCase {
             "page_load", "navigation",
             "http.request", "user.interaction", "network_change",
             "user.profile.update", "custom_event",
-            "app.error", "app.hang", "app.crash"
+            "app.error", "app.hang", "app.crash",
+            "action.started", "action.ended"
         ]
-        XCTAssertEqual(expected.count, 13)
+        XCTAssertEqual(expected.count, 15)
         XCTAssertEqual(Recorder.allowedEventNames, expected)
     }
 

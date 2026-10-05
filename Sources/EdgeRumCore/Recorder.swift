@@ -61,7 +61,10 @@ public final class Recorder: Recording, @unchecked Sendable {
         "custom_event",
         "app.error",
         "app.hang",
-        "app.crash"
+        "app.crash",
+        // F36 — action lifecycle.
+        "action.started",
+        "action.ended"
     ]
 
     /// The bounded `metricName` space (F29). `recordPerformance`
@@ -120,6 +123,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     private let context: ContextProvider
     private let riders: Riders
     private let breadcrumbs: Breadcrumbs
+    private let actions: Actions
 
     /// Sampler is rebuilt on `configure(_:)` so the per-session
     /// decision reflects the host-supplied `sampleRate`. The
@@ -189,12 +193,14 @@ public final class Recorder: Recording, @unchecked Sendable {
         sidecar: SessionSidecarWriting? = nil,
         riders: Riders = .shared,
         breadcrumbs: Breadcrumbs = .shared,
+        actions: Actions = .shared,
         health: SdkHealth = .shared
     ) {
         self._clock = clock
         self.health = health
         self.riders = riders
         self.breadcrumbs = breadcrumbs
+        self.actions = actions
         let resolvedSessionManager = sessionManager ?? SessionManager(clock: clock)
         self.sessionManager = resolvedSessionManager
         self.sampler = sampler ?? Sampler(sampleRate: 1.0)
@@ -432,6 +438,12 @@ public final class Recorder: Recording, @unchecked Sendable {
         _ = apiKey
         _ = endpoint
         _ = debug
+    }
+
+    /// Bump last-active now, emitting a due rotation (and its abandoned
+    /// actions) before the caller mutates the action stack (F36).
+    public func touchSession() {
+        bumpLastActiveAndEmitRotationIfNeeded()
     }
 
     /// Flush and stop. Emits no `session.finalized`: that marks a
@@ -732,6 +744,7 @@ public final class Recorder: Recording, @unchecked Sendable {
 
         stateLock.lock()
         _insideRotationEmission = true
+        let endingSampler = sampler
         // T5.5 — re-roll the sampler so the new session has its own
         // in/out decision instead of inheriting the prior session's
         // roll. Idle rotation crosses a session boundary, so per-spec
@@ -750,6 +763,16 @@ public final class Recorder: Recording, @unchecked Sendable {
         // `session.finalized` event since the context is about to
         // refresh to the new session before the buffer's next flush.
         let reason = result.ended?.reason ?? "idle"
+        // F36 — open actions can no longer complete: closed on the
+        // ending session's identity (the context has not moved yet) and
+        // its sampling decision.
+        for attrs in actions.abandonAll(reason: .rotation) {
+            if endingSampler.shouldEmit(eventName: "action.ended") {
+                recordEventInternal(name: "action.ended", attributes: attrs)
+            } else {
+                countDrop(\.droppedSampled)
+            }
+        }
         if let ended = result.ended {
             recordEventInternal(name: "session.finalized", attributes: Self.finalizedAttributes(ended.state, reason: reason))
         }
@@ -807,9 +830,12 @@ public final class Recorder: Recording, @unchecked Sendable {
         }
     }
 
-    /// `app.crash`, or an `app.hang` replayed with `hang.terminated` (F33).
+    /// `app.crash`, an `app.hang` replayed with `hang.terminated` (F33),
+    /// or an action closed after process death (F36).
     private static func isReplayed(_ name: String, _ attributes: [String: AttributeValue]) -> Bool {
-        name == "app.crash" || (name == "app.hang" && attributes["hang.terminated"] != nil)
+        name == "app.crash"
+            || (name == "app.hang" && attributes["hang.terminated"] != nil)
+            || (name == "action.ended" && attributes["action.abandon_reason"] == .string("process_death"))
     }
 
     private func stampRiders(_ event: Event) -> Event {

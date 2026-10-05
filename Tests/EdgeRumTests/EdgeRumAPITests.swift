@@ -237,6 +237,15 @@ final class EdgeRumAPITests: XCTestCase {
                        "Calling time() before start() must return a timer whose end() is a no-op")
     }
 
+    func testStartActionBeforeStartRecordsNothing() {
+        EdgeRum.startAction("orphan.action").complete()
+        let events = probe.calls.filter {
+            if case .event = $0 { return true }
+            return false
+        }
+        XCTAssertTrue(events.isEmpty, "startAction() before start() must return an already-ended handle")
+    }
+
     // MARK: - captureError
 
     func testCaptureErrorRoutesAppCrashEventToRecorder() {

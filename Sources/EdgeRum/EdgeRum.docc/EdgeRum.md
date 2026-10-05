@@ -53,6 +53,7 @@ recipes for the common host-app patterns are listed below.
 - ``EdgeRum/track(_:attributes:)``
 - ``EdgeRum/trackScreen(_:attributes:)``
 - ``EdgeRum/time(_:)``
+- ``EdgeRum/startAction(_:)``
 - ``EdgeRum/captureError(_:type:context:)``
 
 ### Lifecycle
@@ -74,6 +75,7 @@ recipes for the common host-app patterns are listed below.
 - ``Environment``
 - ``UserContext``
 - ``RumTimer``
+- ``RumAction``
 
 ### SwiftUI
 
@@ -83,6 +85,7 @@ recipes for the common host-app patterns are listed below.
 ### Recipes
 
 - <doc:IdentifyUser>
+- <doc:TrackAction>
 - <doc:TrackCustomEvent>
 - <doc:TimeOperation>
 - <doc:CaptureError>

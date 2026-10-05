@@ -9,6 +9,8 @@
 //                                 `.edgeRumScreen` and `trackScreen`
 //   device.orientation          — interface orientation, ContextObservers
 //   app.state                   — UIApplication.State, ContextObservers
+//   action.id                   — top of the open-action stack (F36),
+//                                 written by `Actions` on start / end
 //
 // Writers set a value on change; `Recorder.enqueue` stamps the current
 // values into each event's own attributes (absent keys only, so an
@@ -53,6 +55,7 @@ public final class Riders: @unchecked Sendable {
     private var lastEntered: String?
     private var orientation: String?
     private var appState: String?
+    private var actionId: String?
     private var sidecar: SessionSidecarWriting?
     private var persistPending = false
 
@@ -107,6 +110,14 @@ public final class Riders: @unchecked Sendable {
         schedulePersistLocked()
     }
 
+    /// Top of the open-action stack (F36); nil when none is open.
+    public func setActionId(_ value: String?) {
+        lock(); defer { unlock() }
+        guard value != actionId else { return }
+        actionId = value
+        schedulePersistLocked()
+    }
+
     /// Route volatile writes to `sidecar` and persist the current box.
     public func attach(sidecar: SessionSidecarWriting?) {
         lock(); defer { unlock() }
@@ -152,6 +163,7 @@ public final class Riders: @unchecked Sendable {
         }
         if let orientation { out["device.orientation"] = .string(orientation) }
         if let appState { out["app.state"] = .string(appState) }
+        if let actionId { out["action.id"] = .string(actionId) }
         return out
     }
 
@@ -190,6 +202,7 @@ public final class Riders: @unchecked Sendable {
         lastEntered = nil
         orientation = nil
         appState = nil
+        actionId = nil
         sidecar = nil
     }
     #endif

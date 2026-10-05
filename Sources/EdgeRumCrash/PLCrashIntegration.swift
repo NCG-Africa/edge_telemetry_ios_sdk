@@ -107,6 +107,14 @@ public enum PLCrashIntegration {
 
     // MARK: - Replay (T14.3)
 
+    /// The prior session's identity (+ volatile riders) from the
+    /// sidecar, for any event replayed from the previous process (F36
+    /// `process_death` actions). Empty when the sidecar is missing or
+    /// malformed.
+    public static func replayIdentity(sidecarContents: [String: AttributeValue]?) -> [String: AttributeValue] {
+        sidecarContents.flatMap(CrashSidecarReader.parse).map(CrashSidecarReader.replayAttributes) ?? [:]
+    }
+
     /// Replay any pending PLCR report from the prior launch as one
     /// `app.crash` event, attribute it to the *crashed* session via
     /// the sidecar, then purge the report. No-op if nothing is
