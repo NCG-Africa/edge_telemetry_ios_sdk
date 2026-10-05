@@ -371,9 +371,6 @@ public final class Recorder: Recording, @unchecked Sendable {
         if let ended = touched.ended {
             pendingFinalized = Self.finalizedAttributes(ended.state, reason: ended.reason)
         }
-        if session.id != priorSessionId {
-            _session = SessionHealth()
-        }
         stateLock.unlock()
         context.refreshSession(SessionContextSnapshot(session))
         writeSidecar()
@@ -383,6 +380,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         if let pendingFinalized {
             recordEventInternal(name: "session.finalized", attributes: pendingFinalized)
             startedAttrs["session.rotation"] = pendingFinalized["session.rotation"]
+        }
+        // Reset after `session.finalized` flushed, as on idle rotation,
+        // so the ending session's last envelope carries its own totals.
+        if session.id != priorSessionId {
+            stateLock.lock(); _session = SessionHealth(); stateLock.unlock()
         }
         // Emit `session.started`. This bypasses the sampler (forced
         // emit) so it always lands in the next batch.

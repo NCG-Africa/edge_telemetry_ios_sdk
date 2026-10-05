@@ -18,8 +18,10 @@ import Foundation
 
 public final class SdkHealth: @unchecked Sendable {
 
+    /// The process's counters, shared by the Recorder and the transport.
     public static let shared = SdkHealth()
 
+    /// A process-scoped counter; the raw value is its wire key.
     public enum Counter: String, CaseIterable, Sendable {
         case eventsUploaded = "sdk.events_uploaded"
         case batchesUploaded = "sdk.batches_uploaded"
@@ -55,8 +57,10 @@ public final class SdkHealth: @unchecked Sendable {
     private var counts: [Counter: Int] = [:]
     private var failed: Set<String> = []
 
+    /// A fresh, all-zero set — production uses `shared`.
     public init() {}
 
+    /// Add `n` to a cumulative counter.
     public func add(_ counter: Counter, _ n: Int = 1) {
         lock.lock(); counts[counter, default: 0] += n; lock.unlock()
     }
@@ -66,6 +70,7 @@ public final class SdkHealth: @unchecked Sendable {
         lock.lock(); counts[counter] = max(counts[counter] ?? 0, value); lock.unlock()
     }
 
+    /// Mark `capability` failed for the rest of the process.
     public func fail(_ capability: Capability) {
         lock.lock(); failed.insert(capability.rawValue); lock.unlock()
     }
@@ -75,7 +80,10 @@ public final class SdkHealth: @unchecked Sendable {
     public func snapshot() -> [String: AttributeValue] {
         lock.lock(); defer { lock.unlock() }
         var out: [String: AttributeValue] = [:]
+        // Omit, never falsify: no queue means its marks were never read.
+        let queueBlind = failed.contains(Capability.offlineQueue.rawValue)
         for counter in Counter.allCases {
+            if queueBlind && (counter == .queueDepthMax || counter == .storageBytesMax) { continue }
             let n = counts[counter] ?? 0
             if counter.required || n > 0 { out[counter.rawValue] = .int(n) }
         }

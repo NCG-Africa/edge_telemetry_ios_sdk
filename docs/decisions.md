@@ -1807,10 +1807,11 @@ W8 (#196). Choices the spec and catalogue § 2.2 left to the code.
    states. Nothing is counted while disabled (nothing is generated).
    Rotation's synthetic `session.finalized` counts in the ending
    session; its envelope flushes before the reset.
-2. **`sdk.capabilities_failed` is held process-wide** and rides every
-   envelope of the process. The catalogue scopes it `session`, but a
+2. **`sdk.capabilities_failed` is held process-wide** (catalogue amended) and rides every
+   envelope of the process. W8 called it a session attribute, but a
    failed install blinds the subsystem for the whole process, so every
-   session in it is equally blind.
+   session in it is equally blind; catalogue § 2.2 now scopes it
+   `process`.
 3. **`sdk.upload_failures` counts failed POST attempts** (each retry,
    each failed drain file), not batches lost — loss is the
    `events_dropped.*` family.
@@ -1825,5 +1826,12 @@ W8 (#196). Choices the spec and catalogue § 2.2 left to the code.
 6. **Offline-queued payloads keep the counters they were built with.**
    Totals are cumulative, so a late replay is stale, never wrong; the
    Processor takes the max per scope.
-7. **`sdk.start_duration_ms` is not shipped here**: owned by tranche 9
+7. **A replayed `app.crash` envelope carries this launch's counters**
+   under the crashed session's event identity: session counters are
+   near zero then, so the max per session is unaffected. Process
+   counters never belong to a session.
+8. **Holes left:** an unreadable queue file deleted in `drain` is not
+   counted; `resetIdentity()`'s Keychain fallback does not mark
+   `keychain` (`regenerateDeviceId()` returns no flag).
+9. **`sdk.start_duration_ms` is not shipped here**: owned by tranche 9
    (catalogue X9).

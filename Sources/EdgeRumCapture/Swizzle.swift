@@ -12,7 +12,6 @@ enum Swizzle {
     /// Exchange two instance-method IMPs on `base`. Returns `false`
     /// and records `capability` as failed when either selector does
     /// not resolve; nothing is swapped then.
-    @discardableResult
     static func exchange(
         _ base: AnyClass,
         _ original: Selector,

@@ -132,6 +132,24 @@ extension HTTPTransportSinkTests {
         XCTAssertNil(health.snapshot()["sdk.upload_failures"])
     }
 
+    func testProcessCountersCorrectWhenNineInTenUploadsFail() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
+                                     apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
+        transport.alwaysOutcome = .failure(status: 400, retryAfter: nil)
+        for _ in 0..<9 { sink.send(threeEvents(), reason: .immediate) }
+        waitUntil { health.snapshot()["sdk.upload_failures"] == .int(9) }
+        transport.alwaysOutcome = nil
+        sink.send(threeEvents(), reason: .immediate)
+        waitUntil { health.snapshot()["sdk.batches_uploaded"] == .int(1) }
+
+        let snap = health.snapshot()
+        XCTAssertEqual(snap["sdk.events_dropped.non_retryable"], .int(27))
+        XCTAssertEqual(snap["sdk.events_uploaded"], .int(3))
+        XCTAssertEqual(snap["sdk.upload_failures"], .int(9))
+    }
+
     func testNonRetryableCountsEventsAndFailure() {
         let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
         transport.alwaysOutcome = .failure(status: 400, retryAfter: nil)

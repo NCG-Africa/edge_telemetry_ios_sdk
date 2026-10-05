@@ -114,6 +114,15 @@ final class SdkHealthTests: XCTestCase {
         XCTAssertEqual(env["sdk.capabilities_failed"] as? String, "crash_reporter,hang_observer")
     }
 
+    func testQueueMarksOmittedWhenOfflineQueueFailed() {
+        let health = SdkHealth()
+        health.fail(.offlineQueue)
+        let snap = health.snapshot()
+        XCTAssertNil(snap["sdk.queue_depth_max"])
+        XCTAssertNil(snap["sdk.storage_bytes_max"])
+        XCTAssertEqual(snap["sdk.events_uploaded"], .int(0))
+    }
+
     func testSessionCountersResetOnRotationProcessCountersDoNot() throws {
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
         let health = SdkHealth()
@@ -130,6 +139,35 @@ final class SdkHealthTests: XCTestCase {
         let next = try json(XCTUnwrap(sink.envelopes.last))
         XCTAssertEqual(next["sdk.events_generated"] as? Int, 2, "session.started + navigation")
         XCTAssertEqual(next["sdk.batches_uploaded"] as? Int, 5)
+    }
+
+    func testStartRotationFinalizedCarriesEndingSessionTotals() throws {
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
+        let (recorder, sink) = makeRecorder(clock: clock)
+        for _ in 0..<4 { recorder.recordEvent(name: "navigation", attributes: [:]) }
+
+        clock.advance(by: SessionManager.idleRotationInterval + 1)
+        recorder.start(apiKey: "edge_test_abc", endpoint: URL(string: "https://collect.example.com")!, debug: false)
+        recorder.flush(reason: .manual)
+
+        let finalized = try json(XCTUnwrap(sink.envelopes.first))
+        XCTAssertEqual(finalized["sdk.events_generated"] as? Int, 5, "4 navigation + session.finalized")
+        XCTAssertEqual(try json(XCTUnwrap(sink.envelopes.last))["sdk.events_generated"] as? Int, 1)
+    }
+
+    func testNothingCountedWhileDisabled() throws {
+        let (recorder, sink) = makeRecorder()
+        recorder.setEnabled(false)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        recorder.recordEvent(name: "not.allowlisted", attributes: [:])
+        recorder.recordPerformance(name: "not_a_metric", attributes: [:])
+        recorder.setEnabled(true)
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        recorder.flush(reason: .manual)
+
+        let env = try json(XCTUnwrap(sink.envelopes.last))
+        XCTAssertEqual(env["sdk.events_generated"] as? Int, 1)
+        XCTAssertNil(env["sdk.events_dropped.unknown_name"])
     }
 
     // MARK: _buffer cap
