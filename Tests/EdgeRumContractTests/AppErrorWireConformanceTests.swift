@@ -49,8 +49,10 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: err,
             context: ["payment.method": .string("card")],
-            stack: ["0   EdgeRum   0x0001  +[F13 captureError:_:context:]",
-                    "1   EdgeRum   0x0002  caller_frame"],
+            stack: [StackFrame(text: "EdgeRum +0x1a2b captureError",
+                               image: StackImage(name: "EdgeRum", uuid: "0123456789abcdef0123456789abcdef")),
+                    StackFrame(text: "EdgeRum +0x2b3c caller_frame",
+                               image: StackImage(name: "EdgeRum", uuid: "0123456789abcdef0123456789abcdef"))],
             debug: false
         )
         recorder.recordEvent(name: "app.error", attributes: attrs)
@@ -91,6 +93,13 @@ final class AppErrorWireConformanceTests: XCTestCase {
 
         // Stack present
         XCTAssertNotNil(wireAttrs["error.stack"] as? String)
+        // binary_images rides as a JSON *string* of {name, uuid}, deduplicated.
+        let imagesJSON = try XCTUnwrap(wireAttrs["error.binary_images"] as? String)
+        let images = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(imagesJSON.utf8)) as? [[String: String]]
+        )
+        XCTAssertEqual(images, [["name": "EdgeRum", "uuid": "0123456789abcdef0123456789abcdef"]])
+        XCTAssertNil(wireAttrs["error.stack.truncated"], "omitted when zero")
     }
 
     // MARK: - Swift Error → app.error (T13.1 acceptance)
@@ -101,7 +110,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: DecodingFailure.keyNotFound("invoice_id"),
             context: ["screen": .string("Receipt")],
-            stack: ["0   EdgeRum   0x0001  test_frame"],
+            stack: [StackFrame(text: "EdgeRum +0x1 test_frame")],
             debug: false
         )
         recorder.recordEvent(name: "app.error", attributes: attrs)
@@ -139,7 +148,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: outer,
             context: [:],
-            stack: ["0   x   y"],
+            stack: [StackFrame(text: "x +0x1 y")],
             debug: false
         )
         recorder.recordEvent(name: "app.error", attributes: attrs)
@@ -164,7 +173,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
                 "s": "string", "i": 7, "d": 1.5, "b": true
             ]),
             context: ["c": .string("v")],
-            stack: ["0   y   z"],
+            stack: [StackFrame(text: "y +0x1 z")],
             debug: false
         )
         recorder.recordEvent(name: "app.error", attributes: attrs)
@@ -194,7 +203,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
         let crashAttrs = AppErrorBuilder.build(
             error: NSError(domain: "x", code: 1),
             context: [:],
-            stack: ["0   x   y"],
+            stack: [StackFrame(text: "x +0x1 y")],
             debug: false
         )
         recorder.recordEvent(name: "app.error", attributes: crashAttrs)

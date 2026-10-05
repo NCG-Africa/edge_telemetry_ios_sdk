@@ -110,17 +110,18 @@ internal enum CrashReportEncoder {
 
         // Assemble the full report dict, truncating top-N frames per
         // thread, and stringify it. If the produced event is still
-        // over the cap, strip the heaviest optional fields (register
-        // dumps, then binary images) until we fit.
+        // over the cap, shed weight in order (C10): register dumps,
+        // then unreferenced binary images, then referenced ones.
         var dict = buildReportDict(report: report, topFramesPerThread: topFramesPerThread)
-        var jsonString = serialize(dict)
-        if eventSize(attrs: attrs, reportJson: jsonString) > eventSizeCapBytes {
-            stripRegisters(in: &dict)
-            jsonString = serialize(dict)
+        let dropped = applySizeCap(to: &dict) {
+            eventSize(attrs: attrs, reportJson: serialize($0)) <= eventSizeCapBytes
         }
-        if eventSize(attrs: attrs, reportJson: jsonString) > eventSizeCapBytes {
-            dict["binary_images"] = []
-            jsonString = serialize(dict)
+        let jsonString = serialize(dict)
+        if dropped.registers > 0 {
+            attrs["crash.registers.dropped"] = .int(dropped.registers)
+        }
+        if dropped.images > 0 {
+            attrs["crash.binary_images.dropped"] = .int(dropped.images)
         }
         attrs["crash.report_json"] = .string(jsonString)
 
@@ -222,13 +223,47 @@ internal enum CrashReportEncoder {
         return dict
     }
 
-    private static func stripRegisters(in dict: inout [String: Any]) {
-        guard var threads = dict["threads"] as? [[String: Any]] else { return }
-        for i in threads.indices {
-            threads[i].removeValue(forKey: "registers")
+    #endif
+
+    /// C10 size-cap fallback over a built report dict. While `fits`
+    /// is false: strip every thread's `registers`, then drop the
+    /// binary images no kept thread frame points into, then the
+    /// referenced ones. Returns threads stripped / images removed.
+    internal static func applySizeCap(
+        to dict: inout [String: Any],
+        fits: ([String: Any]) -> Bool
+    ) -> (registers: Int, images: Int) {
+        var dropped = (registers: 0, images: 0)
+        guard !fits(dict) else { return dropped }
+
+        var threads = dict["threads"] as? [[String: Any]] ?? []
+        for i in threads.indices where threads[i].removeValue(forKey: "registers") != nil {
+            dropped.registers += 1
         }
         dict["threads"] = threads
+        guard !fits(dict) else { return dropped }
+
+        // Kept frames are `0x%016llx` instruction pointers; images
+        // carry decimal `base_address` / `size` strings.
+        let addresses = threads
+            .flatMap { $0["stack"] as? [String] ?? [] }
+            .compactMap { UInt64($0.dropFirst(2), radix: 16) }
+        let images = dict["binary_images"] as? [[String: Any]] ?? []
+        let referenced = images.filter { image in
+            guard let base = UInt64(image["base_address"] as? String ?? ""),
+                  let size = UInt64(image["size"] as? String ?? "") else { return false }
+            return addresses.contains { $0 >= base && $0 - base < size }
+        }
+        dict["binary_images"] = referenced
+        dropped.images = images.count - referenced.count
+        guard !fits(dict) else { return dropped }
+
+        dict["binary_images"] = [[String: Any]]()
+        dropped.images = images.count
+        return dropped
     }
+
+    #if canImport(CrashReporter)
 
     private static func serialize(_ dict: [String: Any]) -> String {
         guard JSONSerialization.isValidJSONObject(dict),

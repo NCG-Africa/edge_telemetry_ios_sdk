@@ -9,7 +9,11 @@
 //   - `hang.threshold_ms`   — configured `hangTimeout` in ms
 //   - `hang.cpu_usage`      — whole-process CPU over the stall window,
 //                             per-core percent (may exceed 100)
-//   - `hang.stack`          — best-effort symbolicated stack
+//   - `hang.stack`          — best-effort stack, `StackFrames` offset
+//                             format, top `topFrames` frames
+//   - `hang.stack.truncated` — frames removed by `CrashStackTruncator`
+//                             (omitted when zero)
+//   - `hang.binary_images`  — images the kept frames reference
 //   - `hang.timestamp`      — ISO 8601 time of detection
 //
 // F29 renamed `crash.thread.main_stack` / `crash.timestamp` to the
@@ -27,8 +31,8 @@ import EdgeRumCore
 internal enum HangEventEncoder {
 
     /// Cap the encoded stack at 30 frames (mirrors `CrashReportEncoder`
-    /// per-thread budget). Any further frames are summarised with a
-    /// `…N more…` marker via `CrashStackTruncator`.
+    /// per-thread budget). The count of further frames rides on
+    /// `hang.stack.truncated`, not in the string.
     internal static let topFrames: Int = 30
 
     /// Build the flat attribute bag for one `app.hang` event.
@@ -50,7 +54,7 @@ internal enum HangEventEncoder {
         durationMs: Double,
         thresholdMs: Double,
         cpuUsage: Double?,
-        stackFrames: [String],
+        stackFrames: [StackFrame],
         timestamp: Date
     ) -> [String: AttributeValue] {
 
@@ -63,18 +67,21 @@ internal enum HangEventEncoder {
         }
         attrs["hang.timestamp"] = .string(WireDateFormatter.string(from: timestamp))
 
-        let safeFrames = stackFrames.isEmpty
-            ? [Self.unavailableFrame]
-            : stackFrames
+        guard !stackFrames.isEmpty else {
+            attrs["hang.stack"] = .string(Self.unavailableFrame)
+            return attrs
+        }
         let (kept, omitted) = CrashStackTruncator.truncate(
-            frames: safeFrames,
+            frames: stackFrames,
             topN: topFrames
         )
-        var rendered = kept.joined(separator: "\n")
-        if let marker = omitted {
-            rendered += "\n" + marker
+        attrs["hang.stack"] = .string(StackFrames.join(kept))
+        if omitted != nil {
+            attrs["hang.stack.truncated"] = .int(stackFrames.count - kept.count)
         }
-        attrs["hang.stack"] = .string(rendered)
+        if let images = StackFrames.binaryImagesJSON(kept) {
+            attrs["hang.binary_images"] = .string(images)
+        }
 
         return attrs
     }

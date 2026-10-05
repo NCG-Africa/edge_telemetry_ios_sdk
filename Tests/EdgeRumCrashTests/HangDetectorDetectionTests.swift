@@ -33,7 +33,7 @@ final class HangDetectorDetectionTests: XCTestCase {
         threshold: TimeInterval,
         clock: FixedClock,
         recorder: Recording,
-        stack: [String] = ["hang-test-frame"],
+        stack: [StackFrame] = [StackFrame(text: "hang-test-frame")],
         cpu: Double? = nil,
         debug: Bool = false
     ) -> HangWatchdog {
@@ -54,7 +54,7 @@ final class HangDetectorDetectionTests: XCTestCase {
         let probe = HangProbeRecorder()
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_000_000))
         let watchdog = makeWatchdog(threshold: 5.0, clock: clock, recorder: probe,
-                                    stack: ["mainThreadFrame", "innerFrame"])
+                                    stack: [StackFrame(text: "mainThreadFrame"), StackFrame(text: "innerFrame")])
 
         // Tick 1: first observation — heartbeat already at 1 because
         // the runloop has fired once. Watchdog records the baseline.

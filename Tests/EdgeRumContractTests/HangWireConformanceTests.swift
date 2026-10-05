@@ -29,8 +29,12 @@ final class HangWireConformanceTests: XCTestCase {
             "hang.threshold_ms": .double(5_000),
             "hang.cpu_usage": .double(83.0),
             "hang.stack": .string(
-                "EdgeRumCrashSampleApp 0x0000000104a00000 -[ViewController hangButtonTapped:] + 24\n" +
-                "EdgeRumCrashSampleApp 0x0000000104a00100 main + 80"
+                "EdgeRumCrashSampleApp +0x1a2b8 -[ViewController hangButtonTapped:]\n" +
+                "EdgeRumCrashSampleApp +0x4f10 main"
+            ),
+            "hang.stack.truncated": .int(12),
+            "hang.binary_images": .string(
+                #"[{"name":"EdgeRumCrashSampleApp","uuid":"0123456789abcdef0123456789abcdef"}]"#
             ),
             "hang.timestamp": .string(WireDateFormatter.string(from: now))
         ]
@@ -91,6 +95,10 @@ final class HangWireConformanceTests: XCTestCase {
         let stack = try XCTUnwrap(evAttrs["hang.stack"] as? String)
         XCTAssertFalse(stack.isEmpty,
                        "T15.2 acceptance: hang.stack must be non-empty")
+        XCTAssertEqual(evAttrs["hang.stack.truncated"] as? Int, 12)
+        // binary_images is a JSON *string*, never a nested array.
+        let imagesJSON = try XCTUnwrap(evAttrs["hang.binary_images"] as? String)
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(imagesJSON.utf8)) as? [[String: String]])
 
         let timestamp = try XCTUnwrap(evAttrs["hang.timestamp"] as? String)
         XCTAssertNotNil(WireDateFormatter.date(from: timestamp))

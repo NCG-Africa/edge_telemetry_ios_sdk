@@ -4,8 +4,8 @@
 //
 //   - decideEmission: under-threshold returns nil, over-threshold
 //     returns a bag with the canonical PLAN-§6.12 keys.
-//   - truncateStack: never crosses the byte budget; drops trailing
-//     frames whole rather than mid-symbol.
+//   - long_task.stack.truncated / long_task.binary_images siblings
+//     (cap mechanics themselves: StackFramesTests).
 //   - emit() routes through Recorder.shared.recordPerformance with
 //     metricName = "long_task".
 //   - Recorder.isEnabled = false halts emission.
@@ -99,7 +99,7 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         XCTAssertNil(RunLoopObserverCapture.decideEmission(
             durationMs: 10,
             thresholdMs: 50,
-            stack: ["frame0", "frame1"]
+            stack: [StackFrame(text: "frame0"), StackFrame(text: "frame1")]
         ))
     }
 
@@ -107,7 +107,7 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         let attrs = RunLoopObserverCapture.decideEmission(
             durationMs: 75.4,
             thresholdMs: 50,
-            stack: ["frame0", "frame1"]
+            stack: [StackFrame(text: "frame0"), StackFrame(text: "frame1")]
         )
         XCTAssertEqual(attrs?["value"], .double(75.4))
         XCTAssertEqual(attrs?["long_task.threshold_ms"], .double(50))
@@ -123,23 +123,30 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         XCTAssertEqual(attrs?["long_task.stack"], .string(""))
     }
 
-    // MARK: truncateStack
+    // MARK: truncated / binary_images siblings
 
-    func test_truncateStack_neverExceedsBudget() {
-        let huge = Array(repeating: String(repeating: "x", count: 200), count: 50)
-        let result = RunLoopObserverCapture.truncateStack(huge, maxBytes: 1024)
-        XCTAssertLessThanOrEqual(result.utf8.count, 1024)
+    func test_decideEmission_overCapSetsTruncatedBytes() {
+        let image = StackImage(name: "App", uuid: "aa")
+        let frames = Array(
+            repeating: StackFrame(text: String(repeating: "x", count: 200), image: image),
+            count: 50
+        )
+        let attrs = RunLoopObserverCapture.decideEmission(durationMs: 100, thresholdMs: 50, stack: frames)
+        guard case let .string(stack)? = attrs?["long_task.stack"] else {
+            return XCTFail("long_task.stack missing")
+        }
+        XCTAssertLessThanOrEqual(stack.utf8.count, RunLoopObserverCapture.maxStackBytes)
+        XCTAssertEqual(attrs?["long_task.stack.truncated"],
+                       .int(StackFrames.join(frames).utf8.count - stack.utf8.count))
+        XCTAssertEqual(attrs?["long_task.binary_images"], .string(#"[{"name":"App","uuid":"aa"}]"#))
     }
 
-    func test_truncateStack_dropsTrailingFramesWholesale() {
-        let frames = ["alpha", "beta", "gamma"]
-        // budget that fits "alpha\nbeta" (10 bytes) but not gamma
-        let result = RunLoopObserverCapture.truncateStack(frames, maxBytes: 12)
-        XCTAssertEqual(result, "alpha\nbeta")
-    }
-
-    func test_truncateStack_emptyInputReturnsEmptyString() {
-        XCTAssertEqual(RunLoopObserverCapture.truncateStack([], maxBytes: 4096), "")
+    func test_decideEmission_underCapOmitsMarkers() {
+        let attrs = RunLoopObserverCapture.decideEmission(
+            durationMs: 100, thresholdMs: 50, stack: [StackFrame(text: "frame0")]
+        )
+        XCTAssertNil(attrs?["long_task.stack.truncated"])
+        XCTAssertNil(attrs?["long_task.binary_images"])
     }
 
     // MARK: emit() routing
@@ -151,7 +158,7 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         RunLoopObserverCapture.emit(
             durationMs: 80,
             thresholdMs: 50,
-            stack: ["frame0"]
+            stack: [StackFrame(text: "frame0")]
         )
 
         XCTAssertEqual(probe.calls.count, 1)

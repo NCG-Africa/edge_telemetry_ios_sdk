@@ -14,7 +14,9 @@
 // `long_task.threshold_ms`, and a truncated `long_task.stack`
 // snapshot.
 //
-// The stack is captured via `Thread.callStackSymbols` at the moment
+// The stack is captured via `Thread.callStackReturnAddresses`
+// (formatted by `StackFrames`, with `long_task.stack.truncated` and
+// `long_task.binary_images` siblings) at the moment
 // the `.beforeWaiting` activity fires — the work is already done by
 // then, so the stack is the *current* main-thread frame, not the
 // frame that was hot during the stall. Best-effort; flagged in
@@ -91,37 +93,29 @@ public enum RunLoopObserverCapture {
     public static func decideEmission(
         durationMs: Double,
         thresholdMs: Double,
-        stack: [String]
+        stack: [StackFrame]
     ) -> [String: AttributeValue]? {
         guard durationMs >= thresholdMs else { return nil }
-        let truncated = truncateStack(stack, maxBytes: maxStackBytes)
-        return [
+        let capped = StackFrames.capped(stack, maxBytes: maxStackBytes)
+        var attrs: [String: AttributeValue] = [
             "value": .double(durationMs),
             "long_task.threshold_ms": .double(thresholdMs),
-            "long_task.stack": .string(truncated)
+            "long_task.stack": .string(capped.stack)
         ]
-    }
-
-    /// Join `frames` into a `\n`-separated single string and clip to
-    /// `maxBytes` (UTF-8). Always returns a UTF-8-safe substring — we
-    /// drop trailing frames whole rather than mid-symbol.
-    public static func truncateStack(_ frames: [String], maxBytes: Int) -> String {
-        var accum: [String] = []
-        var size = 0
-        for frame in frames {
-            let frameSize = frame.utf8.count + 1 // include the join '\n'
-            if size + frameSize > maxBytes { break }
-            accum.append(frame)
-            size += frameSize
+        if capped.bytesRemoved > 0 {
+            attrs["long_task.stack.truncated"] = .int(capped.bytesRemoved)
         }
-        return accum.joined(separator: "\n")
+        if let images = capped.binaryImages {
+            attrs["long_task.binary_images"] = .string(images)
+        }
+        return attrs
     }
 
     // MARK: Emission seam
 
     /// Public seam — emit one `long_task` metric for the supplied
     /// span. Tests drive this directly.
-    static func emit(durationMs: Double, thresholdMs: Double, stack: [String]) {
+    static func emit(durationMs: Double, thresholdMs: Double, stack: [StackFrame]) {
         guard let attrs = decideEmission(
             durationMs: durationMs,
             thresholdMs: thresholdMs,
@@ -172,7 +166,9 @@ public enum RunLoopObserverCapture {
                     let ms = Double(elapsedNs) / 1_000_000.0
                     self.lastResumeAt = 0
                     if ms >= self.thresholdMs {
-                        let stack = Thread.callStackSymbols
+                        let stack = StackFrames.symbolicate(
+                            Thread.callStackReturnAddresses.map(\.uintValue)
+                        )
                         RunLoopObserverCapture.emit(
                             durationMs: ms,
                             thresholdMs: self.thresholdMs,

@@ -29,10 +29,10 @@ internal enum CrashStackTruncator {
     /// (`"…N more…"`) so the caller can stash it in
     /// `crash.thread.<n>.other_stacks`. Returns `(kept, omittedMarker)`
     /// where `omittedMarker` is `nil` when nothing was dropped.
-    internal static func truncate(
-        frames: [String],
+    internal static func truncate<Frame>(
+        frames: [Frame],
         topN: Int
-    ) -> (kept: [String], omittedMarker: String?) {
+    ) -> (kept: [Frame], omittedMarker: String?) {
         guard topN > 0 else { return ([], frames.isEmpty ? nil : marker(for: frames.count)) }
         if frames.count <= topN {
             return (frames, nil)

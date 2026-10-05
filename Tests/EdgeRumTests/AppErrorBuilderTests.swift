@@ -162,11 +162,8 @@ final class AppErrorBuilderTests: XCTestCase {
     // MARK: - error.stack
 
     func testStackJoinsFramesWithNewlines() {
-        let frames = [
-            "0   EdgeRum                  0x0001  frame_a",
-            "1   EdgeRum                  0x0002  frame_b",
-            "2   EdgeRum                  0x0003  frame_c"
-        ]
+        let frames = ["EdgeRum +0x1 frame_a", "EdgeRum +0x2 frame_b", "EdgeRum +0x3 frame_c"]
+            .map { StackFrame(text: $0) }
         let attrs = AppErrorBuilder.build(
             error: NSError(domain: "x", code: 0),
             context: [:],
@@ -192,25 +189,38 @@ final class AppErrorBuilderTests: XCTestCase {
         XCTAssertNil(attrs["error.stack"])
     }
 
-    func testStackTruncationDropsTrailingFramesWhole() {
-        // 100 frames of ~80 bytes each = ~8_100 bytes > 4_096 cap.
-        let frames = (0..<100).map { String(repeating: "F", count: 80) + "_\($0)" }
-        let joined = AppErrorBuilder.truncateStack(frames, maxBytes: 4_096)
-        XCTAssertLessThanOrEqual(joined.utf8.count, 4_096)
-        // Truncation must drop trailing frames whole, not slice
-        // mid-symbol — assert the prefix is intact.
-        XCTAssertTrue(joined.hasPrefix(frames[0]))
+    func testStackOverCapSetsTruncatedBytesAndKeptImagesOnly() {
+        // 100 frames of ~84 bytes each ≈ 8_500 bytes > 4_096 cap; only
+        // the first ~48 fit, so `Late` (frames 60+) must not be listed.
+        let kept = StackImage(name: "App", uuid: "aa")
+        let late = StackImage(name: "Late", uuid: "bb")
+        let frames = (0..<100).map {
+            StackFrame(text: String(repeating: "F", count: 80) + "_\($0)",
+                       image: $0 < 60 ? kept : late)
+        }
+        let attrs = AppErrorBuilder.build(
+            error: NSError(domain: "x", code: 0), context: [:], stack: frames, debug: false
+        )
+        guard case let .string(stack)? = attrs["error.stack"],
+              case let .int(removed)? = attrs["error.stack.truncated"] else {
+            return XCTFail("error.stack + error.stack.truncated expected")
+        }
+        XCTAssertLessThanOrEqual(stack.utf8.count, AppErrorBuilder.maxStackBytes)
+        XCTAssertTrue(stack.hasPrefix(frames[0].text), "trailing frames dropped whole")
+        XCTAssertGreaterThan(removed, 0)
+        XCTAssertEqual(removed, StackFrames.join(frames).utf8.count - stack.utf8.count)
+        XCTAssertEqual(attrs["error.binary_images"],
+                       .string(#"[{"name":"App","uuid":"aa"}]"#))
     }
 
-    func testStackTruncationIsUTF8Safe() {
-        // A multi-byte UTF-8 sequence near the byte boundary must not
-        // get sliced. Frames mix ASCII + 4-byte emoji.
-        let emoji = "🛡️🚀"   // 8 bytes of UTF-8
-        let frames = (0..<200).map { "\($0) \(emoji) frame_padding_for_size" }
-        let joined = AppErrorBuilder.truncateStack(frames, maxBytes: 4_096)
-        XCTAssertNotNil(joined.data(using: .utf8),
-                        "truncated string must remain valid UTF-8")
-        XCTAssertLessThanOrEqual(joined.utf8.count, 4_096)
+    func testStackUnderCapOmitsTruncatedAndImagelessOmitsBinaryImages() {
+        let attrs = AppErrorBuilder.build(
+            error: NSError(domain: "x", code: 0), context: [:],
+            stack: [StackFrame(text: "0x1234")], debug: false
+        )
+        XCTAssertEqual(attrs["error.stack"], .string("0x1234"))
+        XCTAssertNil(attrs["error.stack.truncated"])
+        XCTAssertNil(attrs["error.binary_images"])
     }
 
     // MARK: - Cause / runtime invariants
