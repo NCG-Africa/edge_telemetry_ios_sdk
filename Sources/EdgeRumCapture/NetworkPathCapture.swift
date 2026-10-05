@@ -127,8 +127,7 @@ public enum NetworkPathCapture {
             os_unfair_lock_lock(installLock)
             let observer = sharedObserver
             os_unfair_lock_unlock(installLock)
-            guard let path = observer?.currentPath else { return }
-            NetworkPathCapture.handle(context: NetworkContext.from(path), path: path)
+            observer?.reemitCurrent()
         }
         #endif
 

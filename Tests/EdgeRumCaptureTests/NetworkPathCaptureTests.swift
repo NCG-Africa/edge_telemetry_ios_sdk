@@ -25,7 +25,7 @@ import XCTest
 import Foundation
 import Network
 import EdgeRumCore
-#if os(iOS)
+#if canImport(CoreTelephony) && os(iOS)
 import CoreTelephony
 #endif
 @testable import EdgeRumCapture
@@ -356,28 +356,35 @@ final class NetworkPathCaptureTests: XCTestCase {
         XCTAssertEqual(generations, [.string("4g"), .string("5g")])
     }
 
-    #if os(iOS)
-    /// F35: `CTServiceRadioAccessTechnologyDidChange` is wired to a
-    /// re-read of the current path through the dedupe fingerprint.
-    func test_radioNotification_reReadsPath() {
+    #if canImport(CoreTelephony) && os(iOS)
+    /// F35: `CTServiceRadioAccessTechnologyDidChange` re-reads the
+    /// current path through the dedupe fingerprint, emitting
+    /// `network_change` with no path transition.
+    func test_radioNotification_reEmitsNetworkChange() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
+        func changes() -> Int {
+            probe.calls.filter {
+                if case .event("network_change", _) = $0 { return true }
+                return false
+            }.count
+        }
+        func waitFor(_ count: Int) -> Bool {
+            let deadline = Date().addingTimeInterval(3)
+            while changes() < count && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
+            return changes() >= count
+        }
+
         NetworkPathCapture.install(debug: false)
-        // Let the monitor's first update land, then forget it so the
-        // notification-driven re-read is not deduped away.
-        let settled = expectation(description: "first path update")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { settled.fulfill() }
-        wait(for: [settled], timeout: 2)
+        XCTAssertTrue(waitFor(1), "first path update")
+        // Forget it so the re-read is not deduped away.
         NetworkPathCapture._resetDedupeFingerprintForTesting()
-        let before = probe.calls.count
 
         NotificationCenter.default.post(name: .CTServiceRadioAccessTechnologyDidChange, object: nil)
 
-        let deadline = Date().addingTimeInterval(2)
-        while probe.calls.count == before && Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        XCTAssertGreaterThan(probe.calls.count, before)
+        XCTAssertTrue(waitFor(2), "radio notification must emit network_change")
     }
     #endif
 

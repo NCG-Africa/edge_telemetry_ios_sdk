@@ -261,7 +261,8 @@ during implementation were load-bearing enough to record.
   `UIDevice.isBatteryMonitoringEnabled` is `true`; F3 does not toggle
   it on the host's behalf. Cellular `network.effectiveType` is
   reported as `"cellular"` only — `CTTelephonyNetworkInfo`-derived
-  refinement (`"4g"`/`"5g"`) lands in F8.
+  refinement (`"4g"`/`"5g"`) lands in F8. *(Superseded by ADR-026,
+  F35.)*
 - `Tests/EdgeRumContractTests/WireAssertions.swift` is the new
   reusable helper. Every transport-touching test in F4+ runs every
   envelope through `assertValidEnvelope(_:)` before further
@@ -1936,3 +1937,34 @@ W9 (#197). Choices the spec and catalogue left to the code.
 8. **No phase breakdown, no `EdgeRum.start()` test of the anchor
    position** — the ordering is structural (first statement) and
    `launchStart` is a process-lifetime static that earlier tests touch.
+
+## ADR-026 — Radio generation (F35): what `4g` means, one telephony handle, handover emits
+
+**Date:** 2026-10-05
+
+**Status:** Accepted. Supersedes ADR-003's "cellular only" note.
+
+**Context.** Tranche 10 of `docs/specs/rum-coverage-roadmap.md` (#222),
+W21 (#209). `network.effectiveType` wrote `cellular`, which is outside
+its own enum (C1/C7).
+
+**Decision.**
+
+1. **Radio, not throughput.** On a cellular path the value is the data
+   SIM's radio access technology mapped to `2g`–`5g`; nil or unmapped is
+   `unknown`, never `cellular`. `4g` means "LTE radio", not web's
+   "fast" — the Processor must not pool the two distributions
+   (PLAN-iOS §14 backend ask 9).
+2. **Mapping on raw constant strings.** `NetworkContext.generation(radio:)`
+   matches the `CTRadioAccessTechnology*` string values so the table
+   runs under macOS `swift test`; an iOS-only test pins them to the SDK
+   constants.
+3. **One process-wide `CTTelephonyNetworkInfo`.** Creating one per read is
+   costly; its read-only properties are read off the main thread.
+4. **A handover alone emits `network_change`.** The radio notification
+   re-runs the path callback on the monitor's serial queue — ordered with
+   path transitions, skipped before the first path update — and the
+   existing fingerprint (which carries `effectiveType`) dedupes. Like path
+   transitions, it is wired only when `captureNetworkChanges` is on.
+5. **Links `CoreTelephony`** (iOS + Catalyst); no privacy-manifest entry —
+   none of the APIs are on the required-reason list.

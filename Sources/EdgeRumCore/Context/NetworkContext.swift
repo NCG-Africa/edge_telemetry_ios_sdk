@@ -182,6 +182,8 @@ public final class NetworkPathObserver: @unchecked Sendable {
     private let queue: DispatchQueue
     private let lock = NSLock()
     private var _onChange: ((NetworkContext, NWPath) -> Void)?
+    /// Touched only on `queue`. Set by the first path update.
+    private var delivered = false
 
     public init(queue: DispatchQueue = DispatchQueue(label: "edge.rum.network", qos: .utility)) {
         self.monitor = NWPathMonitor()
@@ -192,6 +194,7 @@ public final class NetworkPathObserver: @unchecked Sendable {
         lock.lock(); _onChange = onChange; lock.unlock()
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
+            self.delivered = true
             self.lock.lock()
             let callback = self._onChange
             self.lock.unlock()
@@ -206,9 +209,20 @@ public final class NetworkPathObserver: @unchecked Sendable {
         lock.lock(); _onChange = nil; lock.unlock()
     }
 
-    /// The monitor's latest path, for re-reads not driven by a path
-    /// transition (F35 radio handover).
-    public var currentPath: NWPath { monitor.currentPath }
+    /// Re-run the callback with the current path — for changes the
+    /// path monitor does not see (F35 radio handover). Hops onto the
+    /// monitor's queue so it is ordered with path transitions; a no-op
+    /// until the first path update has landed.
+    public func reemitCurrent() {
+        queue.async { [weak self] in
+            guard let self, self.delivered else { return }
+            self.lock.lock()
+            let callback = self._onChange
+            self.lock.unlock()
+            let path = self.monitor.currentPath
+            callback?(NetworkContext.from(path), path)
+        }
+    }
 
     /// Synchronously snapshot the current path. Returns `.unknown`
     /// until the monitor has produced its first update.

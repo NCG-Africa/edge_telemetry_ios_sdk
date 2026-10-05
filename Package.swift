@@ -76,7 +76,7 @@ let package = Package(
         .target(
             name: "EdgeRumCore",
             path: "Sources/EdgeRumCore",
-            linkerSettings: [.linkedFramework("CoreTelephony", .when(platforms: [.iOS]))]
+            linkerSettings: [.linkedFramework("CoreTelephony", .when(platforms: [.iOS, .macCatalyst]))]
         ),
         .target(
             name: "EdgeRumCapture",
