@@ -195,9 +195,12 @@ public enum EdgeRum {
         // recorder (which immediately flushes). Skipped here for any
         // host swap-in test probe — replay only makes sense against
         // the real Recorder pipeline.
-        if config.captureNativeCrashes, Recorder.shared is Recorder {
+        if config.captureNativeCrashes, let realRecorder = Recorder.shared as? Recorder {
+            // The Recorder drops events while disabled, and replay runs
+            // before `start()` enables it — open the gate first.
+            realRecorder.setEnabled(true)
             PLCrashIntegration.replayIfNeeded(
-                recorder: Recorder.shared,
+                recorder: realRecorder,
                 sidecar: SessionSidecar(),
                 config: PLCrashIntegrationConfig(),
                 debug: config.debug
