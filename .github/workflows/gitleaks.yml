@@ -1,0 +1,43 @@
+# .github/workflows/gitleaks.yml
+#
+# Secret scanning. Runs the gitleaks CLI over the full git history on
+# every push to main, every PR, and manual dispatch. Fails the job if a
+# secret is found. Placeholder/example keys are allowlisted in
+# .gitleaks.toml, so this only fires on a real leak.
+#
+# The CLI is invoked directly (not gitleaks-action) so no organization
+# license is required.
+
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `gitleaks git` scans every commit, not just
+          # the tip.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan git history
+        run: gitleaks git --no-banner --redact --config .gitleaks.toml

@@ -46,9 +46,16 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: EdgeRumSampleApp
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
     dependencies:
       - package: EdgeRum
         product: EdgeRum
+        # EdgeRum is a dynamic SPM library — must be embedded in the app
+        # bundle or dyld can't find @rpath/EdgeRum.framework on device.
+        embed: true
+        codeSign: true
     info:
       path: EdgeRumSampleApp/Info.plist
       properties:
@@ -56,6 +63,9 @@ targets:
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
+        # Injected from Secrets.xcconfig (EDGE_RUM_API_KEY) at build time;
+        # read at runtime in AppDelegate. Never hard-code a real key here.
+        EdgeRumAPIKey: $(EDGE_RUM_API_KEY)
         UILaunchStoryboardName: ""
         UIRequiredDeviceCapabilities:
           - armv7

@@ -22,9 +22,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        // API key is injected at build time from Secrets.xcconfig
+        // (EDGE_RUM_API_KEY → Info.plist). Copy Secrets.local.xcconfig
+        // and set your real key there — it is gitignored, never committed.
+        // Falls back to the placeholder so a fresh clone still builds.
+        let apiKey = Bundle.main.object(forInfoDictionaryKey: "EdgeRumAPIKey") as? String ?? "edge_REPLACE_ME"
         var config = EdgeRumConfig(
-            apiKey: "edge_sample_replace_me",
-            endpoint: URL(string: "https://localhost/collector")!
+            apiKey: apiKey,
+            endpoint: URL(string: "https://telemetry.ncgafrica.com")!
         )
         config.appName = "EdgeRum Sample (UIKit)"
         config.appPackage = Bundle.main.bundleIdentifier

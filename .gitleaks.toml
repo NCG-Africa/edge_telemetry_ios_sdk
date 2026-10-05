@@ -1,0 +1,28 @@
+# gitleaks configuration for edge-rum-ios.
+#
+# Extends the stock ruleset and allowlists the placeholder / example
+# API keys that appear in docs, DocC, and tests. Matching is against the
+# secret value and anchored (^...$), so these exact fakes are ignored
+# while any real, high-entropy `edge_` key still trips the scanner.
+#
+# Add a new placeholder here (not a fingerprint) if a future doc/test
+# example gets flagged. Never add a real key.
+
+title = "EdgeRum gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder / example EdgeRum API keys — not real secrets"
+regexTarget = "secret"
+regexes = [
+  '''^edge_live_abc123$''',
+  '''^edge_live_abc$''',
+  '''^edge_sample_replace_me$''',
+  '''^edge_contract_test$''',
+  '''^edge_test_abc$''',
+  '''^edge_test$''',
+  '''^edge_dev_abc$''',
+  '''^edge_REPLACE_ME$''',
+]
