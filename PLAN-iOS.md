@@ -241,6 +241,8 @@ when `debug=true`, README, doc comments) follow the same firewall.
 public enum EdgeRum {
     public static func start(_ config: EdgeRumConfig)
     public static func identify(_ user: UserContext)
+    public static func clearUser()          // F27 — drop identify() profile
+    public static func resetIdentity()      // F27 — new device.id + user.id
     public static func track(_ name: String,
                              attributes: [String: AttributeValue]? = nil)
     public static func trackScreen(_ name: String,
@@ -280,6 +282,7 @@ public struct EdgeRumConfig {
     public var captureScreens: Bool = true
     public var captureHTTP: Bool = true
     public var captureTaps: Bool = true
+    public var captureButtonTitles: Bool = false  // F27 — opt-in tap label
     public var captureRenderingPerformance: Bool = true
     public var debug: Bool = false
 

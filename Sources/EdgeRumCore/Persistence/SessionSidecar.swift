@@ -111,7 +111,10 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
     public func read() -> [String: AttributeValue]? {
         guard let url else { return nil }
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? Self.decoder.decode([String: AttributeValue].self, from: data)
+        // Filtered on read too: a file written by a pre-F27 build may
+        // still hold host identity keys.
+        return (try? Self.decoder.decode([String: AttributeValue].self, from: data))?
+            .filter { Self.mirroredKeys.contains($0.key) }
     }
 
     private func filter(_ bag: AttributeBag) -> [String: AttributeValue] {

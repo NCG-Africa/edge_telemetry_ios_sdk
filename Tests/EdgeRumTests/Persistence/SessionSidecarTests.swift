@@ -76,6 +76,17 @@ final class SessionSidecarTests: XCTestCase {
         XCTAssertNil(read?["user.phone"])
     }
 
+    func testReadDropsHostIdentityFromLegacyFile() throws {
+        let sidecar = makeSidecar()
+        var bag = AttributeBag()
+        bag.set("user.id", .string("user_1_bbbbbbbbbbbbbbbb"))
+        sidecar.write(snapshot: bag)
+        let url = tempDir.appendingPathComponent("last-session.json")
+        try Data(#"{"user.id":"user_1_bbbbbbbbbbbbbbbb","user.email":"a@b.com"}"#.utf8).write(to: url)
+
+        XCTAssertEqual(sidecar.read(), ["user.id": .string("user_1_bbbbbbbbbbbbbbbb")])
+    }
+
     // MARK: Overwrite semantics
 
     func testSecondWriteReplacesPreviousFile() throws {

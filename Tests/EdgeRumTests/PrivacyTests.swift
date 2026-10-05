@@ -30,6 +30,8 @@ final class PrivacyTests: XCTestCase {
         super.tearDown()
     }
 
+    private var identityProvider: IdentityProvider!
+
     private func makeRecorder() -> (Recorder, RecordingTransportSink, SessionSidecar) {
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
         let sink = RecordingTransportSink()
@@ -46,12 +48,13 @@ final class PrivacyTests: XCTestCase {
             endpoint: URL(string: "https://collect.example.com")!,
             batchSize: 1_000
         ))
+        identityProvider = IdentityProvider(
+            keychain: InMemoryKeychainStore(),
+            defaults: InMemoryUserDefaultsStore(),
+            clock: clock
+        )
         recorder.installPersistedStores(
-            identityProvider: IdentityProvider(
-                keychain: InMemoryKeychainStore(),
-                defaults: InMemoryUserDefaultsStore(),
-                clock: clock
-            ),
+            identityProvider: identityProvider,
             sessionStore: InMemorySessionStore(),
             sidecar: sidecar
         )
@@ -106,6 +109,14 @@ final class PrivacyTests: XCTestCase {
         }
         XCTAssertEqual(sidecar.read()?["device.id"], .string(deviceId))
         XCTAssertEqual(sidecar.read()?["user.id"], .string(userId))
+
+        // Persisted, so a relaunch resolves the new ids.
+        let persisted = identityProvider.resolve()
+        XCTAssertEqual(persisted.deviceId, deviceId)
+        XCTAssertEqual(persisted.userId, userId)
+
+        // Documented: the session is not rotated (ADR-019).
+        XCTAssertEqual(after.attributes["session.id"], before.attributes["session.id"])
     }
 
     // MARK: (c) sidecar
