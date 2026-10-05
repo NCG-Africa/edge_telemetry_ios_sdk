@@ -137,6 +137,8 @@ shipped before the OS suspends the process.
 `network_change` events fire on every `NWPathMonitor` transition, carrying
 `network.type`, `network.effectiveType`, `network.expensive`,
 `network.constrained`, and (iOS 14.2+) `network.unsatisfied_reason`.
+On cellular, `network.effectiveType` is the radio generation (`2g`–`5g`,
+or `unknown`), and a radio handover alone also fires `network_change`.
 
 Opt out via ``EdgeRumConfig/captureLifecycle`` and
 ``EdgeRumConfig/captureNetworkChanges``.

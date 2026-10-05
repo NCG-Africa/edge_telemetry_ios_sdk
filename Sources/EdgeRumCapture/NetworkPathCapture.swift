@@ -16,6 +16,11 @@
 //        - network.unsatisfied_reason (iOS 14.2+, omitted on 14.0/14.1
 //          and omitted when path is satisfied)
 //
+// F35: on iOS, `CTServiceRadioAccessTechnologyDidChange` re-reads the
+// current path through the same handler, so a radio-only handover
+// (LTE → NR) re-emits `network_change` via the dedupe fingerprint,
+// which already carries `effectiveType`.
+//
 // Duplicate transitions (same NetworkType + effectiveType + flags +
 // unsatisfied reason as the last emission) are dropped so a chatty
 // monitor doesn't flood the wire.
@@ -34,6 +39,9 @@
 import Foundation
 import Network
 import os.log
+#if canImport(CoreTelephony) && os(iOS)
+import CoreTelephony
+#endif
 #if canImport(EdgeRumCore)
 import EdgeRumCore
 #endif
@@ -108,6 +116,20 @@ public enum NetworkPathCapture {
         observer.start { context, path in
             NetworkPathCapture.handle(context: context, path: path)
         }
+
+        #if canImport(CoreTelephony) && os(iOS)
+        // Never removed: install runs once per process.
+        _ = NotificationCenter.default.addObserver(
+            forName: .CTServiceRadioAccessTechnologyDidChange,
+            object: nil,
+            queue: nil
+        ) { _ in
+            os_unfair_lock_lock(installLock)
+            let observer = sharedObserver
+            os_unfair_lock_unlock(installLock)
+            observer?.reemitCurrent()
+        }
+        #endif
 
         if debug {
             os_log(

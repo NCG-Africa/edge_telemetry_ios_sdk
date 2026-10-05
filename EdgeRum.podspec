@@ -74,6 +74,7 @@ Pod::Spec.new do |s|
   # targets in Package.swift (modulo the OTel bridge, see header note).
   s.subspec 'Internal-Core' do |ss|
     ss.source_files = 'Sources/EdgeRumCore/**/*.swift'
+    ss.ios.frameworks = 'CoreTelephony'  # F35 radio generation
   end
 
   s.subspec 'Internal-Capture' do |ss|

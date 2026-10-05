@@ -214,7 +214,7 @@ required identity attributes.
 | Key                       | Type   | Required | Status | Source                       |
 |---------------------------|--------|----------|--------|------------------------------|
 | `network.type`            | string | yes      | v1.0   | `NWPathMonitor`              |
-| `network.effectiveType`   | string | no       | v1.0   | Best-effort (`4g`, `5g`, …)  |
+| `network.effectiveType`   | string | no       | v1.0   | `CTTelephonyNetworkInfo` radio (`2g`–`5g`) or path (`wifi`, `wired`, `unknown`) |
 | `network.expensive`       | bool   | no       | v1.0+  | `NWPath.isExpensive`         |
 | `network.constrained`     | bool   | no       | v1.0+  | `NWPath.isConstrained`       |
 | `network.interface`       | string | no       | v1.0+  | `NWPath.availableInterfaces` |

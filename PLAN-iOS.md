@@ -1496,7 +1496,11 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
 8. **`User-Agent` header.** Acceptable for log triage purposes.
 
 9. **`network.effectiveType`.** iOS cannot reliably emit the same web
-   set. Confirm dashboards tolerate `"unknown"`.
+   set. Confirm dashboards tolerate `"unknown"`. From F35 (#222) a
+   cellular path reports the **radio** generation (`2g`–`5g`), never
+   `"cellular"`; `"wired"` is a member. `4g` on iOS means "LTE radio",
+   not web's throughput estimate — do not pool the distributions
+   (ADR-026).
 
 10. **`device.batteryLevel = -1.0`** when battery monitoring is off
     (simulator). Forwarded as-is.
