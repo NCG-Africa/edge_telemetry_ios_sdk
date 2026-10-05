@@ -29,6 +29,7 @@ final class RecorderTests: XCTestCase {
             transport: sink,
             sdkVersion: "1.0.0"
         )
+        recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         recorder.configure(RecorderConfig(
             apiKey: "edge_test_abc",
             endpoint: URL(string: "https://collect.example.com")!,
@@ -164,6 +165,7 @@ final class RecorderTests: XCTestCase {
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
         let sink = RecordingTransportSink()
         let recorder = Recorder(clock: clock, transport: sink, sdkVersion: "1.0.0")
+        recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         recorder.configure(RecorderConfig(
             apiKey: "edge_test",
             endpoint: URL(string: "https://collect.example.com")!,

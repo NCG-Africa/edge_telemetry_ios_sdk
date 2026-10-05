@@ -33,6 +33,7 @@ final class PerformanceMetricsWireConformanceTests: XCTestCase {
             transport: sink,
             sdkVersion: "1.0.0"
         )
+        recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         recorder.configure(RecorderConfig(
             apiKey: "edge_test_abc",
             endpoint: URL(string: "https://collect.example.com")!,

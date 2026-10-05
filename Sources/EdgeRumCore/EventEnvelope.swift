@@ -8,6 +8,7 @@
 //       "timestamp": "<ISO 8601 + fractional seconds>",
 //       "location": "City/Country",          // optional, omitted when nil
 //       "batch_size": <events.count>,
+//       "sdk.thread_time_ms": <Int>,         // optional, omitted when nil
 //       "events": [ ... ]
 //     }
 //
@@ -35,13 +36,17 @@ public struct EventEnvelope: Sendable, Encodable {
     public let timestamp: Date
     public let location: String?
     public let batchSize: Int
+    /// Cumulative, session-scoped caller-thread wall-time (ms) spent
+    /// inside the Recorder ingress. SDK self-cost; never a delta.
+    public let sdkThreadTimeMs: Int?
     public let events: [Event]
 
-    public init(timestamp: Date, location: String?, events: [Event]) {
+    public init(timestamp: Date, location: String?, events: [Event], sdkThreadTimeMs: Int? = nil) {
         self.type = "telemetry_batch"
         self.timestamp = timestamp
         self.location = location
         self.batchSize = events.count
+        self.sdkThreadTimeMs = sdkThreadTimeMs
         self.events = events
     }
 
@@ -50,6 +55,7 @@ public struct EventEnvelope: Sendable, Encodable {
         case timestamp
         case location
         case batchSize = "batch_size"
+        case sdkThreadTimeMs = "sdk.thread_time_ms"
         case events
     }
 
@@ -59,6 +65,7 @@ public struct EventEnvelope: Sendable, Encodable {
         try c.encode(WireDateFormatter.string(from: timestamp), forKey: .timestamp)
         try c.encodeIfPresent(location, forKey: .location)
         try c.encode(batchSize, forKey: .batchSize)
+        try c.encodeIfPresent(sdkThreadTimeMs, forKey: .sdkThreadTimeMs)
         try c.encode(events, forKey: .events)
     }
 }
