@@ -89,6 +89,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     // MARK: Stored state
 
     private let stateLock = NSLock()
+    private let sidecarLock = NSLock()
     private let queue: DispatchQueue
     private let log = OSLog(subsystem: "com.edge.rum", category: "Recorder")
 
@@ -114,6 +115,13 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// re-touch the session manager (which would recurse).
     private var _insideRotationEmission: Bool = false
 
+    /// `sdk.thread_time_ms` accumulator — caller-thread wall-time spent
+    /// inside `recordEvent` / `recordPerformance` for the current
+    /// session. Reset at every session boundary.
+    // ponytail: measures the two ingress points only; setUser/configure
+    // cost is outside it. Widen with a reentrancy-aware scope if needed.
+    private var _threadTimeNs: UInt64 = 0
+
     // MARK: Init
 
     public init(
@@ -125,7 +133,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         contextProvider: ContextProvider? = nil,
         sdkVersion: String = "0.0.0",
         identityProvider: IdentityProvider? = nil,
-        sidecar: SessionSidecar? = nil
+        sidecar: SessionSidecarWriting? = nil
     ) {
         self._clock = clock
         self.queue = DispatchQueue(label: "edge.rum.recorder", qos: .utility)
@@ -169,7 +177,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// Optional sidecar that mirrors session + identity to a file the
     /// crash backend (F14) reads on next launch. F4 ships the writer;
     /// the reader lives in `EdgeRumCrash`.
-    private var sidecar: SessionSidecar?
+    private var sidecar: SessionSidecarWriting?
 
     /// Production wiring: swap the in-memory IdentityProvider / session
     /// store for Keychain + UserDefaults-backed ones. Called once by
@@ -178,7 +186,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     public func installPersistedStores(
         identityProvider: IdentityProvider,
         sessionStore: SessionStore,
-        sidecar: SessionSidecar?
+        sidecar: SessionSidecarWriting?
     ) {
         let snapshot = identityProvider.resolve()
         let revivedManager = SessionManager(
@@ -197,7 +205,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshUser(UserContextSnapshot(id: snapshot.userId))
         context.refreshSession(SessionContextSnapshot(session))
 
-        sidecar?.write(snapshot: context.snapshot())
+        writeSidecar()
     }
 
     /// F5 production wiring: swap the in-memory `NoopTransportSink` for
@@ -281,8 +289,13 @@ public final class Recorder: Recording, @unchecked Sendable {
 
         // Rotate to a fresh session — `start()` is the lifecycle
         // boundary at which a new session id is born.
+        let priorSessionId = context.currentSession().id
         let session = sessionManager.touch().state
+        if session.id != priorSessionId {
+            stateLock.lock(); _threadTimeNs = 0; stateLock.unlock()
+        }
         context.refreshSession(SessionContextSnapshot(session))
+        writeSidecar()
 
         // Emit `session.started`. This bypasses the sampler (forced
         // emit) so it always lands in the next batch.
@@ -317,6 +330,8 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
 
     public func recordEvent(name: String, attributes: [String: AttributeValue]) {
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        defer { addThreadTime(since: t0) }
         guard Self.allowedEventNames.contains(name) else {
             stateLock.lock()
             let debug = _config?.debug ?? false
@@ -353,6 +368,8 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
 
     public func recordPerformance(name: String, attributes: [String: AttributeValue]) {
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        defer { addThreadTime(since: t0) }
         bumpLastActiveAndEmitRotationIfNeeded()
         stateLock.lock()
         let currentSampler = self.sampler
@@ -384,6 +401,7 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     public func setUser(_ user: RecorderUser) {
         context.setUser(user)
+        writeSidecar()
         // Emit `user.profile.update` with the keys the host supplied.
         // The SDK-owned `user.id` is already part of every event via
         // the context bag — no need to duplicate it here.
@@ -407,6 +425,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         _buffer.removeAll(keepingCapacity: true)
         let location = _config?.location
         let currentTransport = transport
+        let threadTimeMs = Int(_threadTimeNs / 1_000_000)
         stateLock.unlock()
 
         guard !events.isEmpty else { return }
@@ -415,7 +434,8 @@ public final class Recorder: Recording, @unchecked Sendable {
             events: events,
             context: context.snapshot(),
             location: location,
-            flushTime: clock.now
+            flushTime: clock.now,
+            sdkThreadTimeMs: threadTimeMs
         )
         currentTransport.send(envelope, reason: reason)
     }
@@ -460,11 +480,29 @@ public final class Recorder: Recording, @unchecked Sendable {
         sessionManager.incrementSequence()
         if let state = sessionManager.currentState() {
             context.refreshSession(SessionContextSnapshot(state))
-            sidecar?.write(snapshot: context.snapshot())
+            writeSidecar()
         }
     }
 
     // MARK: Internals
+
+    /// Mirror identity to the crash sidecar. Called only from the five
+    /// identity-mutation sites: `installPersistedStores`, `start()`,
+    /// `setUser`, idle rotation, `didAckBatch`.
+    /// Snapshot and write under one lock so concurrent sites (ACK on
+    /// the transport thread vs `setUser` on the caller) cannot land a
+    /// stale snapshot last.
+    private func writeSidecar() {
+        stateLock.lock(); let sidecar = self.sidecar; stateLock.unlock()
+        guard let sidecar else { return }
+        sidecarLock.lock(); defer { sidecarLock.unlock() }
+        sidecar.write(snapshot: context.snapshot())
+    }
+
+    private func addThreadTime(since t0: UInt64) {
+        let elapsed = DispatchTime.now().uptimeNanoseconds &- t0
+        stateLock.lock(); _threadTimeNs &+= elapsed; stateLock.unlock()
+    }
 
     /// Update the session's `lastActiveAt` to "now" and, if the touch
     /// crossed the 30-min idle threshold, emit the
@@ -513,7 +551,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         finalizedAttrs["session.rotation"] = .string("idle")
         recordEventInternal(name: "session.finalized", attributes: finalizedAttrs)
 
+        // Reset after `session.finalized` flushed, so the prior
+        // session's last envelope carries its own total.
+        stateLock.lock(); _threadTimeNs = 0; stateLock.unlock()
         context.refreshSession(newSnapshot)
+        writeSidecar()
 
         recordEventInternal(name: "session.started", attributes: ["session.rotation": .string("idle")])
     }
@@ -529,14 +571,17 @@ public final class Recorder: Recording, @unchecked Sendable {
         }
     }
 
+    /// Single choke point for every emission. Never writes the sidecar
+    /// (O1, #212) — identity changes only at the mutation sites that
+    /// call `writeSidecar()`.
     private func enqueue(_ event: Event) {
         stateLock.lock()
+        // Consent guard: `disable()` silences every emitter at once.
+        guard _enabled else { stateLock.unlock(); return }
         _buffer.append(event)
         let count = _buffer.count
         let cap = _config?.batchSize ?? 30
-        let sidecar = self.sidecar
         stateLock.unlock()
-        sidecar?.write(snapshot: context.snapshot())
         if count >= cap {
             flush(reason: .batchSize)
         }

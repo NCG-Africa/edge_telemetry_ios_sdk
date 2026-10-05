@@ -1,7 +1,8 @@
 // Sources/EdgeRumCore/Persistence/SessionSidecar.swift
 //
 // Mirrors the active session + identity attributes to
-// `Library/Caches/edge-rum/last-session.json` on every `enqueue`. The
+// `Library/Caches/edge-rum/last-session.json` at each identity
+// mutation (init, `setUser`, session rotation, batch ACK). The
 // crash backend (F14, `EdgeRumCrash`) reads this file on next launch
 // when a crash report is pending, so the replayed `app.crash` event
 // carries the *prior* session's identity rather than the freshly
@@ -82,12 +83,15 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         self.log = log
     }
 
+    /// Serialized under `lock` so concurrent mutation sites cannot
+    /// interleave directory creation and the atomic replace.
     public func write(snapshot: AttributeBag) {
         guard let url else { return }
 
         let mirrored = filter(snapshot)
         guard !mirrored.isEmpty else { return }
 
+        lock.lock(); defer { lock.unlock() }
         do {
             try ensureDirectory(for: url)
             let data = try Self.encoder.encode(mirrored)
@@ -121,8 +125,8 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         return out
     }
 
+    /// Caller holds `lock`.
     private func ensureDirectory(for url: URL) throws {
-        lock.lock(); defer { lock.unlock() }
         if directoryEnsured { return }
         let dir = url.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: dir.path) {

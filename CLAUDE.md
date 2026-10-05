@@ -134,6 +134,9 @@ key, so the SDK does **not** send it.
   `resolveLocation == true`.
 - `batch_size`: integer equal to `events.count` — included for parity
   with web/Android.
+- `sdk.thread_time_ms`: integer, cumulative caller-thread wall-time (ms)
+  inside the Recorder ingress for the current session. iOS-only, additive
+  (#212).
 - `events`: array of event and metric items.
 
 ### Required identity attributes on every event
@@ -636,8 +639,10 @@ its hex section is 128 bits and breaks the format.
 **Crash sidecar**
 
 `Library/Caches/edge-rum/last-session.json` mirrors the current
-`session.id`/`session.start_time`/`session.sequence`/`user.*`/`device.id`
-on every event. PLCrashReporter replay reads it on next launch so the
+`session.id`/`session.start_time`/`session.sequence`/`user.*`/`device.id`.
+It is written only at identity mutations (`installPersistedStores`,
+`start()`, `setUser`, idle rotation, batch ACK) — **never** from
+`Recorder.enqueue` (#212). PLCrashReporter replay reads it on next launch so the
 emitted `app.crash` event carries the **previous** session's identity,
 not the current one.
 

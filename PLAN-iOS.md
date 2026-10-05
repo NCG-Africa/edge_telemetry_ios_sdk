@@ -2105,6 +2105,7 @@ crash sidecar. **Status.** `v1.0`. **Refs.** §6.7, §8.4.
 - Wire `Recorder.recordEvent` to mirror identity + current screen into `Library/Caches/edge-rum/last-session.json`.
 
 **Acceptance.** After every event, sidecar JSON contains current `session.id`.
+*(Superseded by #212: the write moved from every event to the identity-mutation sites; `HotPathTests` pins both directions.)*
 
 ##### T14.3 — Replay path `[M3]`
 - On `start()`, call `PLCrashIntegration.replayIfNeeded()` before sampler install.

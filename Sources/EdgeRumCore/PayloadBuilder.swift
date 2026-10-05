@@ -28,11 +28,13 @@ public struct PayloadBuilder: Sendable {
     ///     `EdgeRumConfig.location`. Omitted from the envelope when
     ///     `nil`.
     ///   - flushTime: stamped as the envelope `timestamp`.
+    ///   - sdkThreadTimeMs: envelope `sdk.thread_time_ms`; omitted when `nil`.
     public func build(
         events: [Event],
         context: AttributeBag,
         location: String?,
-        flushTime: Date
+        flushTime: Date,
+        sdkThreadTimeMs: Int? = nil
     ) -> EventEnvelope {
         let enriched = events.map { event -> Event in
             // Context first, event attrs overlaid second → event wins.
@@ -42,7 +44,8 @@ public struct PayloadBuilder: Sendable {
         return EventEnvelope(
             timestamp: flushTime,
             location: location,
-            events: enriched
+            events: enriched,
+            sdkThreadTimeMs: sdkThreadTimeMs
         )
     }
 }
