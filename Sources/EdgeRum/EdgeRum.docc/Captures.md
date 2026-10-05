@@ -143,10 +143,14 @@ Opt out via ``EdgeRumConfig/captureLifecycle`` and
 
 ## Page load
 
-One `page_load` event per process — measured from the SDK's earliest
-observable launch instant to the first `CADisplayLink` tick after the
-app reaches `.active`. On iOS 15+ the event reports prewarmed launches
-via `page_load.prewarmed`.
+One `page_load` event per process. `page_load.duration_ms` runs from
+the first line of ``EdgeRum/start(_:)`` to the first `CADisplayLink`
+tick after the app reaches `.active`, on a monotonic clock; it is
+omitted (never `0`) if it cannot be read. `launch.pre_sdk_duration_ms`
+is the time from process start to that first line — everything before
+the SDK could observe — so the two sum to time to first frame. On
+iOS 15+ the event reports prewarmed launches via `page_load.prewarmed`,
+and a prewarmed launch omits `launch.pre_sdk_duration_ms`.
 
 Opt out via ``EdgeRumConfig/capturePageLoad``.
 

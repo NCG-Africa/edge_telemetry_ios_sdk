@@ -192,7 +192,7 @@ All integers except `sdk.capabilities_failed` and `sdk.start_replayed_crash`. `s
 | `sdk.queue_depth_max` | number (int) | process | required | none | iOS-only | **+T7.** High-water mark (monotonic), not a gauge — answers "did it come close to the cap?" |
 | `sdk.storage_bytes_max` | number (int) | process | required | none | iOS-only | **+T7.** High-water mark of on-disk footprint; needs a size walk `OfflineQueue.orderedFiles()` does not do today |
 | `sdk.capabilities_failed` | string | process | optional | none | iOS-only | **+T7.** Comma-joined, one-shot: the whole subsystem is blind for the process, so it rides every envelope of the process (ADR-023). Bounded members: `interaction_swizzle`, `http_swizzle`, `crash_reporter`, `hang_observer`, `offline_queue`, `keychain`. `keychain` also carries `deviceIdFromFallback` ([W22 Doc-truth][W22] #6) — `device.id` durability degraded. Absent when nothing failed |
-| `sdk.start_duration_ms` | number (int) | session | required | none | iOS-only | **+T9 launch.** Duration of the `EdgeRum.start()` call only — not process-start-to-ready (C4's mistake one level down). A slice of `sdk.thread_time_ms` |
+| `sdk.start_duration_ms` | number (int) | session | required | none | iOS-only | **+T9 launch.** Duration of the `EdgeRum.start()` call only — not process-start-to-ready (C4's mistake one level down). Monotonic; omitted if unreadable. Set at the end of `start()`, so the crash-replay envelope flushed *inside* `start()` lacks both T9 keys; every later envelope of the process carries them, rotation included (ADR-025) |
 | `sdk.start_replayed_crash` | bool | session | required | none | iOS-only | **+T9 launch.** Separates the bimodal start-duration population: crash-replay launches do disk, parse and network work no other launch does |
 
 **Unit of cost:** context keys cost one copy per *event* in the batch (merged into each), riders
@@ -407,7 +407,7 @@ the value at death. A crash inside the coalescing window lands without it.
 | `page_load.cold_start` | bool | `page_load` | event | required | — | none | iOS-only | **−T4 breaking batch.** It is `!prewarmed` (`PageLoadCapture.swift:293-294`) — a warm launch reports `true` (C5). Warm vs cold is not observable in-process (§8) |
 | `page_load.prewarmed` | bool | `page_load` | event | required | — | none | iOS-only | Also says which anchor trace v3 §4.1 used |
 | `page_load.source` | string | `page_load` | event | required | bounded enum: `displaylink` | none | iOS-only | Constant |
-| `launch.pre_sdk_duration_ms` | number (int) | `page_load` | event | optional | numeric | none | iOS-only | **+T9 launch.** `kinfo_proc.p_starttime` → `launchStart`: dyld, pre-main, static initialisers and host work before the SDK — the dark window. **Absent when `prewarmed`** (the window is zero by construction and meaningless by content). Reuses trace v3's one `sysctl` |
+| `launch.pre_sdk_duration_ms` | number (int) | `page_load` | event | optional | numeric | none | iOS-only | **+T9 launch.** `kinfo_proc.p_starttime` → `launchStart`: dyld, pre-main, static initialisers and host work before the SDK — the dark window. **Absent when `prewarmed`** (the window is zero by construction and meaningless by content), when `sysctl` fails, or when the wall clock ran backwards. Wall-clock (`p_starttime` has no monotonic twin), read at first frame — ADR-025. T9 introduces the one `KERN_PROC_PID` `sysctl` (`PageLoadCapture.processStartTime()`); trace v3's launch root reuses it |
 
 ### 5.5 `navigation` and `screen.duration`
 

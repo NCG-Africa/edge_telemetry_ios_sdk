@@ -251,6 +251,60 @@ final class PageLoadCaptureTests: XCTestCase {
         XCTAssertEqual(attrs["page_load.prewarmed"], .bool(true))
     }
 
+    // MARK: F34 — monotonic duration, pre-SDK window
+
+    func test_elapsedMs_backwardsOrUnreadable_isOmitted() {
+        XCTAssertNil(PageLoadCapture.elapsedMs(fromNs: 2_000_000_000, toNs: 1_000_000_000), "backwards jump")
+        XCTAssertNil(PageLoadCapture.elapsedMs(fromNs: 0, toNs: 1_000_000_000))
+        XCTAssertNil(PageLoadCapture.elapsedMs(fromNs: 1_000_000_000, toNs: 0))
+        XCTAssertEqual(PageLoadCapture.elapsedMs(fromNs: 1_000_000_000, toNs: 1_250_400_000), 250)
+    }
+
+    func test_makeAttributes_nilDuration_omitsKey() {
+        let attrs = PageLoadCapture.makeAttributes(durationMs: nil, prewarmed: false)
+        XCTAssertNil(attrs["page_load.duration_ms"])
+        XCTAssertNil(attrs["launch.pre_sdk_duration_ms"])
+        XCTAssertEqual(attrs["page_load.prewarmed"], .bool(false))
+    }
+
+    func test_preSdkDuration_prewarmed_isOmitted() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        XCTAssertNil(PageLoadCapture.preSdkDurationMs(processStart: start, launchStart: start + 0.4, prewarmed: true))
+        XCTAssertNil(PageLoadCapture.preSdkDurationMs(processStart: nil, launchStart: start, prewarmed: false))
+        XCTAssertNil(PageLoadCapture.preSdkDurationMs(processStart: start, launchStart: start - 1, prewarmed: false),
+                     "wall clock ran backwards")
+    }
+
+    func test_ttffIdentity_preSdkPlusDurationIsProcessStartToFirstFrame() {
+        let processStart = Date(timeIntervalSince1970: 1_717_234_876.000)
+        let launchStart = processStart + 0.312
+        let launchNs: UInt64 = 5_000_000_000
+        let frameNs = launchNs + 845_000_000
+        let preSdk = PageLoadCapture.preSdkDurationMs(processStart: processStart, launchStart: launchStart, prewarmed: false)
+        let duration = PageLoadCapture.elapsedMs(fromNs: launchNs, toNs: frameNs)
+        XCTAssertEqual((preSdk ?? 0) + (duration ?? 0), 1_157)
+    }
+
+    func test_emit_carriesPreSdkDuration() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        PageLoadCapture.emit(durationMs: 10, prewarmed: false, preSdkDurationMs: 300)
+        guard case let .event(_, attrs) = probe.calls.first else { return XCTFail("Expected event call") }
+        XCTAssertEqual(attrs["launch.pre_sdk_duration_ms"], .int(300))
+    }
+
+    func test_processStartTime_isReadableAndPrecedesLaunchStart() throws {
+        let start = try XCTUnwrap(PageLoadCapture.processStartTime())
+        XCTAssertLessThanOrEqual(start, Date())
+        XCTAssertGreaterThan(start, Date(timeIntervalSinceNow: -86_400))
+    }
+
+    func test_launchStartNs_isMonotonicReading() {
+        PageLoadCapture.touchLaunchStart()
+        XCTAssertGreaterThan(PageLoadCapture.launchStartNs, 0)
+        XCTAssertLessThanOrEqual(PageLoadCapture.launchStartNs, PageLoadCapture.monotonicNs())
+    }
+
     // MARK: Launch-start anchor
 
     func test_touchLaunchStart_returnsCurrentAnchor() {
