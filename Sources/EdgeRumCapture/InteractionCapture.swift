@@ -91,6 +91,10 @@ public enum InteractionCapture {
     /// title ship as `interaction.name`. Set by `install(...)`.
     nonisolated(unsafe) private static var _captureButtonTitles: Bool = false
 
+    /// F30: `false` keeps the swizzle for motion-window arming only
+    /// (`captureTaps` off, frame capture on). Set by `install(...)`.
+    nonisolated(unsafe) private static var _emitTaps: Bool = true
+
     /// `true` once `install(...)` has performed the IMP swap. Read by
     /// tests and by the `EdgeRum.start()` opt-out path. Module-internal
     /// — never used by consumers.
@@ -115,9 +119,16 @@ public enum InteractionCapture {
     ///   `false` (production default) the install is silent.
     /// - Parameter captureButtonTitles: F27 opt-in — fall back to a
     ///   button's rendered title when it has no `accessibilityIdentifier`.
-    public static func install(debug: Bool = false, captureButtonTitles: Bool = false) {
+    /// - Parameter emitTaps: F30 — `false` installs the swizzle only to
+    ///   arm `FrameSampler` motion windows; no `user.interaction` ships.
+    public static func install(
+        debug: Bool = false,
+        captureButtonTitles: Bool = false,
+        emitTaps: Bool = true
+    ) {
         os_unfair_lock_lock(installLock)
         _captureButtonTitles = captureButtonTitles
+        _emitTaps = emitTaps
         os_unfair_lock_unlock(installLock)
         #if canImport(UIKit) && os(iOS)
         if Thread.isMainThread {
@@ -182,11 +193,18 @@ public enum InteractionCapture {
         guard event.type == .touches else { return }
         guard let touches = event.allTouches, !touches.isEmpty else { return }
 
+        // F30: touch began/ended arms a frame motion window.
+        if touches.contains(where: { $0.phase == .began || $0.phase == .ended }) {
+            FrameSampler.noteMotion()
+        }
+
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
         os_unfair_lock_lock(installLock)
         let captureButtonTitles = _captureButtonTitles
+        let emitTaps = _emitTaps
         os_unfair_lock_unlock(installLock)
+        guard emitTaps else { return }
 
         for touch in touches where touch.phase == .ended {
             guard let hitView = touch.view else { continue }

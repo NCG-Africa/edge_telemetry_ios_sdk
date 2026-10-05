@@ -164,6 +164,67 @@ final class MemorySamplerTests: XCTestCase {
         XCTAssertEqual(probe.calls.count, 0)
     }
 
+    // MARK: F30 — omit on failed read
+
+    func test_makeAttributes_failedReadOmitsKeys_neverZero() {
+        let attrs = MemorySampler.makeAttributes(
+            rssBytes: nil, vszBytes: nil, footprintBytes: 100 * 1024, pressure: .normal
+        )
+        XCTAssertNil(attrs["memory.resident_kb"])
+        XCTAssertNil(attrs["memory.virtual_kb"])
+        XCTAssertNil(attrs["value"])
+        XCTAssertEqual(attrs["memory.footprint_kb"], .int(100))
+    }
+
+    // MARK: F30 — driver tick: last pressure, gate, cpu_usage
+
+    func test_tickSeconds_is30() {
+        XCTAssertEqual(MemorySampler.tickSeconds, 30)
+    }
+
+    func test_tick_carriesLastObservedPressure_onEverySample() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        let driver = MemorySampler.Driver(debug: false, gate: { true })
+        driver.pressureChanged(.warning)
+        driver.tick()
+        driver.tick()
+        let pressures = probe.calls.compactMap { call -> AttributeValue? in
+            guard case let .performance("memory_usage", attrs) = call else { return nil }
+            return attrs["memory.pressure"]
+        }
+        XCTAssertEqual(pressures, [.string("warning"), .string("warning"), .string("warning")])
+    }
+
+    func test_tick_emitsCpuUsagePercent() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        let driver = MemorySampler.Driver(debug: false, gate: { true })
+        var x = 0.0
+        for i in 0..<200_000 { x += Double(i).squareRoot() }  // burn a little CPU
+        XCTAssertGreaterThan(x, 0)
+        driver.tick()
+        let cpu = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            guard case let .performance("cpu_usage", attrs) = call else { return nil }
+            return attrs
+        }
+        XCTAssertEqual(cpu.count, 1)
+        guard case let .double(percent)? = cpu.first?["value"] else {
+            return XCTFail("cpu_usage value missing: \(cpu)")
+        }
+        XCTAssertGreaterThanOrEqual(percent, 0)
+    }
+
+    func test_tick_gateClosed_emitsNothing_butPressureStillEmits() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        let driver = MemorySampler.Driver(debug: false, gate: { false })
+        driver.tick()
+        XCTAssertEqual(probe.calls.count, 0)
+        driver.pressureChanged(.critical)
+        XCTAssertEqual(probe.calls.count, 1, "pressure events are exempt from the gate")
+    }
+
     // MARK: Live mach read
 
     func test_readMachStats_returnsPlausibleResidentSize() {
@@ -171,10 +232,10 @@ final class MemorySamplerTests: XCTestCase {
         // The unit-test process always has > 1 MiB resident on Darwin.
         // Allowing zero would silently mask a busted task_info call.
         #if canImport(Darwin)
-        XCTAssertGreaterThan(stats.rss, 1024 * 1024,
+        XCTAssertGreaterThan(stats.rss ?? 0, 1024 * 1024,
                              "expected > 1 MiB resident on the test host, got \(stats.rss)")
         #else
-        XCTAssertEqual(stats.rss, 0)
+        XCTAssertNil(stats.rss)
         #endif
     }
 

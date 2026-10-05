@@ -258,8 +258,9 @@ and logged when `debug == true`.
 | NSException                                  | `app.crash` (runtime=native; forced, flushes)    | `EdgeRumCrash/PLCrashIntegration.swift` (replayed on next launch)             |
 | Mach signal (SIGSEGV/SIGABRT/SIGBUS/SIGILL)  | `app.crash` (runtime=native; forced, flushes)    | same file                                                                     |
 | Main-thread hang                             | `app.hang` (sampled, normal flush)               | `EdgeRumCrash/HangDetector.swift` (`CFRunLoopObserver` watchdog)              |
-| Frame render time                            | (`metric`, `metricName` = `"frame_render_time"`) | `EdgeRumCapture/FrameSampler.swift` (`CADisplayLink`)                         |
-| Memory usage                                 | (`metric`, `metricName` = `"memory_usage"`)      | `EdgeRumCapture/MemorySampler.swift` (`mach_task_basic_info` + pressure src)  |
+| Frame render time (per motion window, gated) | (`metric`, `metricName` = `"frame_render_time"`) | `EdgeRumCapture/FrameSampler.swift` (`CADisplayLink`)                         |
+| Memory usage (30 s tick gated; pressure not) | (`metric`, `metricName` = `"memory_usage"`)      | `EdgeRumCapture/MemorySampler.swift` (`mach_task_basic_info` + pressure src)  |
+| CPU usage (30 s tick, gated)                 | (`metric`, `metricName` = `"cpu_usage"`)         | same file (`ProcessCPUReader`)                                                |
 | Long task                                    | (`metric`, `metricName` = `"long_task"`)         | `EdgeRumCapture/RunLoopObserverCapture.swift`                                 |
 | Session begins                               | `session.started`                                | `EdgeRum.start()` + `UIApplication.didBecomeActiveNotification`               |
 | Session ends (rotation only)                 | `session.finalized`                              | `Recorder` on idle / max-duration rotation, or at next `start()` (flushes)    |

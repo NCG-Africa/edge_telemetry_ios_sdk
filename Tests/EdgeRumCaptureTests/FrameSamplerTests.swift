@@ -157,33 +157,46 @@ final class FrameSamplerTests: XCTestCase {
         XCTAssertEqual(stats.droppedCount, 0)
     }
 
-    func test_aggregator_flushResetsWindow() {
-        var agg = FrameWindowAggregator(
-            windowSeconds: 1.0,
-            targetHz: 60,
-            startedAt: Date(timeIntervalSince1970: 0)
-        )
-        agg.recordDelta(20)
-        agg.recordDelta(30)
-        let now = Date(timeIntervalSince1970: 1.5)
-        XCTAssertTrue(agg.shouldFlush(now: now))
-        _ = agg.flush(now: now)
-        let after = agg.flush(now: now)
-        XCTAssertEqual(after.sampleCount, 0)
-        XCTAssertEqual(after.maxMs, 0)
+    // MARK: F30 — motion windows
+
+    private func t(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
+
+    func test_window_closesTwoSecondsAfterLastMotion() {
+        var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
+        XCTAssertFalse(agg.shouldFlush(now: t(1.9)))
+        agg.noteMotion(now: t(1.5))
+        XCTAssertFalse(agg.shouldFlush(now: t(3.4)), "motion extends the window")
+        XCTAssertTrue(agg.shouldFlush(now: t(3.5)))
+    }
+
+    func test_window_hardCapsAtTenSeconds_despiteMotion() {
+        var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
+        for i in 1...9 { agg.noteMotion(now: t(Double(i))) }
+        XCTAssertFalse(agg.shouldFlush(now: t(9.99)))
+        XCTAssertTrue(agg.shouldFlush(now: t(10)))
+    }
+
+    func test_flush_reportsWindowMs_andExpectsFramesForThatLength() {
+        var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
+        for _ in 0..<100 { agg.recordDelta(16.7) }
+        let stats = agg.flush(now: t(2.5))
+        XCTAssertEqual(stats.windowMs, 2500)
+        XCTAssertEqual(stats.sampleCount, 100)
+        XCTAssertEqual(stats.droppedCount, 50) // 150 expected over 2.5 s
+    }
+
+    func test_flush_windowMsClampedToHardCap() {
+        let agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
+        XCTAssertEqual(agg.flush(now: t(12)).windowMs, 10_000)
     }
 
     func test_aggregator_negativeOrNonFiniteDeltasAreIgnored() {
-        var agg = FrameWindowAggregator(
-            windowSeconds: 1.0,
-            targetHz: 60,
-            startedAt: Date(timeIntervalSince1970: 0)
-        )
+        var agg = FrameWindowAggregator(targetHz: 60, startedAt: t(0))
         agg.recordDelta(-5)
         agg.recordDelta(.nan)
         agg.recordDelta(.infinity)
         agg.recordDelta(16.6)
-        let stats = agg.flush(now: Date(timeIntervalSince1970: 1.0))
+        let stats = agg.flush(now: t(1.0))
         XCTAssertEqual(stats.sampleCount, 1)
         XCTAssertEqual(stats.maxMs, 16.6)
     }
@@ -205,6 +218,13 @@ final class FrameSamplerTests: XCTestCase {
         XCTAssertEqual(attrs["frame.target_hz"], .int(60))
         XCTAssertEqual(attrs["frame.source"], .string("displaylink"))
         XCTAssertEqual(attrs["value"], .double(33.3))
+        XCTAssertEqual(attrs["frame.window_ms"], .int(0))
+    }
+
+    func test_makeAttributes_carriesWindowMs() {
+        var stats = FrameWindowAggregator.Stats(maxMs: 20, p95Ms: 18, droppedCount: 0, sampleCount: 120)
+        stats.windowMs = 2_400
+        XCTAssertEqual(FrameSampler.makeAttributes(stats: stats, targetHz: 60)["frame.window_ms"], .int(2_400))
     }
 
     func test_makeAttributes_proMotion_target_hz120() {
@@ -273,6 +293,34 @@ final class FrameSamplerTests: XCTestCase {
         // if it still flakes, drop the concurrent-install count instead.
         wait(for: [exp], timeout: 120)
         XCTAssertTrue(FrameSampler.isInstalled)
+    }
+
+    // MARK: F30 — motion arming + gate
+
+    func test_installedIdle_linkPaused_untilMotion() {
+        defer { Riders.shared._resetForTesting() }
+        Riders.shared.setAppState("active")
+        FrameSampler.install(debug: false)
+        XCTAssertFalse(FrameSampler._isSamplingForTesting, "static content: link paused")
+        FrameSampler.noteMotion()
+        XCTAssertTrue(FrameSampler._isSamplingForTesting)
+    }
+
+    func test_motion_gateClosed_doesNotOpenWindow() {
+        defer { Riders.shared._resetForTesting() }
+        Riders.shared.setAppState("background")
+        FrameSampler.install(debug: false)
+        FrameSampler.noteMotion()
+        XCTAssertFalse(FrameSampler._isSamplingForTesting)
+    }
+
+    func test_resignActive_dropsOpenWindow() {
+        defer { Riders.shared._resetForTesting() }
+        Riders.shared.setAppState("active")
+        FrameSampler.install(debug: false)
+        FrameSampler.noteMotion()
+        NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
+        XCTAssertFalse(FrameSampler._isSamplingForTesting)
     }
 
     func test_resolveTargetHz_isPositiveOnIOSHost() {

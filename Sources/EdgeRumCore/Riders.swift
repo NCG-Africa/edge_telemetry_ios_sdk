@@ -121,6 +121,12 @@ public final class Riders: @unchecked Sendable {
         return current?.name
     }
 
+    /// Current `app.state` (`SamplingGate` input).
+    public var currentAppState: String? {
+        lock(); defer { unlock() }
+        return appState
+    }
+
     /// The rider attributes as of now. Absent keys are never sent empty.
     public func values() -> [String: AttributeValue] {
         lock(); defer { unlock() }
