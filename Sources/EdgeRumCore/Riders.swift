@@ -170,19 +170,9 @@ public final class Riders: @unchecked Sendable {
         }
     }
 
-    /// Cap at `screenNameCapBytes` on a character boundary; `truncated`
-    /// is the number of bytes removed.
     private static func cap(_ name: String) -> Screen {
-        guard name.utf8.count > screenNameCapBytes else { return Screen(name: name, truncated: 0) }
-        var out = ""
-        var bytes = 0
-        for ch in name {
-            let n = ch.utf8.count
-            if bytes + n > screenNameCapBytes { break }
-            out.append(ch)
-            bytes += n
-        }
-        return Screen(name: out, truncated: name.utf8.count - bytes)
+        let (out, cut) = capUTF8(name, maxBytes: screenNameCapBytes)
+        return Screen(name: out, truncated: cut)
     }
 
     // MARK: Test hooks
@@ -203,4 +193,19 @@ public final class Riders: @unchecked Sendable {
         sidecar = nil
     }
     #endif
+}
+
+/// Cap `s` at `maxBytes` UTF-8 bytes on a character boundary; returns
+/// the kept prefix and the number of bytes removed.
+func capUTF8(_ s: String, maxBytes: Int) -> (String, Int) {
+    guard s.utf8.count > maxBytes else { return (s, 0) }
+    var out = ""
+    var bytes = 0
+    for ch in s {
+        let n = ch.utf8.count
+        if bytes + n > maxBytes { break }
+        out.append(ch)
+        bytes += n
+    }
+    return (out, s.utf8.count - bytes)
 }

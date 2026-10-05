@@ -440,6 +440,7 @@ public struct EdgeRumConfig {
     public var captureLifecycle: Bool = true
     public var captureNetworkChanges: Bool = true
     public var capturePageLoad: Bool = true
+    public var captureBreadcrumbs: Bool = true    // F31: 100-row trail on app.crash / first app.hang|app.error
     public var debug: Bool = false
 
     public init(apiKey: String, endpoint: URL)

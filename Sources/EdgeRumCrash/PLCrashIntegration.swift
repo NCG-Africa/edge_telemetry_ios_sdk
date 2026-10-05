@@ -111,10 +111,13 @@ public enum PLCrashIntegration {
     /// pending or PLCR is unavailable.
     ///
     /// `sidecarContents` is `SessionSidecar.read()` taken by
-    /// `EdgeRum.start()` before this launch's first sidecar write.
+    /// `EdgeRum.start()` before this launch's first sidecar write;
+    /// `priorBreadcrumbs` is `Breadcrumbs.takePrior()` (F31), attached
+    /// only when its `session.id` matches the sidecar's.
     public static func replayIfNeeded(
         recorder: Recording,
         sidecarContents: [String: AttributeValue]?,
+        priorBreadcrumbs: Breadcrumbs.File? = nil,
         config: PLCrashIntegrationConfig = PLCrashIntegrationConfig(),
         debug: Bool
     ) {
@@ -151,7 +154,8 @@ public enum PLCrashIntegration {
         // lands under the *prior* session's id, not the freshly
         // started one. PayloadBuilder merges event attrs with
         // event-wins semantics so these override the live context.
-        if let snapshot = sidecarContents.flatMap(CrashSidecarReader.parse) {
+        let snapshot = sidecarContents.flatMap(CrashSidecarReader.parse)
+        if let snapshot {
             attrs["session.id"] = .string(snapshot.sessionId)
             if let start = snapshot.sessionStartTime {
                 attrs["session.start_time"] = .string(start)
@@ -174,6 +178,8 @@ public enum PLCrashIntegration {
             )
         }
 
+        attrs.merge(Breadcrumbs.replayAttributes(priorBreadcrumbs, sessionId: snapshot?.sessionId)) { own, _ in own }
+
         recorder.recordEvent(name: "app.crash", attributes: attrs)
         // `Recorder.recordEvent("app.crash", ...)` triggers an
         // immediate flush internally (Recorder.swift), so no explicit
@@ -185,6 +191,7 @@ public enum PLCrashIntegration {
         #else
         _ = recorder
         _ = sidecarContents
+        _ = priorBreadcrumbs
         _ = config
         _ = debug
         #endif
