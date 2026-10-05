@@ -2047,15 +2047,20 @@ without the host; both ship as host calls.
    `screen_ready`, `screen.ready_outcome = ready`, `value` = ms. No
    token → no-op. A re-fired appear of the **same** screen keeps the
    original anchor (SwiftUI re-fires `onAppear`).
-2. **Abandon triggers: supersede and leave.** The spec says "disappears
-   pending". A pending token is settled when another screen enters the
-   box *or* `leaveScreen` names it (pop / dismissal). Supersede is
-   needed because SwiftUI may fire the next `onAppear` before the old
-   `onDisappear`, and a UIKit push leaves without `isLeaving`. Only
-   screens marked at least once this process (learned set, never
-   persisted) emit `abandoned`; others drop the token silently — the
-   hole on record. The row is emitted before the box moves, and carries
-   its own `screen.name`, so the rider cannot stamp the next screen.
+2. **Abandon trigger: disappear only.** `Riders.disappearScreen` runs
+   on every UIKit `viewWillDisappear` (not only `isLeaving`) and every
+   SwiftUI `onDisappear`; a pending token of that screen is dropped,
+   and emitted as `abandoned` if the screen is in the per-process
+   learned set (never persisted). Another screen's appear replaces the
+   token **silently**: a pageSheet, alert or child VC over a pending
+   screen never disappears it, so treating supersede as abandon would
+   invent false rows. Ceiling: when SwiftUI fires the next `onAppear`
+   before the old `onDisappear`, that abandon is lost (an undercount,
+   never a false row). The row is emitted before the box moves and
+   carries its own `screen.name`. Spec-literal re-anchoring: every
+   appear makes a token, so a screen re-shown after its mark (pop
+   back, tab switch) is judged again — hosts should mark on each
+   appear, not once per load.
 3. **`markInteractive()`** — once per process, first call after
    `start()` wins (a pre-`start()` call is a no-op and does not
    consume). Metric `launch_interactive`, ms on `CLOCK_MONOTONIC_RAW`

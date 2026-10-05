@@ -419,8 +419,9 @@ public enum EdgeRum {
     /// appearance, carrying the current `screen.name`. Takes no name:
     /// the screen is whichever one appeared last.
     ///
-    /// Only the first call after an appearance counts; a call after the
-    /// user has moved to another screen does nothing. Once a screen has
+    /// Only the first call after an appearance counts, and it applies to
+    /// the screen showing at the time of the call; once the screen has
+    /// been left or dismissed, a call does nothing. Once a screen has
     /// been marked, leaving it again before it is ready records the same
     /// data point with `screen.ready_outcome = "abandoned"` and the time
     /// until the user left. A screen's first appearance in a process,

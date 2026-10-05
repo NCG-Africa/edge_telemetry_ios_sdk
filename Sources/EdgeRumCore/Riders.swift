@@ -22,9 +22,9 @@
 //
 // F37 — beside the box sits the screen-ready token (screen + appear
 // time): set on each appear, consumed by the first `markScreenReady()`
-// (`screen_ready`, `ready`). A pending token of a screen marked earlier
-// in this process is `abandoned` when another screen appears or the
-// screen is left (ADR-028).
+// (`screen_ready`, `ready`). `disappearScreen` drops a pending token of
+// that screen — as `abandoned` if it was marked earlier in this process
+// (ADR-028). Another screen's appear replaces it silently.
 //
 // Refs: docs/specs/rum-coverage-roadmap.md § Tranche 3;
 //       docs/catalogue/ios-data-catalogue.md §5.2, §5.16.
@@ -96,7 +96,6 @@ public final class Riders: @unchecked Sendable {
     public func enterScreen(_ name: String) -> String? {
         guard !name.isEmpty else { return nil }
         let screen = Self.cap(name)
-        abandonPending { $0 != screen }
         lock(); defer { unlock() }
         // A re-fired appear of the same screen keeps its anchor.
         if pending?.screen != screen { pending = (screen, clock.now) }
@@ -113,7 +112,6 @@ public final class Riders: @unchecked Sendable {
     /// screen it replaced, if it is still the current one.
     public func leaveScreen(_ name: String) {
         let screen = Self.cap(name)
-        abandonPending { $0 == screen }
         lock(); defer { unlock() }
         guard screen == current, let restored = replaced else { return }
         current = restored
@@ -164,17 +162,20 @@ public final class Riders: @unchecked Sendable {
         return true
     }
 
-    /// Drops the pending token when `matches` it; a screen marked before
-    /// gets an `abandoned` row with the censored time-to-leave. Emits
-    /// before the box moves, so the row's riders are still this screen's.
-    private func abandonPending(where matches: (Screen) -> Bool) {
+    /// `name` is disappearing (every UIKit `viewWillDisappear`, SwiftUI
+    /// `onDisappear`). Drops its pending token; a screen marked before
+    /// gets an `abandoned` row with the censored time-to-leave. Call
+    /// before `leaveScreen`, so the row's riders are still this screen's.
+    public func disappearScreen(_ name: String) {
+        let screen = Self.cap(name)
         lock()
-        guard let token = pending, matches(token.screen) else { unlock(); return }
+        guard let token = pending, token.screen == screen else { unlock(); return }
         pending = nil
-        let judged = marked.contains(token.screen.name)
+        let wasMarkedBefore = marked.contains(token.screen.name)
         let now = clock.now
         unlock()
-        if judged {
+        // Outside the lock: the Recorder's enqueue reads this box.
+        if wasMarkedBefore {
             emitReady(Self.readyRow(token.screen, from: token.at, to: now, outcome: "abandoned"))
         }
     }

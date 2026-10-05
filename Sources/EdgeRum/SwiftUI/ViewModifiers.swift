@@ -54,6 +54,7 @@ internal enum SwiftUIEmitter {
     /// the presenter's `onAppear`. May emit an `abandoned`
     /// `screen_ready` row (F37).
     internal static func emitScreenDisappear(name: String, riders: Riders = .shared) {
+        riders.disappearScreen(name)
         riders.leaveScreen(name)
     }
 

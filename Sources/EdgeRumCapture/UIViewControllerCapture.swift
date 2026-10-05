@@ -13,8 +13,8 @@
 //
 // Disappear emits no dwell (F29 deleted `screen.duration`; the
 // Processor synthesizes dwell from `navigation`, #144). It restores
-// the presenter in the screen box on dismissal — which also settles a
-// pending `screen_ready` token as `abandoned` (F37, ADR-028).
+// the presenter in the screen box on dismissal, and settles a pending
+// `screen_ready` token as `abandoned` (F37, ADR-028).
 //
 // The current screen lives in the `Riders` box (F28), shared with
 // `.edgeRumScreen` and `trackScreen`; it is written before `navigation`
@@ -310,6 +310,7 @@ public enum UIViewControllerCapture {
             return
         }
 
+        Riders.shared.disappearScreen(state.name)  // F37: before the box moves
         // Push/tab switches leave the box to the next appear; a dismissal
         // or pop restores the presenter, whose appear may not re-fire.
         if isLeaving(vc) {

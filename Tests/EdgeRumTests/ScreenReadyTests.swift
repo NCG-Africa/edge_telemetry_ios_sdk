@@ -13,6 +13,7 @@
 import XCTest
 @testable import EdgeRum
 import EdgeRumCore
+import EdgeRumCapture
 
 final class ScreenReadyTests: XCTestCase {
 
@@ -49,7 +50,8 @@ final class ScreenReadyTests: XCTestCase {
 
     func testMarkAfterNavigationMovedOnIsNoOp() {
         riders.enterScreen("Sheet")
-        riders.leaveScreen("Sheet")  // box restored to nothing pending
+        riders.disappearScreen("Sheet")
+        riders.leaveScreen("Sheet")
         XCTAssertFalse(riders.markScreenReady())
         XCTAssertTrue(rows.isEmpty)
     }
@@ -60,27 +62,42 @@ final class ScreenReadyTests: XCTestCase {
         XCTAssertTrue(rows.isEmpty, "hole on record: first appear before first mark is not judged")
     }
 
-    func testMarkedScreenSupersededPendingIsAbandoned() {
+    func testMarkedScreenDisappearedPendingIsAbandoned() {
         riders.enterScreen("Home")
         riders.markScreenReady()
+        riders.disappearScreen("Home")
         riders.enterScreen("Detail")
+        riders.disappearScreen("Detail")
         riders.enterScreen("Home")
         advance(ms: 90)
-        riders.enterScreen("Detail")  // left Home before ready
+        riders.disappearScreen("Home")  // left Home before ready
+        riders.enterScreen("Detail")
         XCTAssertEqual(rows.last, [
             "screen.name": .string("Home"),
             "screen.ready_outcome": .string("abandoned"),
             "value": .double(90)
         ])
+        XCTAssertEqual(rows.count, 2)
+    }
+
+    func testSheetOverPendingMarkedScreenIsNotAbandoned() {
+        riders.enterScreen("Home")
+        riders.markScreenReady()
+        riders.disappearScreen("Home")
+        riders.enterScreen("Home")
+        riders.enterScreen("Sheet")  // pageSheet: Home never disappears
+        XCTAssertEqual(rows.count, 1, "supersede is not abandon")
     }
 
     func testMarkedScreenDismissedPendingIsAbandoned() {
         riders.enterScreen("Home")
         riders.enterScreen("Sheet")
         riders.markScreenReady()
+        riders.disappearScreen("Sheet")
         riders.leaveScreen("Sheet")
         riders.enterScreen("Sheet")
         advance(ms: 30)
+        riders.disappearScreen("Sheet")
         riders.leaveScreen("Sheet")
         XCTAssertEqual(rows.last?["screen.ready_outcome"], .string("abandoned"))
         XCTAssertEqual(rows.last?["value"], .double(30))
@@ -137,11 +154,14 @@ final class ReadinessAPITests: XCTestCase {
 
     func testMarkInteractiveFirstCallWins() {
         start()
+        let before = PageLoadCapture.elapsedMs(fromNs: PageLoadCapture.launchStartNs, toNs: PageLoadCapture.monotonicNs())
         EdgeRum.markInteractive()
         EdgeRum.markInteractive()
+        let after = PageLoadCapture.elapsedMs(fromNs: PageLoadCapture.launchStartNs, toNs: PageLoadCapture.monotonicNs())
         XCTAssertEqual(perfs.map(\.0), ["launch_interactive"])
-        guard case let .double(ms)? = perfs.first?.1["value"] else { return XCTFail("no value") }
-        XCTAssertGreaterThanOrEqual(ms, 0)
+        guard case let .double(ms)? = perfs.first?.1["value"], let before, let after else { return XCTFail("no value") }
+        // Anchored at `launchStart`, the `page_load` anchor.
+        XCTAssertTrue(Double(before)...Double(after) ~= ms)
     }
 
     func testMarkInteractiveBeforeStartIsNoOpAndDoesNotConsume() {
