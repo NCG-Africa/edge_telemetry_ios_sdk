@@ -30,6 +30,10 @@
 //     - suspend on willResignActive, resume on didBecomeActive
 //   T16.5 DeviceContext locale/timezone refresh:
 //     - NSLocale.currentLocaleDidChangeNotification
+//   F28 riders (written to `Riders`, not the ContextProvider):
+//     - app.state: the four UIApplication activation notifications
+//     - device.orientation: UIDevice.orientationDidChangeNotification,
+//       read back as the window scene's *interface* orientation
 //
 // Refs: PLAN-iOS.md §16.4 / F16; CLAUDE.md "When in doubt checklist"
 //       item 1 (no public-surface change), item 8 (single install
@@ -84,6 +88,7 @@ public enum ContextObservers {
     /// callbacks hop to main as needed.
     public static func install(
         provider: ContextProvider,
+        riders: Riders = .shared,
         debug: Bool = false
     ) {
         os_unfair_lock_lock(installLock)
@@ -186,6 +191,34 @@ public enum ContextObservers {
             provider?.refreshStorage(StorageContext.snapshot())
             resumeStorageTimer()
         })
+
+        // F28 — app.state + device.orientation riders.
+        let appStates: [(Notification.Name, String)] = [
+            (UIApplication.didBecomeActiveNotification, "active"),
+            (UIApplication.willResignActiveNotification, "inactive"),
+            (UIApplication.willEnterForegroundNotification, "inactive"),
+            (UIApplication.didEnterBackgroundNotification, "background")
+        ]
+        for (name, state) in appStates {
+            tokens.append(nc.addObserver(forName: name, object: nil, queue: .main) { _ in
+                riders.setAppState(state)
+                riders.setOrientation(interfaceOrientation())
+            })
+        }
+        tokens.append(nc.addObserver(
+            forName: UIDevice.orientationDidChangeNotification,
+            object: nil, queue: .main
+        ) { _ in
+            // ponytail: one main-queue hop so the scene has rotated before
+            // the read. If it ever lags, observe the scene's geometry instead.
+            DispatchQueue.main.async { riders.setOrientation(interfaceOrientation()) }
+        })
+        let seed = {
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            riders.setAppState(appStateName(UIApplication.shared.applicationState))
+            riders.setOrientation(interfaceOrientation())
+        }
+        if Thread.isMainThread { seed() } else { DispatchQueue.main.async(execute: seed) }
         #endif
 
         os_unfair_lock_lock(installLock)
@@ -201,6 +234,29 @@ public enum ContextObservers {
             os_log("ContextObservers installed (F16)", log: log, type: .info)
         }
     }
+
+    // MARK: - Rider reads (main thread)
+
+    #if canImport(UIKit) && os(iOS)
+    internal static func appStateName(_ state: UIApplication.State) -> String {
+        switch state {
+        case .active: return "active"
+        case .background: return "background"
+        default: return "inactive"
+        }
+    }
+
+    /// Interface (not hardware) orientation of the foreground scene;
+    /// upside-down and both landscapes collapse. `nil` when unknown.
+    private static func interfaceOrientation() -> String? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        guard let orientation = scene?.interfaceOrientation else { return nil }
+        if orientation.isLandscape { return "landscape" }
+        if orientation.isPortrait { return "portrait" }
+        return nil
+    }
+    #endif
 
     // MARK: - Storage timer
 

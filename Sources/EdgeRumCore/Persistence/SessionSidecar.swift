@@ -8,6 +8,9 @@
 // carries the *prior* session's identity rather than the freshly
 // rotated current session.
 //
+// F28 adds a volatile zone (`volatileKeys`) written by `Riders` on
+// change; every write re-emits both zones.
+//
 // F4 ships the **writer** only. The reader + replay path is owned by
 // F14 / `EdgeRumCrash` / T14.3 — flagged as carry-over on issue #44.
 //
@@ -24,6 +27,12 @@ import os.log
 
 public protocol SessionSidecarWriting: Sendable {
     func write(snapshot: AttributeBag)
+    /// Replace the volatile zone (F28 riders). Best-effort.
+    func writeVolatile(_ values: [String: AttributeValue])
+}
+
+public extension SessionSidecarWriting {
+    func writeVolatile(_ values: [String: AttributeValue]) {}
 }
 
 public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
@@ -66,11 +75,24 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         "sdk.platform"
     ]
 
+    /// The volatile zone (F28): rider values persisted on change by
+    /// `Riders`, best-effort. Flat alongside the identity keys, so
+    /// `CrashSidecarReader` sweeps them into `extras` unchanged.
+    public static let volatileKeys: Set<String> = [
+        "screen.name",
+        "screen.name.truncated",
+        "device.orientation",
+        "app.state"
+    ]
+
     private let url: URL?
     private let fileManager: FileManager
     private let log: OSLog
     private let lock = NSLock()
     private var directoryEnsured: Bool = false
+    /// Last written zones; each write re-emits both. Guarded by `lock`.
+    private var identity: [String: AttributeValue] = [:]
+    private var volatile: [String: AttributeValue] = [:]
 
     public init(
         url: URL? = SessionSidecar.defaultURL(),
@@ -85,15 +107,27 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
     /// Serialized under `lock` so concurrent mutation sites cannot
     /// interleave directory creation and the atomic replace.
     public func write(snapshot: AttributeBag) {
-        guard let url else { return }
-
         let mirrored = filter(snapshot)
         guard !mirrored.isEmpty else { return }
-
         lock.lock(); defer { lock.unlock() }
+        identity = mirrored
+        persistLocked()
+    }
+
+    /// Replace the volatile zone and rewrite the file. Before this
+    /// process's first identity write, only the volatile zone lands.
+    public func writeVolatile(_ values: [String: AttributeValue]) {
+        lock.lock(); defer { lock.unlock() }
+        volatile = values.filter { Self.volatileKeys.contains($0.key) }
+        persistLocked()
+    }
+
+    /// Caller holds `lock`.
+    private func persistLocked() {
+        guard let url else { return }
         do {
             try ensureDirectory(for: url)
-            let data = try Self.encoder.encode(mirrored)
+            let data = try Self.encoder.encode(identity.merging(volatile) { id, _ in id })
             try data.write(to: url, options: .atomic)
         } catch {
             os_log(
@@ -114,7 +148,7 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         // Filtered on read too: a file written by a pre-F27 build may
         // still hold host identity keys.
         return (try? Self.decoder.decode([String: AttributeValue].self, from: data))?
-            .filter { Self.mirroredKeys.contains($0.key) }
+            .filter { Self.mirroredKeys.contains($0.key) || Self.volatileKeys.contains($0.key) }
     }
 
     private func filter(_ bag: AttributeBag) -> [String: AttributeValue] {

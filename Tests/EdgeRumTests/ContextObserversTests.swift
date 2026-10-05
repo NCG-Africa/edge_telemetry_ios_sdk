@@ -44,6 +44,28 @@ final class ContextObserversTests: XCTestCase {
         super.tearDown()
     }
 
+    #if canImport(UIKit) && os(iOS)
+    // F28 — app.state rider follows the activation notifications.
+    func testAppStateRiderFollowsLifecycleNotifications() {
+        let riders = Riders()
+        ContextObservers.install(provider: makeProvider(), riders: riders)
+        XCTAssertNotNil(riders.values()["app.state"], "seeded on install")
+
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertEqual(riders.values()["app.state"], .string("background"))
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        XCTAssertEqual(riders.values()["app.state"], .string("inactive"))
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertEqual(riders.values()["app.state"], .string("active"))
+    }
+
+    func testAppStateNameMapsAllThreeStates() {
+        XCTAssertEqual(ContextObservers.appStateName(.active), "active")
+        XCTAssertEqual(ContextObservers.appStateName(.inactive), "inactive")
+        XCTAssertEqual(ContextObservers.appStateName(.background), "background")
+    }
+    #endif
+
     func testInstallIsIdempotent() {
         let p = makeProvider()
         XCTAssertFalse(ContextObservers.isInstalled)

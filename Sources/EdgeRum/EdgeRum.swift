@@ -125,6 +125,11 @@ public enum EdgeRum {
         // host hasn't swapped in a test probe), upgrade its in-memory
         // identity stores to the persisted Keychain + UserDefaults
         // pair so `device.id` and `session.id` survive across launches.
+        // Read the crashed launch's sidecar before this launch rewrites
+        // it — the volatile zone (screen, orientation, app state) only
+        // lives in the old file.
+        let priorSidecar = SessionSidecar().read()
+
         if let realRecorder = Recorder.shared as? Recorder {
             realRecorder.installPersistedStores(
                 identityProvider: IdentityProvider(),
@@ -201,7 +206,7 @@ public enum EdgeRum {
             realRecorder.setEnabled(true)
             PLCrashIntegration.replayIfNeeded(
                 recorder: realRecorder,
-                sidecar: SessionSidecar(),
+                sidecarContents: priorSidecar,
                 config: PLCrashIntegrationConfig(),
                 debug: config.debug
             )
@@ -361,6 +366,7 @@ public enum EdgeRum {
         guard requireStarted("trackScreen") else { return }
         var merged: [String: AttributeValue] = attributes ?? [:]
         merged["navigation.name"] = .string(name)
+        Riders.shared.enterScreen(name)
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }
 

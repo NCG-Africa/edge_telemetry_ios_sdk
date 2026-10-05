@@ -1533,6 +1533,13 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     obligations: catalogue §3.2. RN bridge: expose `clearUser()`,
     `resetIdentity()`, `captureButtonTitles`.
 
+15. **F28 riders (#215).** Four new keys on **every** event and metric:
+    `screen.name` (+ `screen.name.truncated`), `device.orientation`,
+    `app.state`; plus `device.family` as context. `screen.name` is a
+    rider, class `content` — **not** a `screen.duration` signal and not
+    a default grouping dimension. On replayed `NativeCrash` the riders
+    are crash-time values. Catalogue §5.2; collected in #225. RN: none.
+
 ---
 
 ## 15. Risks and open questions

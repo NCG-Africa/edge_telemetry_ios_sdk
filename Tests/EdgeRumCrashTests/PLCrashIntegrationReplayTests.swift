@@ -66,7 +66,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let sidecar = SessionSidecar(url: baseDir.appendingPathComponent("last-session.json"))
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: baseDir.appendingPathComponent("plcr")),
             debug: false
         )
@@ -106,7 +106,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let probe = RecordingProbe()
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: plcrBase),
             debug: true
         )
@@ -132,6 +132,52 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
                        .string("user_1717100000000_deadbeefcafef00d"))
     }
 
+    /// F28 — the replayed crash carries the crash-time riders from the
+    /// sidecar's volatile zone, read before this launch rewrites it.
+    func testReplayCarriesCrashTimeRidersFromVolatileZone() throws {
+        guard let fixtureBytes = CrashFixtureGenerator.makeLiveReport() else {
+            throw XCTSkip("PLCrashReporter unavailable on this slice")
+        }
+        let baseDir = makeTempBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+        let plcrBase = baseDir.appendingPathComponent("plcr", isDirectory: true)
+        try seedPendingCrashReport(fixtureBytes: fixtureBytes, basePath: plcrBase)
+
+        // Crashed launch: identity + riders persisted on change.
+        let sidecar = SessionSidecar(url: baseDir.appendingPathComponent("last-session.json"))
+        sidecar.write(snapshot: [
+            "session.id": .string("session_1717234870002_ff009988aabbccdd_ios"),
+            "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios")
+        ])
+        sidecar.writeVolatile([
+            "screen.name": .string("Checkout"),
+            "device.orientation": .string("landscape"),
+            "app.state": .string("background")
+        ])
+        let crashed = sidecar.read()
+
+        // Reporting launch rewrites the file before replay runs.
+        sidecar.write(snapshot: [
+            "session.id": .string("session_1717234999999_0011223344556677_ios"),
+            "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios")
+        ])
+        sidecar.writeVolatile(["screen.name": .string("Home"), "app.state": .string("active")])
+
+        let probe = RecordingProbe()
+        PLCrashIntegration.replayIfNeeded(
+            recorder: probe,
+            sidecarContents: crashed,
+            config: PLCrashIntegrationConfig(basePath: plcrBase),
+            debug: false
+        )
+
+        let call = try XCTUnwrap(probe.calls.first)
+        XCTAssertEqual(call.attributes["screen.name"], .string("Checkout"))
+        XCTAssertEqual(call.attributes["device.orientation"], .string("landscape"))
+        XCTAssertEqual(call.attributes["app.state"], .string("background"))
+        XCTAssertEqual(call.attributes["session.id"], .string("session_1717234870002_ff009988aabbccdd_ios"))
+    }
+
     func testReplayWithMissingSidecarFallsBackToLiveIdentity() throws {
         guard let fixtureBytes = CrashFixtureGenerator.makeLiveReport() else {
             throw XCTSkip("PLCrashReporter unavailable on this slice")
@@ -151,7 +197,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let probe = RecordingProbe()
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: plcrBase),
             debug: true
         )
@@ -177,7 +223,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let probe = RecordingProbe()
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: plcrBase),
             debug: true
         )
