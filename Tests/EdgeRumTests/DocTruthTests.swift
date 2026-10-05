@@ -51,6 +51,30 @@ final class DocTruthTests: XCTestCase {
         XCTAssertFalse(waitFor(0.3) { !sink.sends.isEmpty })
     }
 
+    func testStopAndShutdownStopFlushTimer() {
+        for halt in [{ (r: Recorder) in r.stop() }, { (r: Recorder) in r.shutdown() }] {
+            let (recorder, _) = makeRecorder(flushInterval: 0.05)
+            XCTAssertTrue(recorder._flushTimerArmedForTests)
+            halt(recorder)
+            XCTAssertFalse(recorder._flushTimerArmedForTests)
+        }
+    }
+
+    // MARK: C1 — ingress runs on the caller's thread
+
+    func testIngressAndFlushRunOnCallersThread() {
+        let sink = ThreadSink()
+        let recorder = Recorder(sampler: Sampler(sampleRate: 1.0, entropy: { 0.0 }), transport: sink)
+        recorder.setEnabled(true)
+        recorder.configure(RecorderConfig(
+            apiKey: "edge_test_abc",
+            endpoint: URL(string: "https://collect.example.com")!, // test literal
+            batchSize: 1
+        ))
+        recorder.recordEvent(name: "navigation", attributes: [:])
+        XCTAssertEqual(sink.threads, [Thread.current], "batch handed to the sink synchronously, same thread")
+    }
+
     // MARK: C3 — maxQueueSize counts events
 
     func testOfflineQueueTrimsByEventCount() throws {
@@ -70,6 +94,17 @@ final class DocTruthTests: XCTestCase {
         XCTAssertTrue(queue.orderedFiles().last?.lastPathComponent.hasSuffix("-10.json") ?? false)
     }
 
+    func testOversizedBatchSurvivesAsNewestFile() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("edge-rum-doctruth-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = try XCTUnwrap(OfflineQueue(directory: dir, maxQueueSize: 10))
+        queue.enqueue(Data("old".utf8), eventCount: 5)
+        XCTAssertNotNil(queue.enqueue(Data("big".utf8), eventCount: 30))
+        let remaining = try queue.orderedFiles().map { try Data(contentsOf: $0) }
+        XCTAssertEqual(remaining, [Data("big".utf8)])
+    }
+
     // MARK: C4 — whole-process CPU reader
 
     func testCPUReaderReportsBusyProcess() throws {
@@ -81,4 +116,14 @@ final class DocTruthTests: XCTestCase {
         let percent = try XCTUnwrap(reader.sample())
         XCTAssertGreaterThan(percent, 20, "a spinning thread is visible as per-core percent")
     }
+}
+
+private final class ThreadSink: TransportSink, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _threads: [Thread] = []
+    var threads: [Thread] { lock.lock(); defer { lock.unlock() }; return _threads }
+    func send(_ envelope: EventEnvelope, reason: FlushReason) {
+        lock.lock(); _threads.append(Thread.current); lock.unlock()
+    }
+    func drainOfflineQueue() {}
 }

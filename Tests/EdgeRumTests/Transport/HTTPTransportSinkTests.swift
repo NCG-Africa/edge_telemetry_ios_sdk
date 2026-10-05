@@ -61,8 +61,8 @@ final class HTTPTransportSinkTests: XCTestCase {
     func testDrainReplaysQueuedPayloadsViaTransport() {
         let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
         let queue = InMemoryQueue()
-        queue.enqueue(Data("queued".utf8))
-        queue.enqueue(Data("queued2".utf8))
+        queue.enqueue(Data("queued".utf8), eventCount: 1)
+        queue.enqueue(Data("queued2".utf8), eventCount: 1)
 
         let sink = HTTPTransportSink(
             transport: transport,
@@ -81,8 +81,8 @@ final class HTTPTransportSinkTests: XCTestCase {
     func testDrainStopsOnFirstFailure() {
         let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
         let queue = InMemoryQueue()
-        queue.enqueue(Data("first".utf8))
-        queue.enqueue(Data("second".utf8))
+        queue.enqueue(Data("first".utf8), eventCount: 1)
+        queue.enqueue(Data("second".utf8), eventCount: 1)
 
         let sink = HTTPTransportSink(
             transport: transport,

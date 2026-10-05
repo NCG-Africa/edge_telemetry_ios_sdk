@@ -373,9 +373,8 @@ public enum EdgeRum {
         context: [String: AttributeValue]? = nil
     ) {
         guard requireStarted("captureError") else { return }
-        // Call-site stack capture — must happen on the caller's
-        // thread before we hand off to the recorder's queue, else the
-        // frames leak into the queue's own thread.
+        // Call-site stack capture — taken here, before the Recorder
+        // call, so SDK frames stay out of the captured stack.
         let stack = Thread.callStackSymbols
         let recorder = Recorder.shared
         let attrs = AppErrorBuilder.build(

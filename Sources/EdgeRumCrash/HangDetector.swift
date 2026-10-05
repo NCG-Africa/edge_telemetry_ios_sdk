@@ -131,7 +131,7 @@ public enum HangDetector {
         }
         let clamped = max(minimumThresholdSeconds, threshold)
         let stack = stackProvider ?? { MainThreadStackSnapshot.capture() }
-        // Primed at install so the first hang has a baseline to delta against.
+        // Delta reader; the watchdog re-primes it at stall start.
         let cpu = cpuProvider ?? ProcessCPUReader().sample
         let newWatchdog = HangWatchdog(
             threshold: clamped,
@@ -316,6 +316,9 @@ internal final class HangWatchdog {
         // (or continue) the stall window.
         if stalledStart == nil {
             stalledStart = now
+            // Re-prime the delta reader so the detection read covers
+            // the stall window, not everything since the last hang.
+            _ = cpuProvider()
             return false
         }
 

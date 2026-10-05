@@ -30,8 +30,9 @@ import os.log
 
 public protocol OfflineQueueing: Sendable {
     /// Atomically append a payload holding `eventCount` events, then
-    /// trim oldest-first to ≤ `maxQueueSize` events. Returns the URL of
-    /// the written file, or `nil` if the write failed (or it was trimmed).
+    /// trim older files oldest-first to ≤ `maxQueueSize` events (the
+    /// newest file always survives, even if alone it exceeds the cap).
+    /// Returns the written file's URL, or `nil` if the write failed.
     @discardableResult
     func enqueue(_ payload: Data, eventCount: Int) -> URL?
 
@@ -48,12 +49,6 @@ public protocol OfflineQueueing: Sendable {
 
     /// Remove every file in the queue directory. Test helper.
     func reset()
-}
-
-extension OfflineQueueing {
-    /// One-event enqueue — test convenience.
-    @discardableResult
-    public func enqueue(_ payload: Data) -> URL? { enqueue(payload, eventCount: 1) }
 }
 
 public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
@@ -142,7 +137,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
         }
 
         trimToCapLocked()
-        return fileManager.fileExists(atPath: url.path) ? url : nil
+        return url
     }
 
     @discardableResult
@@ -211,10 +206,11 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
 
     private func trimToCapLocked() {
         let entries = orderedFiles()
-        var total = entries.reduce(0) { $0 + Self.eventCount(of: $1) }
-        for url in entries where total > maxQueueSize {
+        let counts = entries.map(Self.eventCount(of:))
+        var total = counts.reduce(0, +)
+        for (url, n) in zip(entries.dropLast(), counts) where total > maxQueueSize {
             try? fileManager.removeItem(at: url)
-            total -= Self.eventCount(of: url)
+            total -= n
         }
     }
 

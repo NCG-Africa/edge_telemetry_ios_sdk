@@ -267,9 +267,8 @@ public final class Recorder: Recording, @unchecked Sendable {
         // Re-roll the per-session sampler with the host-supplied
         // `sampleRate` so the in/out decision reflects the config.
         self.sampler = Sampler(sampleRate: config.sampleRate)
-        let enabled = _enabled
+        setFlushTimerLocked(armed: _enabled)
         stateLock.unlock()
-        if enabled { setFlushTimer(armed: true) }
 
         let appCtx = AppContext.snapshot(
             appNameOverride: config.appName,
@@ -294,8 +293,8 @@ public final class Recorder: Recording, @unchecked Sendable {
         if let rate = _config?.sampleRate {
             self.sampler = Sampler(sampleRate: rate)
         }
+        setFlushTimerLocked(armed: true)
         stateLock.unlock()
-        setFlushTimer(armed: true)
 
         // Rotate to a fresh session — `start()` is the lifecycle
         // boundary at which a new session id is born.
@@ -334,8 +333,8 @@ public final class Recorder: Recording, @unchecked Sendable {
     public func setEnabled(_ enabled: Bool) {
         stateLock.lock()
         _enabled = enabled
+        setFlushTimerLocked(armed: enabled)
         stateLock.unlock()
-        setFlushTimer(armed: enabled)
     }
 
     public func recordEvent(name: String, attributes: [String: AttributeValue]) {
@@ -506,10 +505,12 @@ public final class Recorder: Recording, @unchecked Sendable {
         sidecar.write(snapshot: context.snapshot())
     }
 
-    /// (Re-)arm or cancel the `flushInterval` timer. A tick on an empty
-    /// buffer is a no-op flush.
-    private func setFlushTimer(armed: Bool) {
-        stateLock.lock(); defer { stateLock.unlock() }
+    /// (Re-)arm or cancel the `flushInterval` timer. Caller holds
+    /// `stateLock`, so the timer state always matches `_enabled`. A
+    /// tick on an empty buffer is a no-op flush.
+    // ponytail: ticks while idle (one wakeup per flushInterval); arm on
+    // first enqueue instead if the idle wakeups ever show up in energy logs.
+    private func setFlushTimerLocked(armed: Bool) {
         flushTimer?.cancel()
         flushTimer = nil
         guard armed else { return }
@@ -519,6 +520,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         timer.setEventHandler { [weak self] in self?.flush(reason: .timer) }
         timer.resume()
         flushTimer = timer
+    }
+
+    internal var _flushTimerArmedForTests: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return flushTimer != nil
     }
 
     private func addThreadTime(since t0: UInt64) {

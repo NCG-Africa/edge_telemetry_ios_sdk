@@ -195,3 +195,26 @@ final class HangCPUWiringTests: XCTestCase {
         }
     }
 }
+
+final class HangCPUWindowTests: XCTestCase {
+
+    /// C4 (#213): the CPU reader is re-primed at stall start, so the
+    /// detection value covers the stall window only.
+    func testCPUProviderPrimedAtStallStartAndReadAtDetection() throws {
+        var reads: [Double] = [111, 42]
+        var calls = 0
+        let probe = HangProbeRecorder()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_000_000))
+        let watchdog = HangWatchdog(threshold: 2, clock: clock, recorder: probe,
+                                    stackProvider: { [] },
+                                    cpuProvider: { calls += 1; return reads.removeFirst() },
+                                    debug: false, log: .default)
+        XCTAssertFalse(watchdog.tick(currentHeartbeat: 1))
+        clock.advance(by: 0.25)
+        XCTAssertFalse(watchdog.tick(currentHeartbeat: 1))
+        XCTAssertEqual(calls, 1, "primed at stall start")
+        clock.advance(by: 3)
+        XCTAssertTrue(watchdog.tick(currentHeartbeat: 1))
+        XCTAssertEqual(probe.calls.first?.attributes["hang.cpu_usage"], .double(42))
+    }
+}

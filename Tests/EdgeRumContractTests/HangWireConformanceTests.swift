@@ -29,7 +29,7 @@ final class HangWireConformanceTests: XCTestCase {
             "crash.fatal": .bool(false),
             "hang.duration_ms": .double(5_240),
             "hang.threshold_ms": .double(5_000),
-            "hang.cpu_usage": .double(0.83),
+            "hang.cpu_usage": .double(83.0),
             "crash.thread.main_stack": .string(
                 "EdgeRumCrashSampleApp 0x0000000104a00000 -[ViewController hangButtonTapped:] + 24\n" +
                 "EdgeRumCrashSampleApp 0x0000000104a00100 main + 80"
@@ -89,7 +89,7 @@ final class HangWireConformanceTests: XCTestCase {
         let thresholdMs = try XCTUnwrap(evAttrs["hang.threshold_ms"] as? Double)
         XCTAssertGreaterThanOrEqual(durationMs, thresholdMs,
                                     "hang.duration_ms must meet or exceed threshold")
-        XCTAssertEqual(evAttrs["hang.cpu_usage"] as? Double, 0.83)
+        XCTAssertEqual(evAttrs["hang.cpu_usage"] as? Double, 83.0)
 
         let stack = try XCTUnwrap(evAttrs["crash.thread.main_stack"] as? String)
         XCTAssertFalse(stack.isEmpty,

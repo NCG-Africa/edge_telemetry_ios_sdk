@@ -30,8 +30,8 @@ final class OfflineQueueTests: XCTestCase {
 
     func testEnqueueWritesAtomicAndIsListable() throws {
         let queue = makeQueue(maxQueueSize: 10)
-        XCTAssertNotNil(queue.enqueue(Data("first".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("second".utf8)))
+        XCTAssertNotNil(queue.enqueue(Data("first".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("second".utf8), eventCount: 1))
         let files = queue.orderedFiles()
         XCTAssertEqual(files.count, 2)
         XCTAssertEqual(files[0].pathExtension, "json")
@@ -41,9 +41,9 @@ final class OfflineQueueTests: XCTestCase {
         var epoch: Int64 = 1_717_000_000_000
         let queue = makeQueue(maxQueueSize: 10) { defer { epoch += 1 }; return epoch }
 
-        XCTAssertNotNil(queue.enqueue(Data("a".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("b".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("c".utf8)))
+        XCTAssertNotNil(queue.enqueue(Data("a".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("b".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("c".utf8), eventCount: 1))
 
         let files = queue.orderedFiles()
         let payloads = try files.map { try Data(contentsOf: $0) }
@@ -54,9 +54,9 @@ final class OfflineQueueTests: XCTestCase {
         var epoch: Int64 = 1_717_000_000_000
         let queue = makeQueue(maxQueueSize: 2) { defer { epoch += 1 }; return epoch }
 
-        XCTAssertNotNil(queue.enqueue(Data("first".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("second".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("third".utf8)))
+        XCTAssertNotNil(queue.enqueue(Data("first".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("second".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("third".utf8), eventCount: 1))
 
         // After overflow trim we expect "second" and "third" only.
         let payloads = try queue.orderedFiles().map { try Data(contentsOf: $0) }
@@ -65,8 +65,8 @@ final class OfflineQueueTests: XCTestCase {
 
     func testDrainSuccessRemovesFiles() throws {
         let queue = makeQueue(maxQueueSize: 10)
-        XCTAssertNotNil(queue.enqueue(Data("a".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("b".utf8)))
+        XCTAssertNotNil(queue.enqueue(Data("a".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("b".utf8), eventCount: 1))
 
         let drained = queue.drain { _ in true }
         XCTAssertEqual(drained, 2)
@@ -77,9 +77,9 @@ final class OfflineQueueTests: XCTestCase {
         var epoch: Int64 = 1_717_000_000_000
         let queue = makeQueue(maxQueueSize: 10) { defer { epoch += 1 }; return epoch }
 
-        XCTAssertNotNil(queue.enqueue(Data("a".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("b".utf8)))
-        XCTAssertNotNil(queue.enqueue(Data("c".utf8)))
+        XCTAssertNotNil(queue.enqueue(Data("a".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("b".utf8), eventCount: 1))
+        XCTAssertNotNil(queue.enqueue(Data("c".utf8), eventCount: 1))
 
         var seen: [Data] = []
         let drained = queue.drain { payload in
@@ -96,7 +96,7 @@ final class OfflineQueueTests: XCTestCase {
 
     func testReset() throws {
         let queue = makeQueue(maxQueueSize: 10)
-        XCTAssertNotNil(queue.enqueue(Data("payload".utf8)))
+        XCTAssertNotNil(queue.enqueue(Data("payload".utf8), eventCount: 1))
         XCTAssertEqual(queue.count, 1)
         queue.reset()
         XCTAssertEqual(queue.count, 0)
