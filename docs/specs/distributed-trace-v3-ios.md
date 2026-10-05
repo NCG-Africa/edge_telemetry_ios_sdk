@@ -987,10 +987,12 @@ value** the carrier reads. See §5.
 
 ## 13. Overhead and defects this spec inherits
 
-Evidence: [`docs/audits/trace-v3-path-audit.md`](../audits/trace-v3-path-audit.md)
+Evidence: `docs/audits/trace-v3-path-audit.md`
 (static read @ `b90a869` — costs are **mechanism claims, not measurements**) and
-[`docs/audits/trace-v3-swizzle-coverage.md`](../audits/trace-v3-swizzle-coverage.md)
-(nine programs **run** against Darwin Foundation).
+`docs/audits/trace-v3-swizzle-coverage.md`
+(nine programs **run** against Darwin Foundation). Both audits were never
+merged; their branches were deleted 2026-10-05 (last tip `c47c6a9`, which
+carries both files).
 
 | | Finding | What trace v3 does to it | Mitigation in this spec |
 |---|---|---|---|
