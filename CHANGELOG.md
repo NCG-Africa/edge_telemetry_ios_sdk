@@ -11,6 +11,14 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [1.2.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.1.0-alpha.2...v1.2.0-alpha.2) (2026-10-05)
+
+
+### Features
+
+* **F27:** privacy — clearUser, resetIdentity, identity off sidecar, button_title opt-in ([#231](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/231)) ([887c4ef](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/887c4efd50a74c006d0939f9fbe465119e1ffec7))
+* **F28:** riders + screen attribution — RUM coverage tranche 3 ([#233](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/233)) ([3bccfc0](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/3bccfc020a94af6a70068e772cc01ddb9dc5b63c)), closes [#215](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/215)
+
 ## [1.1.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/1.0.0-alpha.2...v1.1.0-alpha.2) (2026-10-05)
 
 
