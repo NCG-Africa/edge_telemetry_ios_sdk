@@ -22,10 +22,9 @@
 // frame that was hot during the stall. Best-effort; flagged in
 // `docs/decisions.md` ADR-006.
 //
-// Long tasks ≠ hangs. F14's hang detector watches for stalls in the
-// multi-second range with a dedicated watchdog thread; this observer
-// only reports the 50 ms+ bucket and emits a `metric`, never an
-// `app.crash`.
+// Long tasks ≠ hangs (F33 disjoint rungs): with hang detection on, a
+// span at or past the hang threshold (`ceilingMs`) is dropped — that
+// stall is an `app.hang`. With it off, `long_task` keeps the full range.
 //
 // Refs: PLAN-iOS.md §F10/T10.3, §6.12; CLAUDE.md "eventName values" +
 //       "When in doubt checklist" items 1, 2, 4.
@@ -81,21 +80,23 @@ public enum RunLoopObserverCapture {
     /// `CFRunLoopAddObserver(CFRunLoopGetMain(), …)` is safe to call
     /// from any thread, and the once-token is serialised under
     /// `os_unfair_lock` so racing installs collapse to one swap.
-    public static func install(debug: Bool = false) {
-        performInstall(debug: debug)
+    public static func install(debug: Bool = false, ceilingMs: Double? = nil) {
+        performInstall(debug: debug, ceilingMs: ceilingMs)
     }
 
     // MARK: Pure decision core (testable without a runloop)
 
     /// Build the wire attribute bag for a measured run-loop span.
-    /// Returns `nil` when `durationMs` is under threshold so the
-    /// emission path can short-circuit before allocating.
+    /// Returns `nil` when `durationMs` is under threshold, or at or past
+    /// `ceilingMs` (the hang threshold), so the emission path can
+    /// short-circuit before allocating.
     public static func decideEmission(
         durationMs: Double,
         thresholdMs: Double,
+        ceilingMs: Double? = nil,
         stack: [StackFrame]
     ) -> [String: AttributeValue]? {
-        guard durationMs >= thresholdMs else { return nil }
+        guard durationMs >= thresholdMs, durationMs < ceilingMs ?? .infinity else { return nil }
         let capped = StackFrames.capped(stack, maxBytes: maxStackBytes)
         var attrs: [String: AttributeValue] = [
             "value": .double(durationMs),
@@ -115,10 +116,11 @@ public enum RunLoopObserverCapture {
 
     /// Public seam — emit one `long_task` metric for the supplied
     /// span. Tests drive this directly.
-    static func emit(durationMs: Double, thresholdMs: Double, stack: [StackFrame]) {
+    static func emit(durationMs: Double, thresholdMs: Double, ceilingMs: Double? = nil, stack: [StackFrame]) {
         guard let attrs = decideEmission(
             durationMs: durationMs,
             thresholdMs: thresholdMs,
+            ceilingMs: ceilingMs,
             stack: stack
         ) else { return }
         let recorder = Recorder.shared
@@ -131,13 +133,15 @@ public enum RunLoopObserverCapture {
     private final class Driver {
 
         private let thresholdMs: Double
+        private let ceilingMs: Double?
         private let debug: Bool
         private var observer: CFRunLoopObserver?
         private var lastResumeAt: UInt64 = 0
         private let timebase: mach_timebase_info_data_t
 
-        init(thresholdMs: Double, debug: Bool) {
+        init(thresholdMs: Double, ceilingMs: Double?, debug: Bool) {
             self.thresholdMs = thresholdMs
+            self.ceilingMs = ceilingMs
             self.debug = debug
             var tb = mach_timebase_info_data_t()
             mach_timebase_info(&tb)
@@ -165,13 +169,14 @@ public enum RunLoopObserverCapture {
                     let elapsedNs = self.machDeltaToNanos(start: self.lastResumeAt, end: end)
                     let ms = Double(elapsedNs) / 1_000_000.0
                     self.lastResumeAt = 0
-                    if ms >= self.thresholdMs {
+                    if ms >= self.thresholdMs, ms < self.ceilingMs ?? .infinity {
                         let stack = StackFrames.symbolicate(
                             Thread.callStackReturnAddresses.map(\.uintValue)
                         )
                         RunLoopObserverCapture.emit(
                             durationMs: ms,
                             thresholdMs: self.thresholdMs,
+                            ceilingMs: self.ceilingMs,
                             stack: stack
                         )
                         if self.debug {
@@ -215,13 +220,13 @@ public enum RunLoopObserverCapture {
 
     nonisolated(unsafe) private static var sharedDriver: Driver?
 
-    private static func performInstall(debug: Bool) {
+    private static func performInstall(debug: Bool, ceilingMs: Double?) {
         os_unfair_lock_lock(installLock)
         if _installed {
             os_unfair_lock_unlock(installLock)
             return
         }
-        let driver = Driver(thresholdMs: defaultThresholdMs, debug: debug)
+        let driver = Driver(thresholdMs: defaultThresholdMs, ceilingMs: ceilingMs, debug: debug)
         driver.start()
         sharedDriver = driver
         _installed = true

@@ -183,6 +183,32 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         XCTAssertEqual(probe.calls.count, 0)
     }
 
+    // MARK: F33 — disjoint rungs
+
+    func test_decideEmission_atOrPastHangCeilingReturnsNil() {
+        XCTAssertNil(RunLoopObserverCapture.decideEmission(
+            durationMs: 5_000, thresholdMs: 50, ceilingMs: 5_000, stack: []))
+        XCTAssertNotNil(RunLoopObserverCapture.decideEmission(
+            durationMs: 4_999, thresholdMs: 50, ceilingMs: 5_000, stack: []))
+    }
+
+    /// Tranche 8 acceptance: the 6 s stall that is an `app.hang` emits
+    /// zero `long_task`.
+    func test_emit_sixSecondStall_withHangDetection_emitsNoLongTask() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        RunLoopObserverCapture.emit(durationMs: 6_000, thresholdMs: 50, ceilingMs: 5_000, stack: [])
+        XCTAssertEqual(probe.calls.count, 0)
+    }
+
+    /// Hang detection off (no ceiling): `long_task` keeps the full range.
+    func test_emit_sixSecondStall_withoutHangDetection_emitsLongTask() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        RunLoopObserverCapture.emit(durationMs: 6_000, thresholdMs: 50, ceilingMs: nil, stack: [])
+        XCTAssertEqual(probe.calls.count, 1)
+    }
+
     // MARK: install()
 
     func test_install_isIdempotent() {

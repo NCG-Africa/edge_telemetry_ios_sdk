@@ -4,7 +4,7 @@ Report a thrown `Error` from a `do / catch` block.
 
 ## Overview
 
-Use ``EdgeRum/captureError(_:context:)`` to record an
+Use ``EdgeRum/captureError(_:type:context:)`` to record an
 `app.error` event for any `Error` your code catches. The SDK flattens
 the error's type (`error.class`), domain (for `NSError`), code, and
 `localizedDescription` automatically; the call-site stack is
@@ -22,12 +22,21 @@ import EdgeRum
 do {
     try submitOrder()
 } catch {
-    EdgeRum.captureError(error, context: [
+    EdgeRum.captureError(error, type: "validation_error", context: [
         "payment.method": "card",
         "checkout.step": "submit"
     ])
 }
 ```
+
+## Error type
+
+`type:` says what kind of failure this was, in your own words — it is
+sent as `error_type` and capped at 128 UTF-8 bytes. The SDK never
+classifies an error itself. Conventional values are `decoding_error`,
+`authentication_error`, `validation_error` and `database_error`.
+Failed network requests are already recorded as `http.request`
+events; reporting them again here would count each failure twice.
 
 ## Context attributes
 

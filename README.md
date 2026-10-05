@@ -274,8 +274,9 @@ any per-call code. Each one is independently togglable on the config.
   first frame after `.active`.
 - **Native crashes.** PLCrashReporter with replay on next launch — the
   emitted `app.crash` carries the **previous** session's identity.
-- **Hangs.** Runloop watchdog emits `app.hang` for any main-thread
-  stall longer than `hangTimeout`. Handled errors from `captureError`
+- **Hangs.** Runloop watchdog emits one `app.hang` when a main-thread
+  stall longer than `hangTimeout` ends, with its real duration — or on
+  the next launch with `hang.terminated = true` if the app died in it. Handled errors from `captureError`
   emit `app.error`; `app.crash` is reserved for replayed native crashes.
 
 ## Recipes

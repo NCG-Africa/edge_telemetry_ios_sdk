@@ -205,6 +205,13 @@ public enum ContextObservers {
                 riders.setOrientation(interfaceOrientation())
             })
         }
+        // F33 — the only clean exit iOS announces.
+        tokens.append(nc.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil, queue: .main
+        ) { _ in
+            (Recorder.shared as? Recorder)?.markCleanExit()
+        })
         tokens.append(nc.addObserver(
             forName: UIDevice.orientationDidChangeNotification,
             object: nil, queue: .main

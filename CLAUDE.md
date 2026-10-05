@@ -261,10 +261,10 @@ and logged when `debug == true`.
 | Resource timing                              | (`metric`, `metricName` = `"resource_timing"`)   | same file (`URLSessionTaskMetrics`)                                           |
 | App launch → first frame                     | `page_load`                                      | `EdgeRumCapture/PageLoadCapture.swift`                                        |
 | Tap / interaction                            | `user.interaction`                               | `EdgeRumCapture/InteractionCapture.swift` (`UIWindow.sendEvent` swizzle)      |
-| Swift/NSError reported by host               | `app.error` (sampled, normal flush)              | `EdgeRum.captureError(_:context:)`                                            |
+| Swift/NSError reported by host               | `app.error` (sampled, normal flush)              | `EdgeRum.captureError(_:type:context:)`                                          |
 | NSException                                  | `app.crash` (runtime=native; forced, flushes)    | `EdgeRumCrash/PLCrashIntegration.swift` (replayed on next launch)             |
 | Mach signal (SIGSEGV/SIGABRT/SIGBUS/SIGILL)  | `app.crash` (runtime=native; forced, flushes)    | same file                                                                     |
-| Main-thread hang                             | `app.hang` (sampled, normal flush)               | `EdgeRumCrash/HangDetector.swift` (`CFRunLoopObserver` watchdog)              |
+| Main-thread hang (emitted at stall end, or replayed `hang.terminated`) | `app.hang` (sampled, normal flush) | `EdgeRumCrash/HangDetector.swift` (`CFRunLoopObserver` watchdog)              |
 | Frame render time (per motion window, gated) | (`metric`, `metricName` = `"frame_render_time"`) | `EdgeRumCapture/FrameSampler.swift` (`CADisplayLink`)                         |
 | Memory usage (30 s tick gated; pressure not) | (`metric`, `metricName` = `"memory_usage"`)      | `EdgeRumCapture/MemorySampler.swift` (`mach_task_basic_info` + pressure src)  |
 | CPU usage (30 s tick, gated)                 | (`metric`, `metricName` = `"cpu_usage"`)         | same file (`ProcessCPUReader`)                                                |
@@ -468,6 +468,7 @@ public enum EdgeRum {
                                    attributes: [String: AttributeValue]? = nil)
     public static func time(_ name: String) -> RumTimer
     public static func captureError(_ error: Error,
+                                    type: String? = nil,  // F33: error_type
                                     context: [String: AttributeValue]? = nil)
     public static func disable()
     public static func enable()
@@ -684,6 +685,14 @@ Breadcrumbs (F31) live in their own `Library/Caches/edge-rum/breadcrumbs.json`
 none while idle, carries its own `session.id`. `EdgeRum.start()` reads and
 deletes it; replay attaches it to `app.crash` only on a sidecar `session.id`
 match. Deleted on rotation and `resetIdentity()`.
+
+F33 adds `app.version` / `device.platform_version` to the mirrored identity
+and a `session.clean_exit` marker written at `willTerminate`.
+`PreviousSession` (`Sources/EdgeRumCore/PreviousSession.swift`) turns the
+prior file into `previous_session.*` + `device.boot_time` on the launch
+`session.started`. An open hang lives in `Library/Caches/edge-rum/pending-hang.json`
+(written by the watchdog thread from threshold to stall end); `EdgeRum.start()`
+replays a leftover one as `app.hang` + `hang.terminated` on the sidecar identity.
 
 ---
 

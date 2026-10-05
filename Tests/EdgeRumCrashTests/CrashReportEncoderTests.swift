@@ -205,6 +205,15 @@ final class CrashReportEncoderTests: XCTestCase {
         XCTAssertEqual(imageNames(dict), [])
     }
 
+    // MARK: - crash.mach_exception (F33)
+
+    func testMachExceptionNamesFromExceptionTypesHeader() {
+        XCTAssertEqual(CrashReportEncoder.machExceptionName(1), "EXC_BAD_ACCESS")
+        XCTAssertEqual(CrashReportEncoder.machExceptionName(10), "EXC_CRASH")
+        XCTAssertEqual(CrashReportEncoder.machExceptionName(12), "EXC_GUARD")
+        XCTAssertEqual(CrashReportEncoder.machExceptionName(99), "99")
+    }
+
     func testBogusReportDataReturnsNil() {
         let attrs = CrashReportEncoder.encode(
             reportData: Data("not a plcr report".utf8),

@@ -99,8 +99,9 @@ conditions are by design; memory-pressure transitions, hangs, crashes and
   one, and it closes 2 s after the last such motion, 10 s at most. The
   link is paused otherwise, so static content never holds the display at
   its maximum refresh rate. Each window emits one item with
-  `frame.max_ms`, `frame.p95_ms`, `frame.dropped_count`,
-  `frame.target_hz`, `frame.sample_count`, `frame.window_ms` (window
+  `frame.max_ms`, `frame.p95_ms`, `frame.dropped_count` (frames skipped
+  at the refresh rate the display is actually running; omitted when the
+  window saw no frames), `frame.target_hz`, `frame.sample_count`, `frame.window_ms` (window
   length — normalise by it), `frame.source = "displaylink"`, and
   `value = frame.max_ms`.
 - **`memory_usage`** — a `DispatchSourceTimer` polls
@@ -158,10 +159,15 @@ emitted `app.crash` carries the **previous** session's identity, not
 the current one.
 
 The hang watchdog observes `CFRunLoopObserver` activity on the main
-runloop; any work segment longer than ``EdgeRumConfig/hangTimeout``
-(default 5.0 s) emits an `app.hang` event with `hang.timestamp`,
-`hang.duration_ms`, and a best-effort `hang.stack` snapshot (same
-`image +0x<offset> <hint>` frame format, with `hang.binary_images`).
+runloop; a stall longer than ``EdgeRumConfig/hangTimeout`` (default
+5.0 s, 2 s minimum) emits one `app.hang` event when it **ends**, with
+the real `hang.duration_ms`, `hang.timestamp` (when the threshold was
+crossed), and a best-effort `hang.stack` snapshot taken during the stall
+(same `image +0x<offset> <hint>` frame format, with
+`hang.binary_images`). If the app is killed mid-stall, the hang is sent
+on the next launch with `hang.terminated = true` under the previous
+session. With hang detection on, `long_task` stops at the hang threshold
+so each stall is reported once.
 Hangs are not fatal: `app.hang` follows ``EdgeRumConfig/sampleRate`` and
 the normal flush, while `app.crash` is reserved for replayed native
 crashes and flushes immediately.

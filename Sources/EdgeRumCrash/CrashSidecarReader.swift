@@ -78,7 +78,7 @@ internal enum CrashSidecarReader {
         var extras: [String: AttributeValue] = [:]
         let consumed: Set<String> = [
             "session.id", "session.start_time", "session.sequence",
-            "device.id", "user.id"
+            "device.id", "user.id", SessionSidecar.cleanExitKey
         ]
         for (key, value) in raw where !consumed.contains(key) {
             extras[key] = value
@@ -92,6 +92,19 @@ internal enum CrashSidecarReader {
             userId: userId,
             extras: extras
         )
+    }
+
+    /// The replay identity bag: the prior session's identity plus every
+    /// mirrored extra. Merged over a replayed event's own attributes
+    /// (event keys win) by `app.crash` and `app.hang` replay alike.
+    internal static func replayAttributes(_ snapshot: CrashSidecarSnapshot) -> [String: AttributeValue] {
+        var attrs = snapshot.extras
+        attrs["session.id"] = .string(snapshot.sessionId)
+        attrs["session.start_time"] = snapshot.sessionStartTime.map { .string($0) }
+        attrs["session.sequence"] = snapshot.sessionSequence.map { .int($0) }
+        attrs["device.id"] = .string(snapshot.deviceId)
+        attrs["user.id"] = snapshot.userId.map { .string($0) }
+        return attrs
     }
 
     // MARK: - Helpers

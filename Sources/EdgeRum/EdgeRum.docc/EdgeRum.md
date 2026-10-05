@@ -53,7 +53,7 @@ recipes for the common host-app patterns are listed below.
 - ``EdgeRum/track(_:attributes:)``
 - ``EdgeRum/trackScreen(_:attributes:)``
 - ``EdgeRum/time(_:)``
-- ``EdgeRum/captureError(_:context:)``
+- ``EdgeRum/captureError(_:type:context:)``
 
 ### Lifecycle
 
