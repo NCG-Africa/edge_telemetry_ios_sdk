@@ -42,6 +42,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
     private let userAgent: String
     private let log: OSLog
     private let debug: Bool
+    private let health: SdkHealth
 
     private weak var recorder: Recorder?
 
@@ -60,8 +61,10 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
         debug: Bool = false,
         queue: DispatchQueue = DispatchQueue(label: "edge.rum.transport", qos: .utility),
         pathObserver: NetworkPathObserver? = NetworkPathObserver(),
-        log: OSLog = OSLog(subsystem: "com.edge.rum", category: "HTTPTransportSink")
+        log: OSLog = OSLog(subsystem: "com.edge.rum", category: "HTTPTransportSink"),
+        health: SdkHealth = .shared
     ) {
+        self.health = health
         self.transport = transport
         self.retryPolicy = retryPolicy
         self.offlineQueue = offlineQueue
@@ -104,6 +107,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
         do {
             data = try Self.encoder.encode(envelope)
         } catch {
+            health.add(.encodeFailure, envelope.events.count)
             if debug {
                 os_log(
                     "HTTPTransportSink encode failed: %{public}@",
@@ -129,11 +133,13 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
     private func handle(outcome: BatchSendOutcome, data: Data, eventCount: Int, attempt: Int) {
         switch outcome {
         case .success:
+            countUpload(eventCount)
             recorder?.didAckBatch()
             // Opportunistic drain — a successful live send is a strong
             // signal that the offline queue can move too.
             drainNow()
         case let .failure(status, retryAfter):
+            health.add(.uploadFailures)
             let decision = retryPolicy.decide(
                 attempt: attempt,
                 status: status,
@@ -145,8 +151,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
                     self?.attempt(data: data, eventCount: eventCount, attempt: attempt + 1)
                 }
             case .toOfflineQueue:
-                if let offlineQueue {
-                    _ = offlineQueue.enqueue(data, eventCount: eventCount)
+                if let offlineQueue, offlineQueue.enqueue(data, eventCount: eventCount) != nil {
                     if debug {
                         os_log(
                             "HTTPTransportSink batch handed to offline queue after %d attempts",
@@ -155,14 +160,18 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
                             attempt
                         )
                     }
-                } else if debug {
-                    os_log(
-                        "HTTPTransportSink dropped batch — offline queue unavailable",
-                        log: log,
-                        type: .info
-                    )
+                } else {
+                    health.add(.enqueueFailure, eventCount)
+                    if debug {
+                        os_log(
+                            "HTTPTransportSink dropped batch — offline queue unavailable",
+                            log: log,
+                            type: .info
+                        )
+                    }
                 }
             case .drop:
+                health.add(.nonRetryable, eventCount)
                 if debug {
                     os_log(
                         "HTTPTransportSink dropped batch — status %d non-retryable",
@@ -177,7 +186,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
 
     private func drainNow() {
         guard let offlineQueue else { return }
-        _ = offlineQueue.drain { [weak self] payload in
+        _ = offlineQueue.drain { [weak self] payload, eventCount in
             guard let self else { return false }
             // Block until the per-file POST resolves so the next file
             // doesn't fire concurrently — the drain has to be
@@ -192,9 +201,19 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             }
             semaphore.wait()
             let ok = outcomeBox.isSuccess
-            if ok { self.recorder?.didAckBatch() }
+            if ok {
+                self.countUpload(eventCount)
+                self.recorder?.didAckBatch()
+            } else {
+                self.health.add(.uploadFailures)
+            }
             return ok
         }
+    }
+
+    private func countUpload(_ eventCount: Int) {
+        health.add(.eventsUploaded, eventCount)
+        health.add(.batchesUploaded)
     }
 
     /// Sendable box for the success flag shared between the drain

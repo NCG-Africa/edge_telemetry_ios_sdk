@@ -173,7 +173,8 @@ loss cannot corrupt the number. Emitted on the envelope once per upload, stamped
 they describe. They **follow session sampling** (an unsampled session issues no request to report
 that it did nothing) — but because `app.crash` is forced-emit, crashing unsampled sessions upload
 and carry counters: the broken tail is covered for free. **Wire-only**: no host-facing accessor.
-All integers except `sdk.capabilities_failed` and `sdk.start_replayed_crash`.
+All integers except `sdk.capabilities_failed` and `sdk.start_replayed_crash`. `sdk.queue_depth_max` and
+`sdk.storage_bytes_max` are omitted when `offline_queue` failed (omit, never falsify).
 
 | key | type | scope (W8) | presence | pii | delta | notes |
 |---|---|---|---|---|---|---|
@@ -190,7 +191,7 @@ All integers except `sdk.capabilities_failed` and `sdk.start_replayed_crash`.
 | `sdk.events_dropped.enqueue_failure` | number (int) | process | optional | none | iOS-only | **+T7.** Offline enqueue returning `nil`, discarded today at `HTTPTransportSink.swift:149` — an undetected total loss in `1.0.0-alpha.2` |
 | `sdk.queue_depth_max` | number (int) | process | required | none | iOS-only | **+T7.** High-water mark (monotonic), not a gauge — answers "did it come close to the cap?" |
 | `sdk.storage_bytes_max` | number (int) | process | required | none | iOS-only | **+T7.** High-water mark of on-disk footprint; needs a size walk `OfflineQueue.orderedFiles()` does not do today |
-| `sdk.capabilities_failed` | string | session | optional | none | iOS-only | **+T7.** Comma-joined, one-shot: the whole subsystem is blind for the process. Bounded members: `interaction_swizzle`, `http_swizzle`, `crash_reporter`, `hang_observer`, `offline_queue`, `keychain`. `keychain` also carries `deviceIdFromFallback` ([W22 Doc-truth][W22] #6) — `device.id` durability degraded. Absent when nothing failed |
+| `sdk.capabilities_failed` | string | process | optional | none | iOS-only | **+T7.** Comma-joined, one-shot: the whole subsystem is blind for the process, so it rides every envelope of the process (ADR-023). Bounded members: `interaction_swizzle`, `http_swizzle`, `crash_reporter`, `hang_observer`, `offline_queue`, `keychain`. `keychain` also carries `deviceIdFromFallback` ([W22 Doc-truth][W22] #6) — `device.id` durability degraded. Absent when nothing failed |
 | `sdk.start_duration_ms` | number (int) | session | required | none | iOS-only | **+T9 launch.** Duration of the `EdgeRum.start()` call only — not process-start-to-ready (C4's mistake one level down). A slice of `sdk.thread_time_ms` |
 | `sdk.start_replayed_crash` | bool | session | required | none | iOS-only | **+T9 launch.** Separates the bimodal start-duration population: crash-replay launches do disk, parse and network work no other launch does |
 

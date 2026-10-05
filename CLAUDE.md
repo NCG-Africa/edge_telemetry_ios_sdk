@@ -137,6 +137,13 @@ key, so the SDK does **not** send it.
 - `sdk.thread_time_ms`: integer, cumulative caller-thread wall-time (ms)
   inside the Recorder ingress for the current session. iOS-only, additive
   (#212).
+- SDK health counters (F32, #219): flat `sdk.*` keys, cumulative per
+  scope, never deltas. Session: `sdk.events_generated`,
+  `sdk.events_dropped.{sampled,unknown_name}`. Process (`SdkHealth`):
+  `sdk.events_uploaded`, `sdk.batches_uploaded`, `sdk.upload_failures`,
+  `sdk.events_dropped.{queue_overflow,encode_failure,non_retryable,enqueue_failure}`,
+  `sdk.queue_depth_max`, `sdk.storage_bytes_max`, `sdk.capabilities_failed`.
+  Markers omitted when zero; wire-only, no public accessor (ADR-023).
 - `events`: array of event and metric items.
 
 ### Required identity attributes on every event

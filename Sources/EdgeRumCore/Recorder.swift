@@ -17,7 +17,7 @@
 //      flush run synchronously on the caller's thread (main for taps
 //      and `viewDidAppear`); the transport hops to its own queue for
 //      encode + POST.
-//   5. Flushes on `config.batchSize` reached, `config.flushInterval`
+//   5. Flushes on `min(config.batchSize, maxBufferedEvents)` reached, `config.flushInterval`
 //      timer fired (armed while enabled, on a global utility queue),
 //      immediate-flush trigger (`app.crash` / `session.finalized`), or
 //      `shutdown()` / `stop()`.
@@ -75,6 +75,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         "cpu_usage",
         "custom_timer"
     ]
+
+    /// Design-constant bound on the in-memory buffer (F32): flushes at
+    /// `min(batchSize, maxBufferedEvents)`, taken under the same lock as
+    /// the append, so `_buffer` never exceeds it.
+    public static let maxBufferedEvents = 1_000
 
     // MARK: Shared instance (mutable so tests can swap a probe in)
 
@@ -144,12 +149,22 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// `setEnabled(false)` / `stop()` / `shutdown()`.
     private var flushTimer: DispatchSourceTimer?
 
-    /// `sdk.thread_time_ms` accumulator — caller-thread wall-time spent
-    /// inside `recordEvent` / `recordPerformance` for the current
-    /// session. Reset at every session boundary.
-    // ponytail: measures the two ingress points only; setUser/configure
-    // cost is outside it. Widen with a reentrancy-aware scope if needed.
-    private var _threadTimeNs: UInt64 = 0
+    /// Session-scoped health: `sdk.thread_time_ms` (caller-thread
+    /// wall-time inside `recordEvent` / `recordPerformance`) and the
+    /// F32 counters. Reset at every session boundary.
+    // ponytail: thread time measures the two ingress points only;
+    // setUser/configure cost is outside it. Widen with a
+    // reentrancy-aware scope if needed.
+    private struct SessionHealth {
+        var threadTimeNs: UInt64 = 0
+        var generated = 0
+        var droppedSampled = 0
+        var droppedUnknownName = 0
+    }
+    private var _session = SessionHealth()
+
+    /// Process-scoped health counters, shared with the transport.
+    private let health: SdkHealth
 
     // MARK: Init
 
@@ -164,9 +179,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         identityProvider: IdentityProvider? = nil,
         sidecar: SessionSidecarWriting? = nil,
         riders: Riders = .shared,
-        breadcrumbs: Breadcrumbs = .shared
+        breadcrumbs: Breadcrumbs = .shared,
+        health: SdkHealth = .shared
     ) {
         self._clock = clock
+        self.health = health
         self.riders = riders
         self.breadcrumbs = breadcrumbs
         let resolvedSessionManager = sessionManager ?? SessionManager(clock: clock)
@@ -220,9 +237,18 @@ public final class Recorder: Recording, @unchecked Sendable {
     public func installPersistedStores(
         identityProvider: IdentityProvider,
         sessionStore: SessionStore,
-        sidecar: SessionSidecarWriting?
+        sidecar: SessionSidecarWriting?,
+        debug: Bool = false
     ) {
         let snapshot = identityProvider.resolve()
+        if snapshot.deviceIdFromFallback {
+            // Keychain write failed: `device.id` survives only as long
+            // as UserDefaults does.
+            health.fail(.keychain)
+            if debug {
+                os_log("Recorder: device.id from UserDefaults fallback — Keychain unavailable", log: log, type: .info)
+            }
+        }
         let revivedManager = SessionManager(
             store: sessionStore,
             clock: _clock
@@ -345,9 +371,6 @@ public final class Recorder: Recording, @unchecked Sendable {
         if let ended = touched.ended {
             pendingFinalized = Self.finalizedAttributes(ended.state, reason: ended.reason)
         }
-        if session.id != priorSessionId {
-            _threadTimeNs = 0
-        }
         stateLock.unlock()
         context.refreshSession(SessionContextSnapshot(session))
         writeSidecar()
@@ -357,6 +380,11 @@ public final class Recorder: Recording, @unchecked Sendable {
         if let pendingFinalized {
             recordEventInternal(name: "session.finalized", attributes: pendingFinalized)
             startedAttrs["session.rotation"] = pendingFinalized["session.rotation"]
+        }
+        // Reset after `session.finalized` flushed, as on idle rotation,
+        // so the ending session's last envelope carries its own totals.
+        if session.id != priorSessionId {
+            stateLock.lock(); _session = SessionHealth(); stateLock.unlock()
         }
         // Emit `session.started`. This bypasses the sampler (forced
         // emit) so it always lands in the next batch.
@@ -392,9 +420,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         let t0 = DispatchTime.now().uptimeNanoseconds
         defer { addThreadTime(since: t0) }
         guard Self.allowedEventNames.contains(name) else {
-            stateLock.lock()
-            let debug = _config?.debug ?? false
-            stateLock.unlock()
+            countDrop(\.droppedUnknownName)
             if debug {
                 os_log(
                     "Recorder dropped unknown event name %{public}@",
@@ -418,7 +444,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         if enabled, !Sampler.forcedEmitAllowlist.contains(name) {
             breadcrumbs.record(name: name, attributes: attributes, at: now, sessionId: currentSessionId)
         }
-        guard currentSampler.shouldEmit(eventName: name) else { return }
+        guard currentSampler.shouldEmit(eventName: name) else { countDrop(\.droppedSampled); return }
 
         var attributes = attributes
         if name == "app.error" || name == "app.hang" {
@@ -439,6 +465,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         let t0 = DispatchTime.now().uptimeNanoseconds
         defer { addThreadTime(since: t0) }
         guard Self.allowedMetricNames.contains(name) else {
+            countDrop(\.droppedUnknownName)
             if debug {
                 os_log("Recorder dropped unknown metric name %{public}@", log: log, type: .info, name)
             }
@@ -448,7 +475,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.lock()
         let currentSampler = self.sampler
         stateLock.unlock()
-        guard currentSampler.shouldEmit(metricName: name) else { return }
+        guard currentSampler.shouldEmit(metricName: name) else { countDrop(\.droppedSampled); return }
         let now = clock.now
         // The headline scalar moves to the envelope `value`; the copy
         // leaves `attributes` (#146). `duration_ms` is the fallback.
@@ -517,23 +544,45 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// is empty — short-circuits to a no-op.
     public func flush(reason: FlushReason) {
         stateLock.lock()
-        let events = _buffer
-        _buffer.removeAll(keepingCapacity: true)
-        let location = _config?.location
-        let currentTransport = transport
-        let threadTimeMs = Int(_threadTimeNs / 1_000_000)
+        let batch = takeBatchLocked()
         stateLock.unlock()
+        send(batch, reason: reason)
+    }
 
-        guard !events.isEmpty else { return }
+    private struct Batch {
+        let events: [Event]
+        let location: String?
+        let transport: TransportSink
+        let session: SessionHealth
+    }
 
+    /// Empty the buffer. Caller holds `stateLock`, so the session
+    /// counters read here match the events taken.
+    private func takeBatchLocked() -> Batch {
+        let batch = Batch(events: _buffer, location: _config?.location, transport: transport, session: _session)
+        _buffer.removeAll(keepingCapacity: true)
+        return batch
+    }
+
+    private func send(_ batch: Batch, reason: FlushReason) {
+        guard !batch.events.isEmpty else { return }
+        var sdkHealth = health.snapshot()
+        sdkHealth["sdk.events_generated"] = .int(batch.session.generated)
+        if batch.session.droppedSampled > 0 {
+            sdkHealth["sdk.events_dropped.sampled"] = .int(batch.session.droppedSampled)
+        }
+        if batch.session.droppedUnknownName > 0 {
+            sdkHealth["sdk.events_dropped.unknown_name"] = .int(batch.session.droppedUnknownName)
+        }
         let envelope = payloadBuilder.build(
-            events: events,
+            events: batch.events,
             context: context.snapshot(),
-            location: location,
+            location: batch.location,
             flushTime: clock.now,
-            sdkThreadTimeMs: threadTimeMs
+            sdkThreadTimeMs: Int(batch.session.threadTimeNs / 1_000_000),
+            sdkHealth: sdkHealth
         )
-        currentTransport.send(envelope, reason: reason)
+        batch.transport.send(envelope, reason: reason)
     }
 
     /// Forward an offline-queue drain request to the installed
@@ -618,7 +667,16 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     private func addThreadTime(since t0: UInt64) {
         let elapsed = DispatchTime.now().uptimeNanoseconds &- t0
-        stateLock.lock(); _threadTimeNs &+= elapsed; stateLock.unlock()
+        stateLock.lock(); _session.threadTimeNs &+= elapsed; stateLock.unlock()
+    }
+
+    /// A pre-buffer drop still counts as generated. Nothing is counted
+    /// while disabled — nothing is generated then.
+    private func countDrop(_ reason: WritableKeyPath<SessionHealth, Int>) {
+        stateLock.lock(); defer { stateLock.unlock() }
+        guard _enabled else { return }
+        _session.generated += 1
+        _session[keyPath: reason] += 1
     }
 
     /// Update the session's `lastActiveAt` to "now" and, if the touch
@@ -665,7 +723,7 @@ public final class Recorder: Recording, @unchecked Sendable {
 
         // Reset after `session.finalized` flushed, so the prior
         // session's last envelope carries its own total.
-        stateLock.lock(); _threadTimeNs = 0; stateLock.unlock()
+        stateLock.lock(); _session = SessionHealth(); stateLock.unlock()
         breadcrumbs.clear()
         context.refreshSession(newSnapshot)
         writeSidecar()
@@ -706,12 +764,13 @@ public final class Recorder: Recording, @unchecked Sendable {
         stateLock.lock()
         // Consent guard: `disable()` silences every emitter at once.
         guard _enabled else { stateLock.unlock(); return }
+        _session.generated += 1
         _buffer.append(event)
-        let count = _buffer.count
-        let cap = _config?.batchSize ?? 30
+        let cap = min(_config?.batchSize ?? 30, Self.maxBufferedEvents)
+        let batch = _buffer.count >= cap ? takeBatchLocked() : nil
         stateLock.unlock()
-        if count >= cap {
-            flush(reason: .batchSize)
+        if let batch {
+            send(batch, reason: .batchSize)
         }
     }
 

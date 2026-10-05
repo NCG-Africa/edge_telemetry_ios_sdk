@@ -87,12 +87,14 @@ public enum PLCrashIntegration {
     private static let defaultEnable: (PLCrashIntegrationConfig, Bool) -> Void = { config, debug in
         #if canImport(CrashReporter)
         guard let reporter = makeReporter(config: config) else {
+            SdkHealth.shared.fail(.crashReporter)
             if debug {
                 os_log("PLCrashReporter init failed", log: log, type: .info)
             }
             return
         }
         if !reporter.enable() {
+            SdkHealth.shared.fail(.crashReporter)
             if debug {
                 os_log("PLCrashReporter enable returned false", log: log, type: .info)
             }

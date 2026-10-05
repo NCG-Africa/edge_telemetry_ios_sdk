@@ -29,12 +29,14 @@ public struct PayloadBuilder: Sendable {
     ///     `nil`.
     ///   - flushTime: stamped as the envelope `timestamp`.
     ///   - sdkThreadTimeMs: envelope `sdk.thread_time_ms`; omitted when `nil`.
+    ///   - sdkHealth: F32 envelope health counters.
     public func build(
         events: [Event],
         context: AttributeBag,
         location: String?,
         flushTime: Date,
-        sdkThreadTimeMs: Int? = nil
+        sdkThreadTimeMs: Int? = nil,
+        sdkHealth: [String: AttributeValue] = [:]
     ) -> EventEnvelope {
         let enriched = events.map { event -> Event in
             // Context first, event attrs overlaid second → event wins.
@@ -45,7 +47,8 @@ public struct PayloadBuilder: Sendable {
             timestamp: flushTime,
             location: location,
             events: enriched,
-            sdkThreadTimeMs: sdkThreadTimeMs
+            sdkThreadTimeMs: sdkThreadTimeMs,
+            sdkHealth: sdkHealth
         )
     }
 }

@@ -141,7 +141,8 @@ public enum EdgeRum {
             realRecorder.installPersistedStores(
                 identityProvider: IdentityProvider(),
                 sessionStore: UserDefaultsSessionStore(),
-                sidecar: SessionSidecar()
+                sidecar: SessionSidecar(),
+                debug: config.debug
             )
 
             // F5 — replace the F3 NoopTransportSink with the real
@@ -157,12 +158,11 @@ public enum EdgeRum {
                 debug: config.debug
             )
             sharedBackgroundUploader = BackgroundUploader(debug: config.debug)
+            let offlineQueue = OfflineQueue(maxQueueSize: config.maxQueueSize, debug: config.debug)
+            if offlineQueue == nil { SdkHealth.shared.fail(.offlineQueue) }
             let sink = HTTPTransportSink(
                 transport: transport,
-                offlineQueue: OfflineQueue(
-                    maxQueueSize: config.maxQueueSize,
-                    debug: config.debug
-                ),
+                offlineQueue: offlineQueue,
                 backgroundUploader: sharedBackgroundUploader,
                 apiKey: config.apiKey,
                 userAgent: BatchTransport.makeUserAgent(
