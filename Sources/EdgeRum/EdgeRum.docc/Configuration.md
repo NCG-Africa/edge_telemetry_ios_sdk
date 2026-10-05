@@ -88,6 +88,8 @@ that only want a subset of the signals:
 - ``EdgeRumConfig/captureNetworkChanges`` — `NWPathMonitor` events.
 - ``EdgeRumConfig/capturePageLoad`` — single per-process page-load
   event.
+- ``EdgeRumConfig/captureBreadcrumbs`` — the last-100-events trail
+  attached to crashes and to a session's first hang or reported error.
 - ``EdgeRumConfig/captureNativeCrashes`` — PLCrashReporter integration.
 - ``EdgeRumConfig/enableHangDetection`` — main-thread runloop watchdog.
 

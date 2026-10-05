@@ -440,6 +440,7 @@ public struct EdgeRumConfig {
     public var captureLifecycle: Bool = true
     public var captureNetworkChanges: Bool = true
     public var capturePageLoad: Bool = true
+    public var captureBreadcrumbs: Bool = true    // F31: 100-row trail on app.crash / first app.hang|app.error
     public var debug: Bool = false
 
     public init(apiKey: String, endpoint: URL)
@@ -670,6 +671,12 @@ A second, **volatile** zone (F28) holds the riders `screen.name`,
 (`Sources/EdgeRumCore/Riders.swift`), coalesced on a serial queue,
 best-effort. `EdgeRum.start()` reads the file before this launch's first
 write so the replayed crash carries crash-time riders.
+
+Breadcrumbs (F31) live in their own `Library/Caches/edge-rum/breadcrumbs.json`
+(`Sources/EdgeRumCore/Breadcrumbs.swift`): whole-ring snapshot, ≤ 1 write/s,
+none while idle, carries its own `session.id`. `EdgeRum.start()` reads and
+deletes it; replay attaches it to `app.crash` only on a sidecar `session.id`
+match. Deleted on rotation and `resetIdentity()`.
 
 ---
 

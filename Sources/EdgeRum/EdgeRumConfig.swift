@@ -140,6 +140,14 @@ public struct EdgeRumConfig: Sendable {
     /// Default `true`.
     public var capturePageLoad: Bool = true
 
+    /// Keep a trail of the last 100 events — in every session, sampled
+    /// or not — and attach it as `breadcrumbs` to the next crash, and to
+    /// the first hang or reported error of a session. The trail is
+    /// saved to the app's caches directory at most once a second while
+    /// events arrive. Set `false` to turn the trail off entirely.
+    /// Default `true`.
+    public var captureBreadcrumbs: Bool = true
+
     // MARK: Diagnostics
 
     /// When `true`, the SDK logs verbose diagnostics via `os_log` and

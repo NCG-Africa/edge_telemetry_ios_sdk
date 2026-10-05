@@ -178,6 +178,46 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         XCTAssertEqual(call.attributes["session.id"], .string("session_1717234870002_ff009988aabbccdd_ios"))
     }
 
+    /// F31 — the replayed crash carries the prior launch's breadcrumb
+    /// ring when its `session.id` matches the sidecar's.
+    func testReplayAttachesPriorBreadcrumbsOnSessionMatch() throws {
+        guard let fixtureBytes = CrashFixtureGenerator.makeLiveReport() else {
+            throw XCTSkip("PLCrashReporter unavailable on this slice")
+        }
+        let baseDir = makeTempBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+        let plcrBase = baseDir.appendingPathComponent("plcr", isDirectory: true)
+        try seedPendingCrashReport(fixtureBytes: fixtureBytes, basePath: plcrBase)
+
+        let crashedSession = "session_1717234870002_ff009988aabbccdd_ios"
+        let crumbs = Breadcrumbs.File(
+            sessionId: crashedSession, seq: 3, truncated: 0,
+            rows: [.init(t: 1, n: "navigation", l: "Cart", s: nil),
+                   .init(t: 2, n: "http.request", l: "POST /pay", s: 500)]
+        )
+
+        let probe = RecordingProbe()
+        PLCrashIntegration.replayIfNeeded(
+            recorder: probe,
+            sidecarContents: [
+                "session.id": .string(crashedSession),
+                "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios")
+            ],
+            priorBreadcrumbs: crumbs,
+            config: PLCrashIntegrationConfig(basePath: plcrBase),
+            debug: false
+        )
+
+        let call = try XCTUnwrap(probe.calls.first)
+        XCTAssertEqual(call.name, "app.crash")
+        guard case let .string(json)? = call.attributes["breadcrumbs"] else {
+            return XCTFail("app.crash must carry breadcrumbs")
+        }
+        let rows = try JSONDecoder().decode([Breadcrumbs.Row].self, from: Data(json.utf8))
+        XCTAssertEqual(rows, crumbs.rows)
+        XCTAssertEqual(call.attributes["breadcrumb.dropped"], .int(1), "seq 3 − 2 rows present")
+    }
+
     func testReplayWithMissingSidecarFallsBackToLiveIdentity() throws {
         guard let fixtureBytes = CrashFixtureGenerator.makeLiveReport() else {
             throw XCTSkip("PLCrashReporter unavailable on this slice")

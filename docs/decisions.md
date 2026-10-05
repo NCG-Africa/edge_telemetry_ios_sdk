@@ -1763,3 +1763,30 @@ Two choices the spec left to the code.
 3. **A low-power or thermal change closes an open frame window at once**
    (observers in `FrameSampler`), so the display link stops then rather
    than at the window's end.
+
+## ADR-022 — Breadcrumbs (F31): trailing-edge snapshot, uncounted window loss, attach after the sampler
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 6 of `docs/specs/rum-coverage-roadmap.md` (#218),
+W6 (#194). Three choices the spec left to the code.
+
+**Decision.**
+
+1. **The snapshot is trailing-edge**: the first crumb after a write
+   schedules the next write one window (1 s) later; later crumbs in the
+   window ride along. At most one write per second, none while idle.
+   Rotation and `resetIdentity()` clear the ring and delete the file, so
+   a crash before the next crumb replays no trail — not the prior
+   session's trail counted as a false `breadcrumb.dropped`.
+2. **`breadcrumb.dropped` cannot count the coalescing window.** A
+   snapshot written atomically with its own sequence counter cannot know
+   about crumbs newer than itself. It counts ring eviction
+   (`seq − rows`), `l` truncations, and the whole trail on a mismatch.
+   The mmap ring (roadmap stated ceiling) is the upgrade that closes it.
+3. **The live once-per-session attach is spent only when the event
+   passes the sampler**, so an unsampled `app.error` does not use up the
+   attach for a later sampled one. The ring includes the triggering
+   event's own row as its last entry.

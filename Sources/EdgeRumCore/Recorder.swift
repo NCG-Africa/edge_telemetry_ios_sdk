@@ -114,6 +114,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     private let payloadBuilder: PayloadBuilder
     private let context: ContextProvider
     private let riders: Riders
+    private let breadcrumbs: Breadcrumbs
 
     /// Sampler is rebuilt on `configure(_:)` so the per-session
     /// decision reflects the host-supplied `sampleRate`. The
@@ -162,10 +163,12 @@ public final class Recorder: Recording, @unchecked Sendable {
         sdkVersion: String = "0.0.0",
         identityProvider: IdentityProvider? = nil,
         sidecar: SessionSidecarWriting? = nil,
-        riders: Riders = .shared
+        riders: Riders = .shared,
+        breadcrumbs: Breadcrumbs = .shared
     ) {
         self._clock = clock
         self.riders = riders
+        self.breadcrumbs = breadcrumbs
         let resolvedSessionManager = sessionManager ?? SessionManager(clock: clock)
         self.sessionManager = resolvedSessionManager
         self.sampler = sampler ?? Sampler(sampleRate: 1.0)
@@ -407,10 +410,20 @@ public final class Recorder: Recording, @unchecked Sendable {
 
         stateLock.lock()
         let currentSampler = self.sampler
+        let enabled = _enabled
         stateLock.unlock()
+        let now = clock.now
+        // F31 — the breadcrumb tap sits ABOVE the sampler so unsampled
+        // sessions still keep a trail; forced-emit names already arrive.
+        if enabled, !Sampler.forcedEmitAllowlist.contains(name) {
+            breadcrumbs.record(name: name, attributes: attributes, at: now, sessionId: currentSessionId)
+        }
         guard currentSampler.shouldEmit(eventName: name) else { return }
 
-        let now = clock.now
+        var attributes = attributes
+        if name == "app.error" || name == "app.hang" {
+            attributes.merge(breadcrumbs.attachOnce()) { own, _ in own }
+        }
         let event = Event.event(name: name, timestamp: now, attributes: AttributeBag(attributes))
         enqueue(event)
 
@@ -493,6 +506,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshDeviceIdentity(DeviceIdentitySnapshot(id: deviceId))
         context.refreshUser(UserContextSnapshot(id: userId))
         writeSidecar()
+        breadcrumbs.clear()  // F31: no pre-erasure trail on later errors
     }
 
     // MARK: Flush
@@ -652,6 +666,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         // Reset after `session.finalized` flushed, so the prior
         // session's last envelope carries its own total.
         stateLock.lock(); _threadTimeNs = 0; stateLock.unlock()
+        breadcrumbs.clear()
         context.refreshSession(newSnapshot)
         writeSidecar()
 

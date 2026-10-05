@@ -129,6 +129,13 @@ public enum EdgeRum {
         // it — the volatile zone (screen, orientation, app state) only
         // lives in the old file.
         let priorSidecar = SessionSidecar().read()
+        // F31 — likewise the prior launch's breadcrumb ring; read and
+        // deleted before this launch records its first crumb.
+        let priorBreadcrumbs = Breadcrumbs.takePrior()
+        Breadcrumbs.shared.configure(
+            capturing: config.captureBreadcrumbs,
+            url: config.captureBreadcrumbs ? Breadcrumbs.defaultURL() : nil
+        )
 
         if let realRecorder = Recorder.shared as? Recorder {
             realRecorder.installPersistedStores(
@@ -207,6 +214,7 @@ public enum EdgeRum {
             PLCrashIntegration.replayIfNeeded(
                 recorder: realRecorder,
                 sidecarContents: priorSidecar,
+                priorBreadcrumbs: config.captureBreadcrumbs ? priorBreadcrumbs : nil,
                 config: PLCrashIntegrationConfig(),
                 debug: config.debug
             )
