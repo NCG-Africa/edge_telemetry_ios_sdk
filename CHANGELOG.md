@@ -11,6 +11,14 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [1.1.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/1.0.0-alpha.2...v1.1.0-alpha.2) (2026-10-05)
+
+
+### Features
+
+* **F25:** hot path — O1 sidecar inversion, sdk.thread_time_ms, consent guard ([#212](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/212)) ([#228](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/228)) ([7f9102b](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/7f9102b3022bb6dcb896e43abeae86222772b848))
+* **F26:** doc-truth — flushInterval timer, event-count queue cap, hang.cpu_usage ([#230](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/230)) ([fadbdbf](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/fadbdbf159e590734fad3e0bf1504272dac0c39b))
+
 ## [Unreleased]
 
 Nothing in this slot yet.
