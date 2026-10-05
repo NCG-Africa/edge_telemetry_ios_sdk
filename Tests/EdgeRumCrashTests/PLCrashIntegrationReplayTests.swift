@@ -66,7 +66,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let sidecar = SessionSidecar(url: baseDir.appendingPathComponent("last-session.json"))
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: baseDir.appendingPathComponent("plcr")),
             debug: false
         )
@@ -106,7 +106,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let probe = RecordingProbe()
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: plcrBase),
             debug: true
         )
@@ -197,7 +197,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let probe = RecordingProbe()
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: plcrBase),
             debug: true
         )
@@ -223,7 +223,7 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         let probe = RecordingProbe()
         PLCrashIntegration.replayIfNeeded(
             recorder: probe,
-            sidecar: sidecar,
+            sidecarContents: sidecar.read(),
             config: PLCrashIntegrationConfig(basePath: plcrBase),
             debug: true
         )

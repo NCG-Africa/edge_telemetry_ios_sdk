@@ -401,6 +401,44 @@ final class UIViewControllerCaptureTests: XCTestCase {
         XCTAssertEqual(UIViewControllerCapture.currentScreen(), "Settings")
     }
 
+    func test_dismissedChildOfPresentedContainer_restoresPresenter() {
+        Recorder.installShared(CaptureProbeRecorder())
+        UIViewControllerCapture._resetCurrentScreenForTesting()
+
+        let presenter = UIViewController()
+        presenter.view.accessibilityIdentifier = "Settings"
+        let container = DismissingViewController()
+        let child = UIViewController()
+        child.view.accessibilityIdentifier = "Picker"
+        container.addChild(child)
+
+        presenter.viewDidAppear(false)
+        child.viewDidAppear(false)
+        child.viewWillDisappear(false)
+        XCTAssertEqual(UIViewControllerCapture.currentScreen(), "Settings")
+    }
+
+    func test_pop_previousScreenIsThePoppedScreen() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        UIViewControllerCapture._resetCurrentScreenForTesting()
+
+        let a = UIViewController()
+        a.view.accessibilityIdentifier = "A"
+        let b = PoppingViewController()
+        b.view.accessibilityIdentifier = "B"
+        a.viewDidAppear(false)
+        b.viewDidAppear(false)
+        b.viewWillDisappear(false)   // popped → box restores A
+        a.viewDidAppear(false)
+
+        let previous = probe.calls.compactMap { call -> AttributeValue? in
+            guard case let .event(name, attrs) = call, name == "navigation" else { return nil }
+            return attrs["navigation.previous_screen"]
+        }
+        XCTAssertEqual(previous.last, .string("B"))
+    }
+
     func test_pushDisappear_leavesBoxToNextAppear() {
         Recorder.installShared(CaptureProbeRecorder())
         UIViewControllerCapture._resetCurrentScreenForTesting()
@@ -537,5 +575,9 @@ final class UIViewControllerCaptureTests: XCTestCase {
 #if canImport(UIKit) && os(iOS)
 private final class DismissingViewController: UIViewController {
     override var isBeingDismissed: Bool { true }
+}
+
+private final class PoppingViewController: UIViewController {
+    override var isMovingFromParent: Bool { true }
 }
 #endif

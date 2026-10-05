@@ -11,7 +11,7 @@
 //                                    or `String(reflecting: type(of: vc))`
 //       navigation.kind            — "uikit" or "swiftui"
 //       navigation.type            — "viewDidAppear"
-//       navigation.previous_screen — screen showing before (omitted if nil)
+//       navigation.previous_screen — last entered screen (omitted if nil)
 //   - One `screen.duration` performance metric on disappear, carrying
 //     `value` (seconds, Double) and `screen.duration_ms` (Int) plus
 //     `screen.name` and `screen.kind`.
@@ -292,12 +292,11 @@ public enum UIViewControllerCapture {
             "navigation.kind": .string(kind),
             "navigation.type": .string("viewDidAppear")
         ]
-        if let previous = currentScreen() {
+        // Box first, so this event's `screen.name` is the screen entered.
+        // The from-edge is the last screen entered, not the restored one.
+        if let previous = Riders.shared.enterScreen(name) {
             attrs["navigation.previous_screen"] = .string(previous)
         }
-
-        // Box first, so this event's `screen.name` is the screen entered.
-        Riders.shared.enterScreen(name)
         recorder.recordEvent(name: "navigation", attributes: attrs)
     }
 

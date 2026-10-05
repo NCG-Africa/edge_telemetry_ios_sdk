@@ -147,6 +147,14 @@ final class RidersTests: XCTestCase {
         XCTAssertEqual(riders.currentScreen, "Settings")
     }
 
+    func testFromEdgeIsLastEnteredNotTheRestoredScreen() {
+        let riders = Riders()
+        XCTAssertNil(riders.enterScreen("A"))
+        XCTAssertEqual(riders.enterScreen("B"), "A")
+        riders.leaveScreen("B")                       // pop restores A
+        XCTAssertEqual(riders.enterScreen("A"), "B", "from-edge is the popped screen")
+    }
+
     func testLeavingANonCurrentScreenIsIgnored() {
         let riders = Riders()
         riders.enterScreen("A")
@@ -230,6 +238,14 @@ final class RidersTests: XCTestCase {
         ])
         XCTAssertEqual(sidecar.read()?["screen.name"], .string("Checkout"))
         XCTAssertEqual(sidecar.read()?["session.sequence"], .int(3))
+    }
+
+    func testVolatileWriteBeforeIdentityWriteLandsVolatileOnly() throws {
+        let url = tempSidecarURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let sidecar = SessionSidecar(url: url)
+        sidecar.writeVolatile(["app.state": .string("active"), "network.type": .string("wifi")])
+        XCTAssertEqual(sidecar.read(), ["app.state": .string("active")])
     }
 
     func testBurstOfChangesCoalescesAndEnqueueWritesNothing() {

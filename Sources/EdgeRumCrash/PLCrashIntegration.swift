@@ -109,17 +109,9 @@ public enum PLCrashIntegration {
     /// `app.crash` event, attribute it to the *crashed* session via
     /// the sidecar, then purge the report. No-op if nothing is
     /// pending or PLCR is unavailable.
-    public static func replayIfNeeded(
-        recorder: Recording,
-        sidecar: SessionSidecar,
-        config: PLCrashIntegrationConfig = PLCrashIntegrationConfig(),
-        debug: Bool
-    ) {
-        replayIfNeeded(recorder: recorder, sidecarContents: sidecar.read(), config: config, debug: debug)
-    }
-
-    /// As above, from sidecar contents read earlier — `EdgeRum.start()`
-    /// reads them before this launch's first sidecar write.
+    ///
+    /// `sidecarContents` is `SessionSidecar.read()` taken by
+    /// `EdgeRum.start()` before this launch's first sidecar write.
     public static func replayIfNeeded(
         recorder: Recording,
         sidecarContents: [String: AttributeValue]?,

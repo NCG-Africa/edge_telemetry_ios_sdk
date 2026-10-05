@@ -35,14 +35,22 @@ public final class Riders: @unchecked Sendable {
         let truncated: Int
     }
 
-    // ponytail: one NSLock around a few words; swap for an atomic if the
-    // enqueue read ever shows up in a profile.
-    private let lock = NSLock()
+    // ponytail: one os_unfair_lock read per enqueue (W17's costing), not a
+    // true lock-free atomic — Swift's `Atomic` needs iOS 18. Revisit if
+    // the read ever shows up in a profile.
+    private let lockPtr: UnsafeMutablePointer<os_unfair_lock> = {
+        let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
+        p.initialize(to: os_unfair_lock())
+        return p
+    }()
     private let queue = DispatchQueue(label: "com.edge.rum.riders", qos: .utility)
     private var current: Screen?
     // ponytail: one-level restore — sheet-on-sheet goes stale. Upgrade to
     // an ordered stack (W5) if nested modals turn out to matter.
     private var replaced: Screen?
+    /// Last screen passed to `enterScreen` — the `navigation` from-edge,
+    /// untouched by restores.
+    private var lastEntered: String?
     private var orientation: String?
     private var appState: String?
     private var sidecar: SessionSidecarWriting?
@@ -50,25 +58,35 @@ public final class Riders: @unchecked Sendable {
 
     public init() {}
 
+    deinit { lockPtr.deallocate() }
+
+    private func lock() { os_unfair_lock_lock(lockPtr) }
+    private func unlock() { os_unfair_lock_unlock(lockPtr) }
+
     // MARK: Writers
 
-    /// The screen now showing. Ignored when empty or unchanged; the
-    /// screen it replaces is kept for one-level `leaveScreen` restore.
-    public func enterScreen(_ name: String) {
-        guard !name.isEmpty else { return }
+    /// The screen now showing. Ignored when empty; the screen it replaces
+    /// is kept for one-level `leaveScreen` restore. Returns the screen
+    /// last entered before this one (the `navigation` from-edge).
+    @discardableResult
+    public func enterScreen(_ name: String) -> String? {
+        guard !name.isEmpty else { return nil }
         let screen = Self.cap(name)
-        lock.lock(); defer { lock.unlock() }
-        guard screen != current else { return }
+        lock(); defer { unlock() }
+        let previous = lastEntered
+        lastEntered = screen.name
+        guard screen != current else { return previous }
         replaced = current
         current = screen
         schedulePersistLocked()
+        return previous
     }
 
     /// `name` is going away (sheet dismissed, view popped). Restores the
     /// screen it replaced, if it is still the current one.
     public func leaveScreen(_ name: String) {
         let screen = Self.cap(name)
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         guard screen == current, let restored = replaced else { return }
         current = restored
         replaced = nil
@@ -76,14 +94,14 @@ public final class Riders: @unchecked Sendable {
     }
 
     public func setOrientation(_ value: String?) {
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         guard value != orientation else { return }
         orientation = value
         schedulePersistLocked()
     }
 
     public func setAppState(_ value: String?) {
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         guard value != appState else { return }
         appState = value
         schedulePersistLocked()
@@ -91,7 +109,7 @@ public final class Riders: @unchecked Sendable {
 
     /// Route volatile writes to `sidecar` and persist the current box.
     public func attach(sidecar: SessionSidecarWriting?) {
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         self.sidecar = sidecar
         schedulePersistLocked()
     }
@@ -99,13 +117,13 @@ public final class Riders: @unchecked Sendable {
     // MARK: Readers
 
     public var currentScreen: String? {
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         return current?.name
     }
 
     /// The rider attributes as of now. Absent keys are never sent empty.
     public func values() -> [String: AttributeValue] {
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         return valuesLocked()
     }
 
@@ -137,11 +155,11 @@ public final class Riders: @unchecked Sendable {
         guard sidecar != nil, !persistPending else { return }
         persistPending = true
         queue.async { [self] in
-            lock.lock()
+            lock()
             persistPending = false
             let snapshot = valuesLocked()
             let sink = sidecar
-            lock.unlock()
+            unlock()
             sink?.writeVolatile(snapshot)
         }
     }
@@ -163,17 +181,20 @@ public final class Riders: @unchecked Sendable {
 
     // MARK: Test hooks
 
+    #if DEBUG
     /// Block until any scheduled volatile write has landed.
     public func _drainForTesting() {
         queue.sync {}
     }
 
     public func _resetForTesting() {
-        lock.lock(); defer { lock.unlock() }
+        lock(); defer { unlock() }
         current = nil
         replaced = nil
+        lastEntered = nil
         orientation = nil
         appState = nil
         sidecar = nil
     }
+    #endif
 }
