@@ -257,10 +257,13 @@ public enum EdgeRum {
         // main-thread-safe; on non-UIKit hosts (the macOS unit-test
         // runner) `install(...)` is a no-op so this call site stays
         // unconditional.
-        if config.captureTaps {
+        // F30 — the same swizzle arms frame motion windows, so it also
+        // installs (tap emission off) when only frame capture is on.
+        if config.captureTaps || config.captureRenderingPerformance {
             InteractionCapture.install(
                 debug: config.debug,
-                captureButtonTitles: config.captureButtonTitles
+                captureButtonTitles: config.captureButtonTitles,
+                emitTaps: config.captureTaps
             )
         }
 
@@ -370,6 +373,7 @@ public enum EdgeRum {
         merged["navigation.screen"] = .string(name)
         merged["navigation.kind"] = .string("manual")
         Riders.shared.enterScreen(name)
+        FrameSampler.noteMotion()  // F30: screen transition
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }
 

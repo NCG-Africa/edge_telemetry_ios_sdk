@@ -89,21 +89,32 @@ Opt out via ``EdgeRumConfig/captureTaps``.
 
 ## Performance samplers
 
-Three independent samplers emit `metric` items on a steady cadence:
+Periodic sampling runs only while the app is active, Low Power Mode is
+off and the thermal state is below `serious`. Gaps outside those
+conditions are by design; memory-pressure transitions, hangs, crashes and
+`long_task` are never held back.
 
-- **`frame_render_time`** — a `CADisplayLink` attached to the main
-  runloop's `.common` modes feeds a one-second window aggregator. Each
-  window emits `frame.max_ms`, `frame.p95_ms`, `frame.dropped_count`,
-  `frame.target_hz`, `frame.source = "displaylink"`, and
-  `value = frame.max_ms`. The display link pauses on `willResignActive`
-  and resumes on `didBecomeActive`.
+- **`frame_render_time`** — a `CADisplayLink` runs only inside a
+  *motion window*: a touch (began or ended) or a screen transition opens
+  one, and it closes 2 s after the last such motion, 10 s at most. The
+  link is paused otherwise, so static content never holds the display at
+  its maximum refresh rate. Each window emits one item with
+  `frame.max_ms`, `frame.p95_ms`, `frame.dropped_count`,
+  `frame.target_hz`, `frame.sample_count`, `frame.window_ms` (window
+  length — normalise by it), `frame.source = "displaylink"`, and
+  `value = frame.max_ms`.
 - **`memory_usage`** — a `DispatchSourceTimer` polls
   `mach_task_basic_info` (RSS, virtual) and `task_vm_info`
-  (`phys_footprint`) every ten seconds; in parallel a
+  (`phys_footprint`) every 30 seconds, tagged with the last observed
+  `memory.pressure`; in parallel a
   `DispatchSource.makeMemoryPressureSource(eventMask: .all)` emits an
   out-of-band sample tagged `memory.pressure ∈ "normal" / "warning" /
   "critical"` on every transition. The `memory.*_kb` attributes are
-  in kB; the metric `value` is in MB.
+  in kB and are omitted when the kernel read fails; the item `value` is
+  in MB.
+- **`cpu_usage`** — on the same 30-second tick, whole-process CPU since
+  the previous tick as `value`, in per-core percent (one busy core is
+  100, so values may exceed 100).
 - **`long_task`** — a `CFRunLoopObserver` measures the interval between
   `.afterWaiting` and the next `.beforeWaiting`. Any work segment ≥ 50 ms
   emits a `long_task` metric with `value` (ms),

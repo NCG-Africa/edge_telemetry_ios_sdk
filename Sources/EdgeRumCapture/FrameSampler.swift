@@ -2,14 +2,16 @@
 //
 // F10 / T10.1 — frame render time sampler.
 //
-// Driven by a single `CADisplayLink` attached to `RunLoop.main` in
-// `.common` modes so the callback fires once per display refresh, even
-// while UIKit tracks a scroll. Each callback adds one inter-frame delta
-// (current `targetTimestamp` minus previous `targetTimestamp`, in ms)
-// to a per-second `FrameWindowAggregator`. Every ~1 s a `flush` drains
-// the window and emits one `frame_render_time` metric carrying
-// `frame.max_ms`, `frame.p95_ms`, `frame.dropped_count`,
-// `frame.target_hz`, `frame.source = "displaylink"` (PLAN-iOS.md §6.10).
+// F30 / #217 — motion windows. One `CADisplayLink` on `RunLoop.main`
+// (`.common` modes) runs only inside a motion window: `noteMotion()`
+// opens one on touch began/ended (`UIWindow.sendEvent` swizzle) and on
+// screen transitions (`viewWillDisappear` / `viewDidAppear`). The window
+// closes `idleCloseSeconds` after the last motion or at the
+// `hardCapSeconds` cap, whichever is first; the link is paused otherwise,
+// so static content never pins the panel at max refresh. Each window
+// emits one `frame_render_time` carrying `frame.max_ms`, `frame.p95_ms`,
+// `frame.dropped_count`, `frame.target_hz`, `frame.sample_count`,
+// `frame.window_ms`, `frame.source = "displaylink"` (PLAN-iOS.md §6.10).
 //
 // iOS version paths:
 //   - iOS 14: `preferredFramesPerSecond = 0` so UIKit uses the device's
@@ -17,10 +19,13 @@
 //   - iOS 15+: `preferredFrameRateRange` is used so ProMotion devices
 //     drive 120 Hz; `frame.target_hz` reports the range's `maximum`.
 //
-// Backgrounding: the display link is paused on
-// `UIApplication.willResignActiveNotification` and resumed on
-// `didBecomeActiveNotification`. Pausing avoids battery drain while
-// suspended and avoids a bogus burst of "dropped" frames on resume.
+// Gate: a window opens only while `SamplingGate` is open and the SDK is
+// enabled. Resigning active, a low-power or thermal change that closes
+// the gate, pauses the link and drops the open window unsent.
+//
+// ponytail: only touch began/ended arm (spec), so a drag held > 2 s or a
+// momentum scroll past 2 s after lift is cut short. Arm on `.moved` too
+// if long gestures turn out to matter.
 //
 // Recorder access: live `Recorder.shared` is fetched per emission;
 // tests swap a probe via `Recorder.installShared(_:)`.
@@ -44,9 +49,10 @@ import EdgeRumCore
 
 // MARK: - Aggregator (pure, testable without CADisplayLink)
 
-/// Rolling per-window aggregator for `CADisplayLink` inter-frame
-/// deltas. One window = `windowSeconds` of wall time; on `flush(now:)`
-/// the aggregate stats are returned and the internal state resets.
+/// Motion-window aggregator for `CADisplayLink` inter-frame deltas.
+/// A window opens at `startedAt`, stays open while `noteMotion(now:)`
+/// keeps arriving, and is due to close (`shouldFlush`) `idleCloseSeconds`
+/// after the last motion or `hardCapSeconds` after it opened.
 ///
 /// `public` here only means "visible to other internal SDK targets
 /// and the test target". `EdgeRumCapture` is not a SwiftPM `product`,
@@ -58,23 +64,27 @@ public struct FrameWindowAggregator: Sendable {
         public let p95Ms: Double
         public let droppedCount: Int
         public let sampleCount: Int
+        /// Window length (ms) — `frame.window_ms`.
+        public let windowMs: Int
     }
 
-    /// Window length used to compute the expected-frames count for the
-    /// dropped-frame estimate. 1 s matches the PLAN cadence.
-    public let windowSeconds: Double
+    /// A window closes this long after the last motion.
+    public static let idleCloseSeconds: Double = 2.0
+    /// A window never runs longer than this.
+    public static let hardCapSeconds: Double = 10.0
 
     /// Native target refresh rate (Hz). Used as the expected
-    /// frames-per-window for the dropped-frame estimate.
+    /// frames-per-second for the dropped-frame estimate.
     public let targetHz: Int
 
     private var samples: [Double] = []
-    private var windowStart: Date
+    private let windowStart: Date
+    private var lastMotion: Date
 
-    public init(windowSeconds: Double = 1.0, targetHz: Int, startedAt: Date) {
-        self.windowSeconds = windowSeconds
+    public init(targetHz: Int, startedAt: Date) {
         self.targetHz = targetHz
         self.windowStart = startedAt
+        self.lastMotion = startedAt
     }
 
     /// Record an inter-frame delta in milliseconds.
@@ -84,21 +94,21 @@ public struct FrameWindowAggregator: Sendable {
         }
     }
 
-    /// Returns `true` when the window has elapsed and a `flush` is due.
-    public func shouldFlush(now: Date) -> Bool {
-        now.timeIntervalSince(windowStart) >= windowSeconds
+    /// Extend the window: it now closes `idleCloseSeconds` after `now`.
+    public mutating func noteMotion(now: Date) {
+        lastMotion = now
     }
 
-    /// Drain the current window and reset for the next.
-    public mutating func flush(now: Date) -> Stats {
-        let stats = Self.computeStats(
-            samples: samples,
-            windowSeconds: windowSeconds,
-            targetHz: targetHz
-        )
-        samples.removeAll(keepingCapacity: true)
-        windowStart = now
-        return stats
+    /// `true` once the window is idle long enough or hit the hard cap.
+    public func shouldFlush(now: Date) -> Bool {
+        now.timeIntervalSince(lastMotion) >= Self.idleCloseSeconds
+            || now.timeIntervalSince(windowStart) >= Self.hardCapSeconds
+    }
+
+    /// Stats for the window ending at `now` (clamped to the hard cap).
+    public func flush(now: Date) -> Stats {
+        let seconds = min(max(0, now.timeIntervalSince(windowStart)), Self.hardCapSeconds)
+        return Self.computeStats(samples: samples, windowSeconds: seconds, targetHz: targetHz)
     }
 
     /// Pure stat computation; broken out so tests can drive it
@@ -111,7 +121,8 @@ public struct FrameWindowAggregator: Sendable {
         if samples.isEmpty {
             // Expected frames within an empty window — every one missed.
             let expected = max(0, Int((Double(targetHz) * windowSeconds).rounded()))
-            return Stats(maxMs: 0, p95Ms: 0, droppedCount: expected, sampleCount: 0)
+            return Stats(maxMs: 0, p95Ms: 0, droppedCount: expected, sampleCount: 0,
+                         windowMs: Int((windowSeconds * 1000).rounded()))
         }
         let sorted = samples.sorted()
         let maxMs = sorted.last ?? 0
@@ -119,7 +130,8 @@ public struct FrameWindowAggregator: Sendable {
         let expected = max(0, Int((Double(targetHz) * windowSeconds).rounded()))
         let observed = samples.count
         let dropped = max(0, expected - observed)
-        return Stats(maxMs: maxMs, p95Ms: p95Ms, droppedCount: dropped, sampleCount: observed)
+        return Stats(maxMs: maxMs, p95Ms: p95Ms, droppedCount: dropped, sampleCount: observed,
+                     windowMs: Int((windowSeconds * 1000).rounded()))
     }
 
     /// Nearest-rank percentile (https://en.wikipedia.org/wiki/Percentile —
@@ -175,6 +187,19 @@ public enum FrameSampler {
         #endif
     }
 
+    /// Open or extend a motion window. Any thread (hops to main); no-op
+    /// before `install`, while disabled or resigned, while the gate is
+    /// closed, and on non-UIKit hosts.
+    public static func noteMotion() {
+        #if canImport(UIKit) && os(iOS)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { noteMotion() }
+            return
+        }
+        sharedDriver?.noteMotion()
+        #endif
+    }
+
     // MARK: UIKit driver
 
     #if canImport(UIKit) && os(iOS)
@@ -209,6 +234,7 @@ public enum FrameSampler {
             "value": .double(stats.maxMs)
         ]
         attrs["frame.sample_count"] = .int(stats.sampleCount)
+        attrs["frame.window_ms"] = .int(stats.windowMs)
         return attrs
     }
 
@@ -223,24 +249,19 @@ public enum FrameSampler {
         )
     }
 
-    // The CADisplayLink target. UIKit retains the link's target weakly
-    // via the runloop; we hold a strong reference here so the driver
-    // outlives the install call.
+    // The CADisplayLink target. Main-thread only.
     private final class Driver: NSObject {
 
         private var displayLink: CADisplayLink?
-        private var aggregator: FrameWindowAggregator
+        /// Non-nil while a motion window is open.
+        private var window: FrameWindowAggregator?
         private var lastTimestamp: CFTimeInterval = 0
+        private var active = true
         private let targetHz: Int
         private let debug: Bool
 
         init(targetHz: Int, debug: Bool) {
             self.targetHz = targetHz
-            self.aggregator = FrameWindowAggregator(
-                windowSeconds: 1.0,
-                targetHz: targetHz,
-                startedAt: Date()
-            )
             self.debug = debug
             super.init()
         }
@@ -257,54 +278,69 @@ public enum FrameSampler {
             } else {
                 link.preferredFramesPerSecond = 0
             }
+            link.isPaused = true
             link.add(to: .main, forMode: .common)
             self.displayLink = link
-            self.lastTimestamp = 0
-            self.aggregator = FrameWindowAggregator(
-                windowSeconds: 1.0,
-                targetHz: targetHz,
-                startedAt: Date()
-            )
         }
 
-        func pause() {
-            displayLink?.isPaused = true
-        }
-
-        func resume() {
-            // Reset the inter-frame baseline so the first delta after
-            // resume isn't a multi-second spike (foregrounding gap).
+        func noteMotion() {
+            let now = Date()
+            if window != nil {
+                window?.noteMotion(now: now)
+                return
+            }
+            guard active, Recorder.shared.isEnabled, SamplingGate.isOpen() else { return }
+            window = FrameWindowAggregator(targetHz: targetHz, startedAt: now)
+            // Fresh baseline so the first delta isn't the idle gap.
             lastTimestamp = 0
-            aggregator = FrameWindowAggregator(
-                windowSeconds: 1.0,
-                targetHz: targetHz,
-                startedAt: Date()
-            )
             displayLink?.isPaused = false
+        }
+
+        #if DEBUG
+        var isSampling: Bool { window != nil && displayLink?.isPaused == false }
+        #endif
+
+        func setActive(_ value: Bool) {
+            active = value
+            if !value { closeWindow() }
+        }
+
+        /// Low power / thermal changed: drop an open window the gate
+        /// now forbids, so the link stops mid-window, not at its end.
+        func gateMayHaveClosed() {
+            if window != nil, !SamplingGate.isOpen() { closeWindow() }
+        }
+
+        private func closeWindow() {
+            displayLink?.isPaused = true
+            window = nil
         }
 
         @objc
         private func tick(_ link: CADisplayLink) {
+            guard var current = window else { return }
             let ts = link.targetTimestamp
-            defer { lastTimestamp = ts }
             if lastTimestamp != 0 {
-                let deltaMs = (ts - lastTimestamp) * 1000.0
-                aggregator.recordDelta(deltaMs)
+                current.recordDelta((ts - lastTimestamp) * 1000.0)
             }
+            lastTimestamp = ts
+            window = current
             let now = Date()
-            if aggregator.shouldFlush(now: now) {
-                let stats = aggregator.flush(now: now)
-                FrameSampler.emit(stats: stats, targetHz: targetHz)
-                if debug {
-                    os_log(
-                        "frame window: max=%{public}.2fms p95=%{public}.2fms dropped=%{public}d",
-                        log: FrameSampler.log,
-                        type: .info,
-                        stats.maxMs,
-                        stats.p95Ms,
-                        stats.droppedCount
-                    )
-                }
+            guard current.shouldFlush(now: now) else { return }
+            closeWindow()
+            guard SamplingGate.isOpen() else { return }
+            let stats = current.flush(now: now)
+            FrameSampler.emit(stats: stats, targetHz: targetHz)
+            if debug {
+                os_log(
+                    "frame window: %{public}dms max=%{public}.2fms p95=%{public}.2fms dropped=%{public}d",
+                    log: FrameSampler.log,
+                    type: .info,
+                    stats.windowMs,
+                    stats.maxMs,
+                    stats.p95Ms,
+                    stats.droppedCount
+                )
             }
         }
     }
@@ -328,16 +364,25 @@ public enum FrameSampler {
             object: nil,
             queue: .main
         ) { _ in
-            sharedDriver?.pause()
+            sharedDriver?.setActive(false)
         }
         let become = nc.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { _ in
-            sharedDriver?.resume()
+            sharedDriver?.setActive(true)
         }
-        lifecycleObservers = [resign, become]
+        // F30: the gate's power inputs — close a window they forbid.
+        let power = [
+            ProcessInfo.thermalStateDidChangeNotification,
+            Notification.Name.NSProcessInfoPowerStateDidChange
+        ].map {
+            nc.addObserver(forName: $0, object: nil, queue: .main) { _ in
+                sharedDriver?.gateMayHaveClosed()
+            }
+        }
+        lifecycleObservers = [resign, become] + power
         _installed = true
         os_unfair_lock_unlock(installLock)
         if debug {
@@ -354,13 +399,18 @@ public enum FrameSampler {
     // MARK: Test-only helpers
 
     #if DEBUG
+    #if canImport(UIKit) && os(iOS)
+    /// `true` while a motion window is open and the display link runs.
+    static var _isSamplingForTesting: Bool { sharedDriver?.isSampling ?? false }
+    #endif
+
     /// Tear down the running display link and lifecycle observers and
     /// clear the install flag so subsequent tests can drive `install()`
     /// from a clean state.
     public static func _resetInstallFlagForTesting() {
         #if canImport(UIKit) && os(iOS)
         os_unfair_lock_lock(installLock)
-        sharedDriver?.pause()
+        sharedDriver?.setActive(false)
         sharedDriver = nil
         let nc = NotificationCenter.default
         for token in lifecycleObservers {

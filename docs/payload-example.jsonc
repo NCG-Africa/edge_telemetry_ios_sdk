@@ -133,8 +133,10 @@
         "sdk.platform": "ios-native",
         "frame.max_ms": 33,
         "frame.p95_ms": 28,
-        "frame.dropped_count": 1,
+        "frame.dropped_count": 2,
         "frame.target_hz": 60,
+        "frame.sample_count": 148,
+        "frame.window_ms": 2500,
         "frame.source": "displaylink"
       }
     }
@@ -143,8 +145,8 @@
 
 // Other event shapes (app.error, app.hang, app.crash, user.profile.update,
 // custom_event, app_lifecycle, page_load, network_change, session.started,
-// session.finalized, plus metric items memory_usage, long_task and
-// custom_timer from EdgeRum.time()) follow the same envelope and
+// session.finalized, plus metric items memory_usage, cpu_usage, long_task
+// and custom_timer from EdgeRum.time()) follow the same envelope and
 // identity-attribute rules. metricName is one of exactly six allowlisted
 // values: resource_timing, long_task, frame_render_time, memory_usage,
-// cpu_usage (allowlisted, not yet emitted), custom_timer.
+// cpu_usage, custom_timer.

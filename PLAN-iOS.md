@@ -1539,6 +1539,15 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     rider, class `content` — **not** a `screen.duration` signal and not
     a default grouping dimension. On replayed `NativeCrash` the riders
     are crash-time values. Catalogue §5.2; collected in #225. RN: none.
+16. **F30 sampler cut (#217).** (a) `cpu_usage` first on the wire:
+    `value` = whole-process CPU, per-core percent (may exceed 100), every
+    30 s. (b) `frame_render_time` now describes a **motion window**
+    (≤ 10 s), not a 1 s slice — normalise by the new `frame.window_ms`.
+    (c) `memory_usage` tick 10 s → 30 s and carries the last observed
+    `memory.pressure`; `memory.*_kb` omitted on a failed kernel read.
+    (d) Periodic items are absent while the app is not active, on Low
+    Power Mode, or at thermal `serious`+ — disambiguate gaps with
+    `device.low_power_mode` / `device.thermal_state`. RN: none.
 
 ---
 

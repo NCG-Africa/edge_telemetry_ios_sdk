@@ -268,6 +268,7 @@ public enum UIViewControllerCapture {
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
         if isContainerController(vc) { return }
+        FrameSampler.noteMotion()  // F30: screen transition
 
         let (name, kind) = resolveScreenName(vc)
 
@@ -297,6 +298,7 @@ public enum UIViewControllerCapture {
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
         if isContainerController(vc) { return }
+        FrameSampler.noteMotion()  // F30: transition starting
 
         guard
             let state = objc_getAssociatedObject(vc, &screenStateKey) as? ScreenState

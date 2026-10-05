@@ -1738,3 +1738,28 @@ spec and catalogue left open or that the code made on the way.
 **Consequences.** Wire-breaking; Processor rolls out first (catalogue §10
 P3–P5, P8, P14, P18). Migration note:
 `docs/migration/1.0.0-alpha.2-to-alpha.N.md`.
+
+## ADR-021 — Sampler cut (F30): tap swizzle without taps, gate on the `app.state` rider
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 5 of `docs/specs/rum-coverage-roadmap.md` (#217).
+Two choices the spec left to the code.
+
+**Decision.**
+
+1. **The `UIWindow.sendEvent` swizzle installs when `captureTaps` is off
+   but `captureRenderingPerformance` is on**, with tap emission disabled
+   (`InteractionCapture.install(emitTaps: false)`). The spec arms motion
+   windows from "the existing `UIWindow.sendEvent` swizzle"; without it a
+   taps-off host would never measure frames. Hosts that turn off both get
+   no swizzle.
+2. **"App active" is read from the `app.state` rider** (`Riders`, written
+   by `ContextObservers`), not `UIApplication.applicationState`, because
+   the memory tick runs off the main thread. An unknown state counts as
+   closed: no periodic samples until the rider is seeded.
+3. **A low-power or thermal change closes an open frame window at once**
+   (observers in `FrameSampler`), so the display link stops then rather
+   than at the window's end.
