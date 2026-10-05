@@ -2,7 +2,7 @@
 //
 // F12 unit tests. Covers:
 //
-//   - makeAttributes: four-key bag for cold/prewarmed permutations,
+//   - makeAttributes: three-key bag for prewarmed permutations,
 //     types pinned to .int/.bool/.bool/.string.
 //   - emit(...) routes through Recorder.shared.recordEvent with the
 //     `page_load` event name.
@@ -104,15 +104,14 @@ final class PageLoadCaptureTests: XCTestCase {
 
     // MARK: makeAttributes shape
 
-    func test_makeAttributes_coldStartNotPrewarmed_shape() {
+    func test_makeAttributes_notPrewarmed_shape() {
         let attrs = PageLoadCapture.makeAttributes(
             durationMs: 842,
-            coldStart: true,
             prewarmed: false
         )
-        XCTAssertEqual(attrs.count, 4)
+        XCTAssertEqual(attrs.count, 3)
         XCTAssertEqual(attrs["page_load.duration_ms"], .int(842))
-        XCTAssertEqual(attrs["page_load.cold_start"], .bool(true))
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertEqual(attrs["page_load.prewarmed"], .bool(false))
         XCTAssertEqual(attrs["page_load.source"], .string("displaylink"))
     }
@@ -120,12 +119,11 @@ final class PageLoadCaptureTests: XCTestCase {
     func test_makeAttributes_prewarmed_shape() {
         let attrs = PageLoadCapture.makeAttributes(
             durationMs: 41,
-            coldStart: false,
             prewarmed: true
         )
-        XCTAssertEqual(attrs.count, 4)
+        XCTAssertEqual(attrs.count, 3)
         XCTAssertEqual(attrs["page_load.duration_ms"], .int(41))
-        XCTAssertEqual(attrs["page_load.cold_start"], .bool(false))
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertEqual(attrs["page_load.prewarmed"], .bool(true))
         XCTAssertEqual(attrs["page_load.source"], .string("displaylink"))
     }
@@ -136,7 +134,6 @@ final class PageLoadCaptureTests: XCTestCase {
         // The attribute must still be present and typed as Int(0).
         let attrs = PageLoadCapture.makeAttributes(
             durationMs: 0,
-            coldStart: false,
             prewarmed: true
         )
         XCTAssertEqual(attrs["page_load.duration_ms"], .int(0))
@@ -150,7 +147,6 @@ final class PageLoadCaptureTests: XCTestCase {
 
         let recorded = PageLoadCapture.emit(
             durationMs: 1234,
-            coldStart: true,
             prewarmed: false
         )
 
@@ -162,7 +158,7 @@ final class PageLoadCaptureTests: XCTestCase {
         }
         XCTAssertEqual(name, "page_load")
         XCTAssertEqual(attrs["page_load.duration_ms"], .int(1234))
-        XCTAssertEqual(attrs["page_load.cold_start"], .bool(true))
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertEqual(attrs["page_load.prewarmed"], .bool(false))
         XCTAssertEqual(attrs["page_load.source"], .string("displaylink"))
     }
@@ -171,9 +167,9 @@ final class PageLoadCaptureTests: XCTestCase {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
 
-        let first = PageLoadCapture.emit(durationMs: 100, coldStart: true, prewarmed: false)
-        let second = PageLoadCapture.emit(durationMs: 200, coldStart: true, prewarmed: false)
-        let third = PageLoadCapture.emit(durationMs: 300, coldStart: true, prewarmed: false)
+        let first = PageLoadCapture.emit(durationMs: 100, prewarmed: false)
+        let second = PageLoadCapture.emit(durationMs: 200, prewarmed: false)
+        let third = PageLoadCapture.emit(durationMs: 300, prewarmed: false)
 
         XCTAssertTrue(first)
         XCTAssertFalse(second)
@@ -189,7 +185,6 @@ final class PageLoadCaptureTests: XCTestCase {
 
         let recorded = PageLoadCapture.emit(
             durationMs: 555,
-            coldStart: true,
             prewarmed: false
         )
 
@@ -203,7 +198,6 @@ final class PageLoadCaptureTests: XCTestCase {
         probe.setEnabled(true)
         let retry = PageLoadCapture.emit(
             durationMs: 888,
-            coldStart: true,
             prewarmed: false
         )
         XCTAssertTrue(retry)
@@ -241,12 +235,11 @@ final class PageLoadCaptureTests: XCTestCase {
         Recorder.installShared(probe)
         PageLoadCapture._overridePrewarmedForTesting(true)
 
-        // Production call-path always uses `coldStart = !prewarmed`;
+        // `page_load.cold_start` was deleted in F29;
         // we mirror that mapping here.
         let prewarmed = PageLoadCapture.prewarmedAtLaunch
         PageLoadCapture.emit(
             durationMs: 10,
-            coldStart: !prewarmed,
             prewarmed: prewarmed
         )
 
@@ -254,7 +247,7 @@ final class PageLoadCaptureTests: XCTestCase {
             XCTFail("Expected event call")
             return
         }
-        XCTAssertEqual(attrs["page_load.cold_start"], .bool(false))
+        XCTAssertNil(attrs["page_load.cold_start"])
         XCTAssertEqual(attrs["page_load.prewarmed"], .bool(true))
     }
 
@@ -288,7 +281,6 @@ final class PageLoadCaptureTests: XCTestCase {
 
         PageLoadCapture.emit(
             durationMs: elapsedMs,
-            coldStart: true,
             prewarmed: false
         )
 
@@ -313,7 +305,7 @@ final class PageLoadCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         PageLoadCapture._overridePrewarmedForTesting(true)
-        PageLoadCapture.emit(durationMs: 1, coldStart: false, prewarmed: true)
+        PageLoadCapture.emit(durationMs: 1, prewarmed: true)
         XCTAssertTrue(PageLoadCapture.hasEmitted)
 
         PageLoadCapture._resetInstallFlagForTesting()
@@ -325,7 +317,7 @@ final class PageLoadCaptureTests: XCTestCase {
 
         // After reset, `_prewarmedOverride` is cleared and a fresh
         // emit lands.
-        let retry = PageLoadCapture.emit(durationMs: 2, coldStart: true, prewarmed: false)
+        let retry = PageLoadCapture.emit(durationMs: 2, prewarmed: false)
         XCTAssertTrue(retry)
     }
 

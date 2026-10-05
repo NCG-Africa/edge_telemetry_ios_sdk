@@ -23,12 +23,11 @@ final class IdentityFormatTests: XCTestCase {
     }
 
     func testSessionIdGeneratorMatchesRegexAcross10kSamples() {
-        let manager = SessionManager()
-        for _ in 0..<10_000 {
-            let state = manager.rotate()
+        for i in 0..<10_000 {
+            let id = SessionManager.formatSessionId(epochMs: Int64(i), random: SessionManager.secureRandomBytes())
             XCTAssertTrue(
-                IdentityFormat.isValid(state.id, kind: .session),
-                "\(state.id) did not match session regex"
+                IdentityFormat.isValid(id, kind: .session),
+                "\(id) did not match session regex"
             )
         }
     }

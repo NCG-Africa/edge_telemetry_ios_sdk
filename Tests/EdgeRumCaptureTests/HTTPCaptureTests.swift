@@ -277,14 +277,15 @@ final class HTTPCaptureTests: XCTestCase {
         }
         XCTAssertEqual(name, "http.request")
         XCTAssertEqual(attrs["http.method"], .string("GET"))
-        XCTAssertEqual(attrs["http.url"], .string("https://api.example.com/v1/users?page=2"))
+        XCTAssertNil(attrs["http.url"], "F29: deleted — query strings leak")
         XCTAssertEqual(attrs["http.host"], .string("api.example.com"))
         XCTAssertEqual(attrs["http.path"], .string("/v1/users"))
         XCTAssertEqual(attrs["http.status_code"], .int(200))
         XCTAssertEqual(attrs["http.duration_ms"], .int(500))
         XCTAssertEqual(attrs["http.response_size"], .int(1234))
         XCTAssertEqual(attrs["http.from_cache"], .bool(false))
-        XCTAssertNil(attrs["http.error"])
+        XCTAssertNil(attrs["http.error_domain"])
+        XCTAssertNil(attrs["http.error_code"])
     }
 
     func test_recordOutcome_includesErrorAttributeOnFailure() {
@@ -309,7 +310,9 @@ final class HTTPCaptureTests: XCTestCase {
         guard case .event(_, let attrs) = probe.calls[0] else {
             XCTFail("Expected an event call"); return
         }
-        XCTAssertNotNil(attrs["http.error"])
+        XCTAssertNil(attrs["http.error"], "F29: free text deleted")
+        XCTAssertEqual(attrs["http.error_domain"], .string(NSURLErrorDomain))
+        XCTAssertEqual(attrs["http.error_code"], .int(URLError.notConnectedToInternet.rawValue))
         XCTAssertEqual(attrs["http.status_code"], .int(0))
     }
 
@@ -398,10 +401,10 @@ final class HTTPCaptureTests: XCTestCase {
     }
 
     func test_recordOutcome_appliesSanitizeUrl() {
-        // Strip query string from the recorded URL.
+        // Redact the recorded path.
         let sanitize: @Sendable (URL) -> URL = { url in
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            components?.query = nil
+            components?.path = "/redacted"
             return components?.url ?? url
         }
         let config = HTTPCaptureConfig(sanitizeUrl: sanitize)
@@ -424,7 +427,7 @@ final class HTTPCaptureTests: XCTestCase {
         guard case .event(_, let attrs) = probe.calls[0] else {
             XCTFail("Expected an event call"); return
         }
-        XCTAssertEqual(attrs["http.url"], .string("https://api.example.com/u"))
+        XCTAssertEqual(attrs["http.path"], .string("/redacted"))
     }
 
     // MARK: recordOutcome — disabled recorder

@@ -182,7 +182,6 @@ public enum InteractionCapture {
         guard event.type == .touches else { return }
         guard let touches = event.allTouches, !touches.isEmpty else { return }
 
-        let screen = UIViewControllerCapture.currentScreen()
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
         os_unfair_lock_lock(installLock)
@@ -193,7 +192,6 @@ public enum InteractionCapture {
             guard let hitView = touch.view else { continue }
             guard let attrs = decideEmission(
                 for: hitView,
-                currentScreen: screen,
                 captureButtonTitles: captureButtonTitles
             ) else {
                 continue
@@ -217,7 +215,6 @@ public enum InteractionCapture {
     /// and forwards into this function once a hit view is in hand.
     static func decideEmission(
         for hitView: UIView,
-        currentScreen: String?,
         captureButtonTitles: Bool = false
     ) -> [String: AttributeValue]? {
         // 1. Privacy: any secure-entry field in the responder chain
@@ -240,10 +237,7 @@ public enum InteractionCapture {
         let (id, source) = resolveTargetIdentifier(target, captureButtonTitles: captureButtonTitles)
         attrs["interaction.name_source"] = .string(source)
         if let id {
-            attrs["interaction.target_id"] = .string(id)
-        }
-        if let screen = currentScreen, !screen.isEmpty {
-            attrs["interaction.screen"] = .string(screen)
+            attrs["interaction.name"] = .string(id)
         }
         return attrs
     }

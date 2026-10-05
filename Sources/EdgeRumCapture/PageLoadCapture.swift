@@ -10,7 +10,6 @@
 // State == .active`. The event carries:
 //
 //   page_load.duration_ms : Int     ms from launchStart to first active tick
-//   page_load.cold_start  : Bool    true unless prewarmed
 //   page_load.prewarmed   : Bool    iOS 15+ ActivePrewarm env == "1"
 //   page_load.source      : String  "displaylink"
 //
@@ -21,10 +20,8 @@
 //   _emitted   — guards the emit path so we record one event per process
 //                even if the display link fires before we can invalidate.
 //
-// PLAN-iOS.md §6.4 originally described the keys as `page_load.cold` /
-// `page_load.prewarm`; the GitHub issues (#17 / #69 / #70) refined them
-// to the snake_case `cold_start` / `prewarmed`. We emit the issue
-// vocabulary; PLAN-iOS.md is updated in the same change.
+// `page_load.cold_start` was deleted in F29: it was only `!prewarmed`,
+// and warm vs cold is not observable in-process.
 //
 // All UIKit / CADisplayLink code is gated behind `#if canImport(UIKit)
 // && os(iOS)` so `swift test` on the macOS CI host still compiles this
@@ -175,16 +172,14 @@ public enum PageLoadCapture {
     // MARK: Pure attribute builder (test seam)
 
     /// Build the `page_load` attribute bag. Pure; tests drive it directly.
-    /// `coldStart` and `prewarmed` are passed in (rather than read from
-    /// static state) so this function stays trivially testable.
+    /// `prewarmed` is passed in (rather than read from static state)
+    /// so this function stays trivially testable.
     static func makeAttributes(
         durationMs: Int,
-        coldStart: Bool,
         prewarmed: Bool
     ) -> [String: AttributeValue] {
         [
             "page_load.duration_ms": .int(durationMs),
-            "page_load.cold_start": .bool(coldStart),
             "page_load.prewarmed": .bool(prewarmed),
             "page_load.source": .string("displaylink")
         ]
@@ -198,7 +193,6 @@ public enum PageLoadCapture {
     @discardableResult
     static func emit(
         durationMs: Int,
-        coldStart: Bool,
         prewarmed: Bool
     ) -> Bool {
         os_unfair_lock_lock(emitLock)
@@ -225,7 +219,6 @@ public enum PageLoadCapture {
             name: "page_load",
             attributes: makeAttributes(
                 durationMs: durationMs,
-                coldStart: coldStart,
                 prewarmed: prewarmed
             )
         )
@@ -291,7 +284,6 @@ public enum PageLoadCapture {
             }
 
             let prewarmed = PageLoadCapture.prewarmedAtLaunch
-            let coldStart = !prewarmed
             let durationMs = Int(
                 (Date().timeIntervalSince(PageLoadCapture.launchStart) * 1000.0).rounded()
             )
@@ -305,7 +297,6 @@ public enum PageLoadCapture {
 
             let recorded = PageLoadCapture.emit(
                 durationMs: safeDuration,
-                coldStart: coldStart,
                 prewarmed: prewarmed
             )
 
@@ -318,11 +309,10 @@ public enum PageLoadCapture {
 
             if debug {
                 os_log(
-                    "page_load fired: duration_ms=%{public}d cold_start=%{public}@ prewarmed=%{public}@ recorded=%{public}@",
+                    "page_load fired: duration_ms=%{public}d prewarmed=%{public}@ recorded=%{public}@",
                     log: PageLoadCapture.log,
                     type: .info,
                     safeDuration,
-                    coldStart ? "true" : "false",
                     prewarmed ? "true" : "false",
                     recorded ? "true" : "false"
                 )

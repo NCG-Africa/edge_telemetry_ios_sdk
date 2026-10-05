@@ -228,8 +228,6 @@ Every other field has a documented default tuned for production use.
 | `appBuild`                     | `String?`                           | `nil`                                | Emitted as `app.build_number`. |
 | `environment`                  | `Environment?`                      | `nil`                                | `.production` / `.staging` / `.development`. |
 | `location`                     | `String?`                           | `nil`                                | Batch envelope `location`, e.g. `"Nairobi/Kenya"`. |
-| `resolveLocation`              | `Bool`                              | `false`                              | Not wired up — no effect, no request made. Will be removed. |
-| `locationProviderUrl`          | `URL?`                              | `https://ipapi.co/json/`             | Not wired up — never contacted. Will be removed. |
 | `sampleRate`                   | `Double`                            | `1.0`                                | Per-session sample rate. `0.0`–`1.0`. |
 | `ignoreUrls`                   | `[NSRegularExpression]`             | `[]`                                 | HTTP captures matching any regex are dropped. |
 | `maxQueueSize`                 | `Int`                               | `200`                                | Offline-queue cap (events). |

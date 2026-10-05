@@ -78,6 +78,9 @@ public protocol Recording: AnyObject, Sendable {
     /// transport. Called from `EdgeRum.enable()` and F11's
     /// `didBecomeActive` lifecycle hook.
     func drainOfflineQueue()
+
+    /// Hand the buffer to the transport now.
+    func flush(reason: FlushReason)
 }
 
 public extension Recording {
@@ -100,6 +103,8 @@ public extension Recording {
     /// Default no-op so existing test probes don't have to adopt the
     /// new requirement. The real `Recorder` overrides this.
     func drainOfflineQueue() { }
+
+    func flush(reason: FlushReason) { _ = reason }
 
     /// Default no-op; the real `Recorder` overrides this.
     func clearUser() { }

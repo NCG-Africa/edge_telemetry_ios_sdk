@@ -5,11 +5,11 @@
 // Subscribes to the five UIApplication notifications that map to the
 // `lifecycle.state` vocabulary (PLAN-iOS.md §6.18):
 //
-//   willResignActive       → "inactive"   + emit `session.finalized` (auto-flushes)
+//   willResignActive       → "inactive"   + immediate flush
 //   didEnterBackground     → "backgrounded"
 //   willEnterForeground    → "foregrounded"
 //   didBecomeActive        → "active"     + drainOfflineQueue()
-//   willTerminate          → "will_terminate" + immediate finalize+flush
+//   willTerminate          → "will_terminate" + immediate flush
 //
 // Each transition emits one `app_lifecycle` event carrying
 // `lifecycle.state` and `lifecycle.previous_state` (the last state
@@ -124,14 +124,13 @@ public enum LifecycleCapture {
         )
     }
 
-    /// Emit `session.finalized` (which auto-flushes per Recorder
-    /// transport rules). Used on `willResignActive` and `willTerminate`
-    /// so the in-memory buffer is on the wire before the OS suspends
-    /// or kills the process.
-    static func emitSessionFinalized() {
+    /// Flush the buffer on `willResignActive` and `willTerminate` so
+    /// it is on the wire before the OS suspends or kills the process.
+    /// Emits no event: `session.finalized` marks rotation only (F29).
+    static func flushBeforeSuspension() {
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
-        recorder.recordEvent(name: "session.finalized", attributes: [:])
+        recorder.flush(reason: .immediate)
     }
 
     // MARK: Install machinery
@@ -152,7 +151,7 @@ public enum LifecycleCapture {
             queue: .main
         ) { _ in
             LifecycleCapture.emit(state: "inactive")
-            LifecycleCapture.emitSessionFinalized()
+            LifecycleCapture.flushBeforeSuspension()
         }
         let didEnterBackground = nc.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
@@ -182,7 +181,7 @@ public enum LifecycleCapture {
             queue: .main
         ) { _ in
             LifecycleCapture.emit(state: "will_terminate")
-            LifecycleCapture.emitSessionFinalized()
+            LifecycleCapture.flushBeforeSuspension()
         }
 
         lifecycleObservers = [

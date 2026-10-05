@@ -8,8 +8,7 @@
 //     `app_lifecycle`, carrying the right (state, previous_state).
 //   - emit(state:) updates the internal previous-state pointer so
 //     consecutive emissions chain correctly.
-//   - emitSessionFinalized() routes through Recorder.shared.recordEvent
-//     with `session.finalized`.
+//   - flushBeforeSuspension() flushes the Recorder, emitting nothing.
 //   - install() idempotent + concurrent-safe (just exercises the
 //     install/uninstall cycle — the actual notification fan-out is
 //     covered by the iOS-only path below).
@@ -18,7 +17,7 @@
 // Notification-driven coverage:
 //   On iOS we post each UIApplication notification by hand and assert
 //   the right calls land on the probe recorder (drainOfflineQueue
-//   for didBecomeActive, session.finalized auto-emit on willResignActive
+//   for didBecomeActive, flush on willResignActive
 //   and willTerminate, etc.).
 //
 // Refs: PLAN-iOS.md §F11/T11.1 acceptance; CLAUDE.md "Testing
@@ -41,6 +40,7 @@ private final class CaptureProbeRecorder: Recording, @unchecked Sendable {
         case event(name: String, attributes: [String: AttributeValue])
         case performance(name: String, attributes: [String: AttributeValue])
         case drain
+        case flush(FlushReason)
         case refreshNetwork(NetworkContext)
     }
 
@@ -107,6 +107,12 @@ private final class CaptureProbeRecorder: Recording, @unchecked Sendable {
     func drainOfflineQueue() {
         lock.lock()
         _calls.append(.drain)
+        lock.unlock()
+    }
+
+    func flush(reason: FlushReason) {
+        lock.lock()
+        _calls.append(.flush(reason))
         lock.unlock()
     }
 }
@@ -196,28 +202,23 @@ final class LifecycleCaptureTests: XCTestCase {
         XCTAssertTrue(probe.calls.isEmpty)
     }
 
-    // MARK: emitSessionFinalized
+    // MARK: flushBeforeSuspension
 
-    func test_emitSessionFinalized_routesToRecorder() {
+    // F29: resign / terminate flush directly — no `session.finalized`.
+    func test_flushBeforeSuspension_flushesWithoutEmitting() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
 
-        LifecycleCapture.emitSessionFinalized()
+        LifecycleCapture.flushBeforeSuspension()
 
-        XCTAssertEqual(probe.calls.count, 1)
-        guard case let .event(name, attrs) = probe.calls[0] else {
-            XCTFail("Expected event call, got \(probe.calls[0])")
-            return
-        }
-        XCTAssertEqual(name, "session.finalized")
-        XCTAssertTrue(attrs.isEmpty, "session.finalized rides on context-only attributes")
+        XCTAssertEqual(probe.calls, [.flush(.immediate)])
     }
 
-    func test_emitSessionFinalized_disabledRecorder_short_circuits() {
+    func test_flushBeforeSuspension_disabledRecorder_short_circuits() {
         let probe = CaptureProbeRecorder(enabled: false)
         Recorder.installShared(probe)
 
-        LifecycleCapture.emitSessionFinalized()
+        LifecycleCapture.flushBeforeSuspension()
 
         XCTAssertTrue(probe.calls.isEmpty)
     }
@@ -270,7 +271,7 @@ final class LifecycleCaptureTests: XCTestCase {
 
     #if canImport(UIKit) && os(iOS)
 
-    func test_willResignActive_emits_inactive_and_sessionFinalized() {
+    func test_willResignActive_emits_inactive_and_flushes() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
         LifecycleCapture.install(debug: false)
@@ -290,7 +291,8 @@ final class LifecycleCaptureTests: XCTestCase {
             if case let .event(name, _) = call { return name } else { return nil }
         }
         XCTAssertTrue(eventNames.contains("app_lifecycle"))
-        XCTAssertTrue(eventNames.contains("session.finalized"))
+        XCTAssertFalse(eventNames.contains("session.finalized"))
+        XCTAssertTrue(calls.contains(.flush(.immediate)))
 
         guard let lifecycle = calls.first(where: { call in
             if case let .event(name, _) = call { return name == "app_lifecycle" }
@@ -376,7 +378,7 @@ final class LifecycleCaptureTests: XCTestCase {
         })
     }
 
-    func test_willTerminate_emits_will_terminate_and_sessionFinalized() {
+    func test_willTerminate_emits_will_terminate_and_flushes() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
         LifecycleCapture.install(debug: false)
@@ -395,7 +397,8 @@ final class LifecycleCaptureTests: XCTestCase {
             if case let .event(name, _) = call { return name } else { return nil }
         }
         XCTAssertTrue(names.contains("app_lifecycle"))
-        XCTAssertTrue(names.contains("session.finalized"))
+        XCTAssertFalse(names.contains("session.finalized"))
+        XCTAssertTrue(probe.calls.contains(.flush(.immediate)))
 
         XCTAssertTrue(probe.calls.contains { call in
             if case let .event(name, attrs) = call {

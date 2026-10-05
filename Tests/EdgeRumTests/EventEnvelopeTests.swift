@@ -58,7 +58,7 @@ final class EventEnvelopeTests: XCTestCase {
             location: nil,
             events: [.event(name: "navigation", timestamp: t0, attributes: [
                 "navigation.kind": "uikit",
-                "navigation.name": "Cart"
+                "navigation.screen": "Cart"
             ])]
         )
         let json = try jsonObject(env)
@@ -67,7 +67,7 @@ final class EventEnvelopeTests: XCTestCase {
         XCTAssertEqual(events.first?["eventName"] as? String, "navigation")
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         XCTAssertEqual(attrs["navigation.kind"] as? String, "uikit")
-        XCTAssertEqual(attrs["navigation.name"] as? String, "Cart")
+        XCTAssertEqual(attrs["navigation.screen"] as? String, "Cart")
     }
 
     func testMetricCarriesMetricNameAndTypeMetric() throws {

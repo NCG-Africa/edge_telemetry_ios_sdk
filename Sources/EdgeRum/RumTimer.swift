@@ -41,10 +41,11 @@ public final class RumTimer: @unchecked Sendable {
         self.start = clock.now
     }
 
-    /// Stop the timer and emit a single performance data point named
-    /// after the original `EdgeRum.time(_:)` argument. Any
-    /// `attributes` are merged with a `"duration_ms"` attribute the
-    /// timer adds itself.
+    /// Stop the timer and emit a single `custom_timer` performance data
+    /// point; the original `EdgeRum.time(_:)` argument travels as
+    /// `timer.name`. Any `attributes` are merged with a `"duration_ms"`
+    /// attribute the timer adds itself; keys under a reserved SDK
+    /// prefix (such as `device.` or `user.`) are dropped.
     ///
     /// Second and subsequent calls are no-ops.
     public func end(attributes: [String: AttributeValue]? = nil) {
@@ -57,9 +58,11 @@ public final class RumTimer: @unchecked Sendable {
         let elapsedMs = Int((clock.now.timeIntervalSince(start) * 1000.0).rounded())
         lock.unlock()
 
-        var payload: [String: AttributeValue] = attributes ?? [:]
+        var payload = HostAttributes.sanitize(attributes, debug: recorder.debug)
+        payload["timer.name"] = .string(name)
         payload["duration_ms"] = .int(elapsedMs)
-        recorder.recordPerformance(name: name, attributes: payload)
+        payload["value"] = .double(Double(elapsedMs))
+        recorder.recordPerformance(name: "custom_timer", attributes: payload)
     }
 
     /// Discard the timer without recording anything. After calling

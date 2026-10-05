@@ -66,11 +66,7 @@ URL is reflected on both the `http.request` event and the companion
 
 ``EdgeRumConfig/location`` sets the batch envelope's `location` field
 to a literal `"City/Country"` string.
-
-> Note: ``EdgeRumConfig/resolveLocation`` and
-> ``EdgeRumConfig/locationProviderUrl`` are not wired up — setting them
-> has no effect and no request is made. They will be removed; set
-> `location` yourself.
+The SDK never resolves a location itself.
 
 ## Capture toggles
 

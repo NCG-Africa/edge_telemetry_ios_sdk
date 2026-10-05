@@ -45,14 +45,12 @@ final class SwiftUIWireConformanceTests: XCTestCase {
     /// with `navigation.kind = "swiftui"`.
     func testSwiftUIScreenAppearProducesWireValidNavigation() throws {
         let (recorder, sink) = makeRecorder()
-        let store = SwiftUIScreenStartStore()
 
         SwiftUIEmitter.emitScreenAppear(
             name: "Checkout",
             attributes: ["funnel.step": 3],
             recorder: recorder,
-            clock: recorder.clock,
-            startStore: store
+            riders: Riders()
         )
         recorder.flush(reason: .manual)
 
@@ -66,48 +64,10 @@ final class SwiftUIWireConformanceTests: XCTestCase {
         try WireAssertions.assertIdentityAttributes(attrs)
         XCTAssertEqual(attrs["navigation.kind"] as? String, "swiftui")
         XCTAssertEqual(attrs["navigation.screen"] as? String, "Checkout")
-        XCTAssertEqual(attrs["navigation.type"] as? String, "viewDidAppear")
+        XCTAssertNil(attrs["navigation.type"])
         XCTAssertEqual(attrs["funnel.step"] as? Int, 3)
     }
 
-    /// `.edgeRumScreen` on-disappear → a wire-valid `screen.duration`
-    /// METRIC carrying both `screen.duration_ms` (Int) and the
-    /// top-level scalar `value` (Double seconds). Mirrors the F6
-    /// UIKit shape; pins the F7 parity fix.
-    func testSwiftUIScreenDisappearProducesWireValidScreenDurationMetric() throws {
-        let (recorder, sink) = makeRecorder()
-        let store = SwiftUIScreenStartStore()
-
-        // Manual appear/disappear stamps so the dwell is deterministic
-        // against the FixedClock — the emitter pulls `clock.now` once
-        // per call which would give us a zero dwell otherwise.
-        let appearAt = Date(timeIntervalSince1970: 1_717_234_870.000)
-        store.recordStart(name: "Checkout", at: appearAt)
-
-        SwiftUIEmitter.emitScreenDisappear(
-            name: "Checkout",
-            attributes: nil,
-            recorder: recorder,
-            clock: recorder.clock,
-            startStore: store
-        )
-        recorder.flush(reason: .manual)
-
-        let envelope = try XCTUnwrap(sink.envelopes.first)
-        let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
-        let events = try XCTUnwrap(json["events"] as? [[String: Any]])
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?["type"] as? String, "metric")
-        XCTAssertEqual(events.first?["metricName"] as? String, "screen.duration")
-        let topValue = try XCTUnwrap(events.first?["value"] as? Double)
-        XCTAssertEqual(topValue, 6.512, accuracy: 0.002)
-        let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
-        try WireAssertions.assertIdentityAttributes(attrs)
-        XCTAssertEqual(attrs["screen.name"] as? String, "Checkout")
-        XCTAssertEqual(attrs["screen.kind"] as? String, "swiftui")
-        let durationMs = try XCTUnwrap(attrs["screen.duration_ms"] as? Int)
-        XCTAssertEqual(durationMs, 6512)
-    }
 
     /// `.edgeRumTrackTap` → a wire-valid `user.interaction` event
     /// with `interaction.kind = "tap"`.

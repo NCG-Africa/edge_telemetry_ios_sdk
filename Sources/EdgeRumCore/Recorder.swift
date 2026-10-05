@@ -19,7 +19,7 @@
 //      encode + POST.
 //   5. Flushes on `config.batchSize` reached, `config.flushInterval`
 //      timer fired (armed while enabled, on a global utility queue),
-//      immediate-flush trigger (error / `session.finalized`), or
+//      immediate-flush trigger (`app.crash` / `session.finalized`), or
 //      `shutdown()` / `stop()`.
 //   6. Hands each batch to the `TransportSink`. F3 ships
 //      `NoopTransportSink`; F4 plugs in `HTTPTransportSink`.
@@ -62,6 +62,18 @@ public final class Recorder: Recording, @unchecked Sendable {
         "app.error",
         "app.hang",
         "app.crash"
+    ]
+
+    /// The bounded `metricName` space (F29). `recordPerformance`
+    /// rejects anything else; host timers arrive as `custom_timer`
+    /// with the host's name in `timer.name`.
+    public static let allowedMetricNames: Set<String> = [
+        "resource_timing",
+        "long_task",
+        "frame_render_time",
+        "memory_usage",
+        "cpu_usage",
+        "custom_timer"
     ]
 
     // MARK: Shared instance (mutable so tests can swap a probe in)
@@ -117,6 +129,10 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// Persisted identity store, kept so `resetIdentity()` regenerates
     /// the persisted ids. `nil` until `installPersistedStores`.
     private var identityProvider: IdentityProvider?
+
+    /// `session.finalized` for a session found expired at
+    /// `installPersistedStores`, emitted by `start()`.
+    private var _pendingFinalized: [String: AttributeValue]?
 
     /// Re-entrancy guard so synthetic `session.finalized` /
     /// `session.started` emissions during a mid-event rotation don't
@@ -208,9 +224,16 @@ public final class Recorder: Recording, @unchecked Sendable {
             store: sessionStore,
             clock: _clock
         )
-        let session = revivedManager.touch().state
+        let touched = revivedManager.touch()
+        let session = touched.state
 
         stateLock.lock()
+        // The previous launch's session expired while the app was not
+        // running: its `session.finalized` goes out once `start()`
+        // enables emission.
+        if let ended = touched.ended {
+            _pendingFinalized = Self.finalizedAttributes(ended.state, reason: ended.reason)
+        }
         self.sessionManager = revivedManager
         self._deviceId = snapshot.deviceId
         self.identityProvider = identityProvider
@@ -311,13 +334,24 @@ public final class Recorder: Recording, @unchecked Sendable {
         // Rotate to a fresh session — `start()` is the lifecycle
         // boundary at which a new session id is born.
         let priorSessionId = context.currentSession().id
-        let session = sessionManager.touch().state
-        if session.id != priorSessionId {
-            stateLock.lock(); _threadTimeNs = 0; stateLock.unlock()
+        let touched = sessionManager.touch()
+        let session = touched.state
+        stateLock.lock()
+        var pendingFinalized = _pendingFinalized
+        _pendingFinalized = nil
+        if let ended = touched.ended {
+            pendingFinalized = Self.finalizedAttributes(ended.state, reason: ended.reason)
         }
+        if session.id != priorSessionId {
+            _threadTimeNs = 0
+        }
+        stateLock.unlock()
         context.refreshSession(SessionContextSnapshot(session))
         writeSidecar()
 
+        if let pendingFinalized {
+            recordEventInternal(name: "session.finalized", attributes: pendingFinalized)
+        }
         // Emit `session.started`. This bypasses the sampler (forced
         // emit) so it always lands in the next batch.
         recordEvent(name: "session.started", attributes: [:])
@@ -334,10 +368,9 @@ public final class Recorder: Recording, @unchecked Sendable {
         _ = debug
     }
 
+    /// Flush and stop. Emits no `session.finalized`: that marks a
+    /// session ending by rotation, never a flush (F29).
     public func stop() {
-        // Emit `session.finalized` BEFORE flipping `_enabled` off so
-        // the event passes the enabled gate.
-        recordEvent(name: "session.finalized", attributes: [:])
         flush(reason: .shutdown)
         setEnabled(false)
     }
@@ -389,18 +422,23 @@ public final class Recorder: Recording, @unchecked Sendable {
     public func recordPerformance(name: String, attributes: [String: AttributeValue]) {
         let t0 = DispatchTime.now().uptimeNanoseconds
         defer { addThreadTime(since: t0) }
+        guard Self.allowedMetricNames.contains(name) else {
+            if debug {
+                os_log("Recorder dropped unknown metric name %{public}@", log: log, type: .info, name)
+            }
+            return
+        }
         bumpLastActiveAndEmitRotationIfNeeded()
         stateLock.lock()
         let currentSampler = self.sampler
         stateLock.unlock()
         guard currentSampler.shouldEmit(metricName: name) else { return }
         let now = clock.now
-        // Pull `duration_ms` / `value` out of the attribute bag if
-        // the caller supplied it via `EdgeRum.time(_:).end()`. The
-        // attribute stays in place too; the wire `value` is just a
-        // convenience scalar.
+        // The headline scalar moves to the envelope `value`; the copy
+        // leaves `attributes` (#146). `duration_ms` is the fallback.
+        var attributes = attributes
         let value: Double?
-        if let v = attributes["value"], case let .double(d) = v {
+        if let v = attributes.removeValue(forKey: "value"), case let .double(d) = v {
             value = d
         } else if let v = attributes["duration_ms"], case let .int(i) = v {
             value = Double(i)
@@ -564,7 +602,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
 
     /// Update the session's `lastActiveAt` to "now" and, if the touch
-    /// crossed the 30-min idle threshold, emit the
+    /// crossed the 30-min idle threshold or the 4 h cap, emit the
     /// `session.finalized` → `session.started` rotation pair for the
     /// prior and new sessions respectively. Synthetic emissions go
     /// through `recordEventInternal` which skips this hook to avoid
@@ -577,10 +615,8 @@ public final class Recorder: Recording, @unchecked Sendable {
         }
         stateLock.unlock()
 
-        let prior = context.currentSession()
         let result = sessionManager.touch()
         guard result.rotated else { return }
-        let priorSession = prior
         let newSnapshot = SessionContextSnapshot(result.state)
 
         stateLock.lock()
@@ -602,13 +638,10 @@ public final class Recorder: Recording, @unchecked Sendable {
         // The prior session's identity needs to ride with the
         // `session.finalized` event since the context is about to
         // refresh to the new session before the buffer's next flush.
-        var finalizedAttrs: [String: AttributeValue] = [
-            "session.id": .string(priorSession.id),
-            "session.start_time": .string(WireDateFormatter.string(from: priorSession.startTime)),
-            "session.sequence": .int(priorSession.sequence)
-        ]
-        finalizedAttrs["session.rotation"] = .string("idle")
-        recordEventInternal(name: "session.finalized", attributes: finalizedAttrs)
+        let reason = result.ended?.reason ?? "idle"
+        if let ended = result.ended {
+            recordEventInternal(name: "session.finalized", attributes: Self.finalizedAttributes(ended.state, reason: reason))
+        }
 
         // Reset after `session.finalized` flushed, so the prior
         // session's last envelope carries its own total.
@@ -616,7 +649,20 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshSession(newSnapshot)
         writeSidecar()
 
-        recordEventInternal(name: "session.started", attributes: ["session.rotation": .string("idle")])
+        recordEventInternal(name: "session.started", attributes: ["session.rotation": .string(reason)])
+    }
+
+    /// `session.finalized` for an ended session: its own identity
+    /// (the context has moved on), `session.end_time` = its last
+    /// activity, and why it ended (`idle` / `max_duration`).
+    private static func finalizedAttributes(_ ended: SessionState, reason: String) -> [String: AttributeValue] {
+        [
+            "session.id": .string(ended.id),
+            "session.start_time": .string(WireDateFormatter.string(from: ended.startTime)),
+            "session.sequence": .int(ended.sequence),
+            "session.end_time": .string(WireDateFormatter.string(from: ended.lastActiveAt)),
+            "session.rotation": .string(reason)
+        ]
     }
 
     /// Bypass-touch event emission used by the rotation hook.

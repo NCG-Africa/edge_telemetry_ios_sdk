@@ -53,8 +53,7 @@ final class InteractionWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "user.interaction", attributes: [
             "interaction.kind": .string("tap"),
             "interaction.target": .string("UIKit.UIButton"),
-            "interaction.target_id": .string("checkout"),
-            "interaction.screen": .string("Cart")
+            "interaction.name": .string("checkout"),
         ])
         recorder.flush(reason: .manual)
 
@@ -70,11 +69,11 @@ final class InteractionWireConformanceTests: XCTestCase {
 
         XCTAssertEqual(attrs["interaction.kind"] as? String, "tap")
         XCTAssertEqual(attrs["interaction.target"] as? String, "UIKit.UIButton")
-        XCTAssertEqual(attrs["interaction.target_id"] as? String, "checkout")
-        XCTAssertEqual(attrs["interaction.screen"] as? String, "Cart")
+        XCTAssertEqual(attrs["interaction.name"] as? String, "checkout")
+        XCTAssertNil(attrs["interaction.screen"])
     }
 
-    /// `interaction.target_id` is optional in the schema — the wire
+    /// `interaction.name` is optional in the schema — the wire
     /// envelope must remain valid when the SDK omits it (e.g. a tap on
     /// a plain `UIView` with no identifier and no button title).
     func testTapInteractionWithoutTargetIdIsWireValid() throws {
@@ -83,7 +82,6 @@ final class InteractionWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "user.interaction", attributes: [
             "interaction.kind": .string("tap"),
             "interaction.target": .string("UIKit.UIView"),
-            "interaction.screen": .string("Cart")
         ])
         recorder.flush(reason: .manual)
 
@@ -93,7 +91,7 @@ final class InteractionWireConformanceTests: XCTestCase {
         XCTAssertEqual(events.count, 1)
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
-        XCTAssertNil(attrs["interaction.target_id"])
+        XCTAssertNil(attrs["interaction.name"])
     }
 
     /// `interaction.screen` is optional — a tap that lands before any
@@ -105,7 +103,7 @@ final class InteractionWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "user.interaction", attributes: [
             "interaction.kind": .string("tap"),
             "interaction.target": .string("UIKit.UIButton"),
-            "interaction.target_id": .string("checkout")
+            "interaction.name": .string("checkout")
         ])
         recorder.flush(reason: .manual)
 
@@ -127,12 +125,12 @@ final class InteractionWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "user.interaction", attributes: [
             "interaction.kind": .string("tap"),
             "interaction.target": .string("UIKit.UIButton"),
-            "interaction.target_id": .string("left")
+            "interaction.name": .string("left")
         ])
         recorder.recordEvent(name: "user.interaction", attributes: [
             "interaction.kind": .string("tap"),
             "interaction.target": .string("UIKit.UIButton"),
-            "interaction.target_id": .string("right")
+            "interaction.name": .string("right")
         ])
         recorder.flush(reason: .manual)
 
@@ -141,7 +139,7 @@ final class InteractionWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 2)
         let ids = events.compactMap {
-            ($0["attributes"] as? [String: Any])?["interaction.target_id"] as? String
+            ($0["attributes"] as? [String: Any])?["interaction.name"] as? String
         }
         XCTAssertEqual(Set(ids), ["left", "right"])
     }

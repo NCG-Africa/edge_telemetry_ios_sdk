@@ -10,7 +10,9 @@
 //   - Outer envelope: `type == "telemetry_batch"`, ISO 8601
 //     `timestamp` (round-trips through ISO formatter, includes
 //     fractional seconds), `batch_size == events.count`.
-//   - Per-event: `type ∈ {"event","metric"}`, `timestamp` present.
+//   - Per-event: `type ∈ {"event","metric"}`, `timestamp` present,
+//     `eventName` in the 13-name allowlist, `metricName` in the
+//     6-name allowlist, no `cause` attribute (F29).
 //   - Identity attrs present and well-formed: `session.id` /
 //     `device.id` prefixes, `sdk.platform == "ios-native"`.
 //   - No forbidden tokens anywhere in raw bytes: `traceId`,
@@ -86,19 +88,25 @@ internal enum WireAssertions {
 
             // Discriminator field
             if type == "event" {
-                XCTAssertNotNil(event["eventName"] as? String,
-                                "event events must carry an `eventName`",
-                                file: file, line: line)
+                let name = try XCTUnwrap(event["eventName"] as? String,
+                                         "event events must carry an `eventName`",
+                                         file: file, line: line)
+                XCTAssertTrue(Recorder.allowedEventNames.contains(name),
+                              "eventName '\(name)' is not allowlisted", file: file, line: line)
             } else if type == "metric" {
-                XCTAssertNotNil(event["metricName"] as? String,
-                                "metric events must carry a `metricName`",
-                                file: file, line: line)
+                let name = try XCTUnwrap(event["metricName"] as? String,
+                                         "metric events must carry a `metricName`",
+                                         file: file, line: line)
+                XCTAssertTrue(Recorder.allowedMetricNames.contains(name),
+                              "metricName '\(name)' is not allowlisted", file: file, line: line)
             }
 
             // Attributes must be flat primitives only.
             let attrs = try XCTUnwrap(event["attributes"] as? [String: Any],
                                       "events[\(idx)].attributes must be an object",
                                       file: file, line: line)
+            XCTAssertNil(attrs["cause"], "F29: the event name discriminates, `cause` is gone",
+                         file: file, line: line)
             for (key, value) in attrs {
                 try assertAttributeIsPrimitive(value, key: key, eventIdx: idx, file: file, line: line)
             }

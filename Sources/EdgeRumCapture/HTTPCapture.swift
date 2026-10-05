@@ -333,7 +333,6 @@ public enum HTTPCapture {
 
         var attrs: [String: AttributeValue] = [
             "http.method": .string(method),
-            "http.url": .string(urlString),
             "http.host": .string(host),
             "http.path": .string(path),
             "http.status_code": .int(statusCode),
@@ -343,7 +342,11 @@ public enum HTTPCapture {
             "http.from_cache": .bool(fromCache)
         ]
         if let error {
-            attrs["http.error"] = .string(String(describing: error))
+            // Typed, never free text: `String(describing:)` embedded the
+            // failing URL with its query (F29).
+            let ns = error as NSError
+            attrs["http.error_domain"] = .string(ns.domain)
+            attrs["http.error_code"] = .int(ns.code)
         }
         applyHTTPMetricsEnrichment(into: &attrs, view: view)
 
@@ -351,7 +354,6 @@ public enum HTTPCapture {
 
         if let view, let timing = ResourceTiming.from(view: view) {
             var metricAttrs: [String: AttributeValue] = [
-                "resource.url": .string(urlString),
                 "resource.host": .string(host),
                 "resource.dns_ms": .int(timing.dnsMs),
                 "resource.connect_ms": .int(timing.connectMs),

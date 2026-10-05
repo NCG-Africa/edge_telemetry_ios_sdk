@@ -161,15 +161,40 @@ final class RecorderTests: XCTestCase {
 
     func testRecordPerformanceBuildsMetric() {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordPerformance(name: "checkout.submit", attributes: ["duration_ms": 250])
+        recorder.recordPerformance(name: "custom_timer", attributes: ["duration_ms": 250])
         recorder.flush(reason: .manual)
         guard case let .metric(name, value, _, attributes) = sink.envelopes.first?.events.first else {
             return XCTFail("Expected a metric Event")
         }
-        XCTAssertEqual(name, "checkout.submit")
+        XCTAssertEqual(name, "custom_timer")
         XCTAssertEqual(value, 250)
         XCTAssertEqual(attributes["duration_ms"], .int(250))
     }
+    // F29: the metric name space is bounded; `value` leaves `attributes`.
+    func testRecordPerformanceRejectsUnlistedMetricNames() {
+        let (recorder, sink, _) = makeRecorder()
+        recorder.recordPerformance(name: "checkout.submit", attributes: ["duration_ms": 250])
+        recorder.recordPerformance(name: "screen.duration", attributes: ["value": 1.0])
+        recorder.flush(reason: .manual)
+        XCTAssertTrue(sink.envelopes.isEmpty)
+        XCTAssertEqual(Recorder.allowedMetricNames, [
+            "resource_timing", "long_task", "frame_render_time",
+            "memory_usage", "cpu_usage", "custom_timer"
+        ])
+    }
+
+    func testRecordPerformanceStripsValueCopyFromAttributes() {
+        let (recorder, sink, _) = makeRecorder()
+        recorder.recordPerformance(name: "long_task", attributes: ["value": 72.5, "long_task.threshold_ms": 50.0])
+        recorder.flush(reason: .manual)
+        guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.events.first else {
+            return XCTFail("Expected a metric Event")
+        }
+        XCTAssertEqual(value, 72.5)
+        XCTAssertNil(attributes["value"])
+        XCTAssertEqual(attributes["long_task.threshold_ms"], .double(50))
+    }
+
 
     // MARK: Sampling
 

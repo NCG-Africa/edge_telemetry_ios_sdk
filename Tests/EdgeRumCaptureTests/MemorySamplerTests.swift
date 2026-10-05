@@ -105,7 +105,7 @@ final class MemorySamplerTests: XCTestCase {
         XCTAssertEqual(attrs["memory.virtual_kb"], .int(800))
         XCTAssertEqual(attrs["memory.footprint_kb"], .int(250))
         XCTAssertEqual(attrs["memory.pressure"], .string("normal"))
-        XCTAssertEqual(attrs["value"], .double(200))
+        XCTAssertEqual(attrs["value"], .double(200.0 / 1024.0), "F29: value is MB")
     }
 
     func test_makeAttributes_pressureLevelStringMatchesWireSpec() {

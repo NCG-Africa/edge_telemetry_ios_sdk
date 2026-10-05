@@ -135,8 +135,8 @@ public enum NetworkPathCapture {
         var attrs: [String: AttributeValue] = [
             "network.type": .string(context.type.rawValue),
             "network.effectiveType": .string(context.effectiveType),
-            "network.is_expensive": .bool(isExpensive),
-            "network.is_constrained": .bool(isConstrained)
+            "network.expensive": .bool(isExpensive),
+            "network.constrained": .bool(isConstrained)
         ]
         if let reason = unsatisfiedReason {
             attrs["network.unsatisfied_reason"] = .string(reason)

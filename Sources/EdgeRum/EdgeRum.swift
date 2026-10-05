@@ -351,21 +351,24 @@ public enum EdgeRum {
     /// Record a custom event. The user-supplied `name` travels on the
     /// wire as the `event.name` attribute under the wire-required
     /// `custom_event` event name — the backend dispatcher routes
-    /// custom events through that single channel.
+    /// custom events through that single channel. Attribute keys under
+    /// a reserved SDK prefix (such as `device.` or `user.`) are dropped.
     public static func track(_ name: String, attributes: [String: AttributeValue]? = nil) {
         guard requireStarted("track") else { return }
-        var merged: [String: AttributeValue] = attributes ?? [:]
+        var merged = HostAttributes.sanitize(attributes, debug: Recorder.shared.debug)
         merged["event.name"] = .string(name)
         Recorder.shared.recordEvent(name: "custom_event", attributes: merged)
     }
 
     /// Record a screen entry. Equivalent to the SwiftUI
     /// `.edgeRumScreen(_:)` modifier — provided for UIKit screens
-    /// that don't go through the auto-capture swizzle.
+    /// that don't go through the auto-capture swizzle. Attribute keys
+    /// under a reserved SDK prefix are dropped.
     public static func trackScreen(_ name: String, attributes: [String: AttributeValue]? = nil) {
         guard requireStarted("trackScreen") else { return }
-        var merged: [String: AttributeValue] = attributes ?? [:]
-        merged["navigation.name"] = .string(name)
+        var merged = HostAttributes.sanitize(attributes, debug: Recorder.shared.debug)
+        merged["navigation.screen"] = .string(name)
+        merged["navigation.kind"] = .string("manual")
         Riders.shared.enterScreen(name)
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }

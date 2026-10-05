@@ -81,24 +81,14 @@ final class GoldenBatchSnapshotTests: XCTestCase {
                 attributes: AttributeBag([
                     "navigation.screen":          "CartViewController",
                     "navigation.previous_screen": "ProductListViewController",
-                    "navigation.type":            "viewDidAppear",
-                    "navigation.kind":            "uikit"
-                ])
-            ),
-            .event(
-                name: "screen.duration",
-                timestamp: exitTime,
-                attributes: AttributeBag([
-                    "screen.name":         "CartViewController",
-                    "screen.duration_ms":  4333,
-                    "screen.exit_method":  "viewWillDisappear"
+                    "navigation.kind":            "uikit",
+                    "screen.name":                "CartViewController"
                 ])
             ),
             .event(
                 name: "http.request",
                 timestamp: httpTime,
                 attributes: AttributeBag([
-                    "http.url":           "https://api.example.com/products",
                     "http.method":        "GET",
                     "http.host":          "api.example.com",
                     "http.path":          "/products",
@@ -106,7 +96,24 @@ final class GoldenBatchSnapshotTests: XCTestCase {
                     "http.duration_ms":   342,
                     "http.request_size":  0,
                     "http.response_size": 18244,
-                    "http.from_cache":    false
+                    "http.from_cache":    false,
+                    "screen.name":        "CartViewController"
+                ])
+            ),
+            .metric(
+                name: "resource_timing",
+                value: 342,
+                timestamp: exitTime,
+                attributes: AttributeBag([
+                    "resource.host":          "api.example.com",
+                    "resource.dns_ms":        12,
+                    "resource.connect_ms":    40,
+                    "resource.tls_ms":        55,
+                    "resource.ttfb_ms":       180,
+                    "resource.download_ms":   55,
+                    "resource.redirect_count": 0,
+                    "resource.protocol":      "h2",
+                    "screen.name":            "CartViewController"
                 ])
             ),
             .metric(

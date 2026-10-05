@@ -103,8 +103,8 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "network_change", attributes: [
             "network.type": .string("cellular"),
             "network.effectiveType": .string("cellular"),
-            "network.is_expensive": .bool(true),
-            "network.is_constrained": .bool(false)
+            "network.expensive": .bool(true),
+            "network.constrained": .bool(false)
         ])
         recorder.flush(reason: .manual)
 
@@ -118,8 +118,8 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         try WireAssertions.assertIdentityAttributes(attrs)
         XCTAssertEqual(attrs["network.type"] as? String, "cellular")
         XCTAssertEqual(attrs["network.effectiveType"] as? String, "cellular")
-        XCTAssertEqual(attrs["network.is_expensive"] as? Bool, true)
-        XCTAssertEqual(attrs["network.is_constrained"] as? Bool, false)
+        XCTAssertEqual(attrs["network.expensive"] as? Bool, true)
+        XCTAssertEqual(attrs["network.constrained"] as? Bool, false)
         XCTAssertNil(attrs["network.unsatisfied_reason"],
                      "Satisfied paths must omit the reason key — never sentinel-string it")
     }
@@ -133,8 +133,8 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "network_change", attributes: [
             "network.type": .string("none"),
             "network.effectiveType": .string("unknown"),
-            "network.is_expensive": .bool(false),
-            "network.is_constrained": .bool(false),
+            "network.expensive": .bool(false),
+            "network.constrained": .bool(false),
             "network.unsatisfied_reason": .string("cellular_denied")
         ])
         recorder.flush(reason: .manual)
@@ -160,8 +160,8 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         recorder.recordEvent(name: "network_change", attributes: [
             "network.type": .string("wifi"),
             "network.effectiveType": .string("wifi"),
-            "network.is_expensive": .bool(false),
-            "network.is_constrained": .bool(false)
+            "network.expensive": .bool(false),
+            "network.constrained": .bool(false)
         ])
         recorder.flush(reason: .manual)
 
