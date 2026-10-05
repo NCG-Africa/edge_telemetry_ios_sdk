@@ -120,7 +120,9 @@ public enum InteractionCapture {
     /// - Parameter captureButtonTitles: F27 opt-in — fall back to a
     ///   button's rendered title when it has no `accessibilityIdentifier`.
     /// - Parameter emitTaps: F30 — `false` installs the swizzle only to
-    ///   arm `FrameSampler` motion windows; no `user.interaction` ships.
+    ///   arm `FrameSampler` motion windows; `handleSendEvent` then returns
+    ///   before building any `user.interaction` (not unit-testable: XCTest
+    ///   cannot synthesise a `UIEvent`, as with the tap path itself).
     public static func install(
         debug: Bool = false,
         captureButtonTitles: Bool = false,
@@ -193,8 +195,7 @@ public enum InteractionCapture {
         guard event.type == .touches else { return }
         guard let touches = event.allTouches, !touches.isEmpty else { return }
 
-        // F30: touch began/ended arms a frame motion window.
-        if touches.contains(where: { $0.phase == .began || $0.phase == .ended }) {
+        if armsMotion(touches.map(\.phase)) {
             FrameSampler.noteMotion()
         }
 
@@ -220,6 +221,13 @@ public enum InteractionCapture {
     #endif
 
     // MARK: Decision core (pure, testable)
+
+    #if canImport(UIKit) && os(iOS)
+    /// F30: a touch began or ended arms a frame motion window.
+    static func armsMotion(_ phases: [UITouch.Phase]) -> Bool {
+        phases.contains { $0 == .began || $0 == .ended }
+    }
+    #endif
 
     #if canImport(UIKit) && os(iOS)
     /// Build the `user.interaction` attribute bag for a tap that

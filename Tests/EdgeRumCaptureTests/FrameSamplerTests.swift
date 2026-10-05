@@ -209,7 +209,7 @@ final class FrameSamplerTests: XCTestCase {
             maxMs: 33.3,
             p95Ms: 28.1,
             droppedCount: 4,
-            sampleCount: 56
+            sampleCount: 56, windowMs: 1_000
         )
         let attrs = FrameSampler.makeAttributes(stats: stats, targetHz: 60)
         XCTAssertEqual(attrs["frame.max_ms"], .double(33.3))
@@ -218,18 +218,17 @@ final class FrameSamplerTests: XCTestCase {
         XCTAssertEqual(attrs["frame.target_hz"], .int(60))
         XCTAssertEqual(attrs["frame.source"], .string("displaylink"))
         XCTAssertEqual(attrs["value"], .double(33.3))
-        XCTAssertEqual(attrs["frame.window_ms"], .int(0))
     }
 
     func test_makeAttributes_carriesWindowMs() {
-        var stats = FrameWindowAggregator.Stats(maxMs: 20, p95Ms: 18, droppedCount: 0, sampleCount: 120)
-        stats.windowMs = 2_400
+        let stats = FrameWindowAggregator.Stats(
+            maxMs: 20, p95Ms: 18, droppedCount: 0, sampleCount: 120, windowMs: 2_400)
         XCTAssertEqual(FrameSampler.makeAttributes(stats: stats, targetHz: 60)["frame.window_ms"], .int(2_400))
     }
 
     func test_makeAttributes_proMotion_target_hz120() {
         let stats = FrameWindowAggregator.Stats(
-            maxMs: 16.6, p95Ms: 16.6, droppedCount: 0, sampleCount: 120
+            maxMs: 16.6, p95Ms: 16.6, droppedCount: 0, sampleCount: 120, windowMs: 1_000
         )
         let attrs = FrameSampler.makeAttributes(stats: stats, targetHz: 120)
         XCTAssertEqual(attrs["frame.target_hz"], .int(120))
@@ -244,7 +243,7 @@ final class FrameSamplerTests: XCTestCase {
         Recorder.installShared(probe)
 
         let stats = FrameWindowAggregator.Stats(
-            maxMs: 22.0, p95Ms: 19.0, droppedCount: 1, sampleCount: 59
+            maxMs: 22.0, p95Ms: 19.0, droppedCount: 1, sampleCount: 59, windowMs: 1_000
         )
         FrameSampler.emit(stats: stats, targetHz: 60)
 
@@ -260,7 +259,7 @@ final class FrameSamplerTests: XCTestCase {
         let probe = CaptureProbeRecorder(enabled: false)
         Recorder.installShared(probe)
         let stats = FrameWindowAggregator.Stats(
-            maxMs: 22.0, p95Ms: 19.0, droppedCount: 1, sampleCount: 59
+            maxMs: 22.0, p95Ms: 19.0, droppedCount: 1, sampleCount: 59, windowMs: 1_000
         )
         FrameSampler.emit(stats: stats, targetHz: 60)
         XCTAssertEqual(probe.calls.count, 0)
@@ -299,6 +298,7 @@ final class FrameSamplerTests: XCTestCase {
 
     func test_installedIdle_linkPaused_untilMotion() {
         defer { Riders.shared._resetForTesting() }
+        Recorder.installShared(CaptureProbeRecorder())
         Riders.shared.setAppState("active")
         FrameSampler.install(debug: false)
         XCTAssertFalse(FrameSampler._isSamplingForTesting, "static content: link paused")
@@ -308,14 +308,37 @@ final class FrameSamplerTests: XCTestCase {
 
     func test_motion_gateClosed_doesNotOpenWindow() {
         defer { Riders.shared._resetForTesting() }
+        Recorder.installShared(CaptureProbeRecorder())
         Riders.shared.setAppState("background")
         FrameSampler.install(debug: false)
         FrameSampler.noteMotion()
         XCTAssertFalse(FrameSampler._isSamplingForTesting)
     }
 
+    func test_motion_whileDisabled_doesNotOpenWindow() {
+        defer { Riders.shared._resetForTesting() }
+        Riders.shared.setAppState("active")
+        Recorder.installShared(CaptureProbeRecorder(enabled: false))
+        FrameSampler.install(debug: false)
+        FrameSampler.noteMotion()
+        XCTAssertFalse(FrameSampler._isSamplingForTesting)
+    }
+
+    func test_gateClosingMidWindow_dropsWindow() {
+        defer { Riders.shared._resetForTesting() }
+        Recorder.installShared(CaptureProbeRecorder())
+        Riders.shared.setAppState("active")
+        FrameSampler.install(debug: false)
+        FrameSampler.noteMotion()
+        XCTAssertTrue(FrameSampler._isSamplingForTesting)
+        Riders.shared.setAppState("background")  // stands in for low power / thermal
+        NotificationCenter.default.post(name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
+        XCTAssertFalse(FrameSampler._isSamplingForTesting)
+    }
+
     func test_resignActive_dropsOpenWindow() {
         defer { Riders.shared._resetForTesting() }
+        Recorder.installShared(CaptureProbeRecorder())
         Riders.shared.setAppState("active")
         FrameSampler.install(debug: false)
         FrameSampler.noteMotion()

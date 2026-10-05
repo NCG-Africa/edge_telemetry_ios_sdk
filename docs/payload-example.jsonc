@@ -133,7 +133,7 @@
         "sdk.platform": "ios-native",
         "frame.max_ms": 33,
         "frame.p95_ms": 28,
-        "frame.dropped_count": 1,
+        "frame.dropped_count": 2,
         "frame.target_hz": 60,
         "frame.sample_count": 148,
         "frame.window_ms": 2500,

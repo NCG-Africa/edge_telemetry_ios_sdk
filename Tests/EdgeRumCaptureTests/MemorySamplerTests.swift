@@ -215,6 +215,14 @@ final class MemorySamplerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(percent, 0)
     }
 
+    func test_tick_gateClosed_stillReadsCpu_soNextSampleCoversOnlyItsTick() {
+        Recorder.installShared(CaptureProbeRecorder())
+        var reads = 0
+        let driver = MemorySampler.Driver(debug: false, gate: { false }, cpuSample: { reads += 1; return 5 })
+        driver.tick()
+        XCTAssertEqual(reads, 1)
+    }
+
     func test_tick_gateClosed_emitsNothing_butPressureStillEmits() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)

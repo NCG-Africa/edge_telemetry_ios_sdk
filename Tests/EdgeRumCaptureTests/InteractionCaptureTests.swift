@@ -182,6 +182,14 @@ final class InteractionCaptureTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: F30 — motion arming
+
+    func test_armsMotion_onBeganOrEnded_only() {
+        XCTAssertTrue(InteractionCapture.armsMotion([.began]))
+        XCTAssertTrue(InteractionCapture.armsMotion([.moved, .ended]))
+        XCTAssertFalse(InteractionCapture.armsMotion([.moved, .stationary, .cancelled]))
+    }
+
     // MARK: install()
 
     func test_install_isIdempotent() {

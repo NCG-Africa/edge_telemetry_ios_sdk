@@ -16,6 +16,9 @@ import SwiftUI
 // are already visible without an import.
 import EdgeRumCore
 #endif
+#if canImport(EdgeRumCapture)
+import EdgeRumCapture
+#endif
 
 // MARK: - Internals (testable in isolation)
 
@@ -38,6 +41,7 @@ internal enum SwiftUIEmitter {
     ) {
         // Box first, so this event's `screen.name` is the screen entered.
         riders.enterScreen(name)
+        FrameSampler.noteMotion()  // F30: screen transition
         var payload = HostAttributes.sanitize(attributes, debug: recorder.debug)
         // SDK-owned keys win on conflict — apply last.
         payload["navigation.screen"] = .string(name)

@@ -213,20 +213,27 @@ public enum MemorySampler {
     static let tickSeconds = 30
 
     /// Owns the dispatch queue, periodic timer, memory-pressure source
-    /// and CPU reader. Every entry point runs on `queue`.
+    /// and CPU reader. Once `start()`ed, the timer and pressure source
+    /// call `tick` / `pressureChanged` on `queue`; tests call them
+    /// directly on an un-started driver.
     final class Driver: @unchecked Sendable {
 
         private let queue: DispatchQueue
         private let debug: Bool
         private let gate: @Sendable () -> Bool
-        private let cpu = ProcessCPUReader()
+        private let cpuSample: () -> Double?
         private var timer: DispatchSourceTimer?
         private var pressureSource: DispatchSourceMemoryPressure?
         /// Last level the pressure source reported; the timer tick
         /// carries it so a sustained warning stays a warning.
         private(set) var lastPressure: MemoryPressureLevel = .normal
 
-        init(debug: Bool, gate: @escaping @Sendable () -> Bool = { SamplingGate.isOpen() }) {
+        init(
+            debug: Bool,
+            gate: @escaping @Sendable () -> Bool = { SamplingGate.isOpen() },
+            cpuSample: @escaping () -> Double? = ProcessCPUReader().sample
+        ) {
+            self.cpuSample = cpuSample
             self.queue = DispatchQueue(
                 label: "com.edge.rum.memorysampler",
                 qos: .utility
@@ -260,7 +267,7 @@ public enum MemorySampler {
         func tick() {
             // Read CPU even when gated so the next open sample covers
             // only its own 30 s, not the closed stretch.
-            let percent = cpu.sample()
+            let percent = cpuSample()
             guard gate() else { return }
             emitSnapshot(pressure: lastPressure)
             guard let percent, Recorder.shared.isEnabled else { return }

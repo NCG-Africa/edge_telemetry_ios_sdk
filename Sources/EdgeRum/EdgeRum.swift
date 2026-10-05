@@ -373,6 +373,7 @@ public enum EdgeRum {
         merged["navigation.screen"] = .string(name)
         merged["navigation.kind"] = .string("manual")
         Riders.shared.enterScreen(name)
+        FrameSampler.noteMotion()  // F30: screen transition
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }
 
