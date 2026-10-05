@@ -2,6 +2,9 @@ import XCTest
 @testable import EdgeRum
 import EdgeRumCore
 import Network
+#if canImport(CoreTelephony) && os(iOS)
+import CoreTelephony
+#endif
 
 /// Unit tests for `NetworkContext` extras — F16/T16.3's `expensive`,
 /// `constrained`, and `interface` wire keys.
@@ -55,6 +58,55 @@ final class NetworkContextExtrasTests: XCTestCase {
         XCTAssertEqual(bag["network.expensive"], .bool(false))
         XCTAssertEqual(bag["network.constrained"], .bool(false))
     }
+
+    // MARK: generation(radio:) — F35 radio mapping
+
+    func testGenerationMapsEveryRadioAccessTechnology() {
+        let table: [(String?, String)] = [
+            ("CTRadioAccessTechnologyGPRS", "2g"),
+            ("CTRadioAccessTechnologyEdge", "2g"),
+            ("CTRadioAccessTechnologyCDMA1x", "2g"),
+            ("CTRadioAccessTechnologyWCDMA", "3g"),
+            ("CTRadioAccessTechnologyHSDPA", "3g"),
+            ("CTRadioAccessTechnologyHSUPA", "3g"),
+            ("CTRadioAccessTechnologyCDMAEVDORev0", "3g"),
+            ("CTRadioAccessTechnologyCDMAEVDORevA", "3g"),
+            ("CTRadioAccessTechnologyCDMAEVDORevB", "3g"),
+            ("CTRadioAccessTechnologyeHRPD", "3g"),
+            ("CTRadioAccessTechnologyLTE", "4g"),
+            ("CTRadioAccessTechnologyNRNSA", "5g"),
+            ("CTRadioAccessTechnologyNR", "5g"),
+            (nil, "unknown"),
+            ("", "unknown"),
+            ("CTRadioAccessTechnologySomethingNew", "unknown"),
+        ]
+        for (radio, expected) in table {
+            XCTAssertEqual(NetworkContext.generation(radio: radio), expected, "\(radio ?? "nil")")
+            XCTAssertNotEqual(NetworkContext.generation(radio: radio), "cellular")
+        }
+    }
+
+    #if canImport(CoreTelephony) && os(iOS)
+    /// The mapping matches on raw strings so it runs on macOS; pin them
+    /// to the SDK constants where CoreTelephony exists.
+    func testGenerationMatchesCoreTelephonyConstants() {
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyGPRS), "2g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyEdge), "2g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyCDMA1x), "2g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyWCDMA), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyHSDPA), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyHSUPA), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyCDMAEVDORev0), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyCDMAEVDORevA), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyCDMAEVDORevB), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyeHRPD), "3g")
+        XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyLTE), "4g")
+        if #available(iOS 14.1, *) {
+            XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyNRNSA), "5g")
+            XCTAssertEqual(NetworkContext.generation(radio: CTRadioAccessTechnologyNR), "5g")
+        }
+    }
+    #endif
 
     // MARK: from(_:) — exercise the live NWPathMonitor's currentPath
 

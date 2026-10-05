@@ -25,6 +25,9 @@ import XCTest
 import Foundation
 import Network
 import EdgeRumCore
+#if os(iOS)
+import CoreTelephony
+#endif
 @testable import EdgeRumCapture
 
 // MARK: - Local probe recorder with refresh + drain tracking
@@ -145,7 +148,7 @@ final class NetworkPathCaptureTests: XCTestCase {
 
     func test_makeAttributes_cellular_expensive() {
         let attrs = NetworkPathCapture.makeAttributes(
-            context: NetworkContext(type: .cellular, effectiveType: "cellular"),
+            context: NetworkContext(type: .cellular, effectiveType: "4g"),
             isExpensive: true,
             isConstrained: false,
             unsatisfiedReason: nil
@@ -250,7 +253,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         Recorder.installShared(probe)
 
         NetworkPathCapture.emit(
-            context: NetworkContext(type: .cellular, effectiveType: "cellular"),
+            context: NetworkContext(type: .cellular, effectiveType: "4g"),
             isExpensive: true,
             isConstrained: false,
             unsatisfiedReason: nil
@@ -316,7 +319,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         )
         // 3. Cellular (change in type)
         NetworkPathCapture.emit(
-            context: NetworkContext(type: .cellular, effectiveType: "cellular"),
+            context: NetworkContext(type: .cellular, effectiveType: "4g"),
             isExpensive: true, isConstrained: false, unsatisfiedReason: nil
         )
         // 4. None, with reason (change in reason)
@@ -332,6 +335,51 @@ final class NetworkPathCaptureTests: XCTestCase {
         }
         XCTAssertEqual(events.count, 4)
     }
+
+    /// F35: a radio handover (LTE → NR) with no `NWPath` change still
+    /// re-emits `network_change` — the fingerprint carries `effectiveType`.
+    func test_emit_radioOnlyHandover_reEmits() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+
+        for generation in ["4g", "5g", "5g"] {
+            NetworkPathCapture.emit(
+                context: NetworkContext(type: .cellular, effectiveType: generation),
+                isExpensive: true, isConstrained: false, unsatisfiedReason: nil
+            )
+        }
+
+        let generations = probe.calls.compactMap { call -> AttributeValue? in
+            if case .event("network_change", let attrs) = call { return attrs["network.effectiveType"] }
+            return nil
+        }
+        XCTAssertEqual(generations, [.string("4g"), .string("5g")])
+    }
+
+    #if os(iOS)
+    /// F35: `CTServiceRadioAccessTechnologyDidChange` is wired to a
+    /// re-read of the current path through the dedupe fingerprint.
+    func test_radioNotification_reReadsPath() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        NetworkPathCapture.install(debug: false)
+        // Let the monitor's first update land, then forget it so the
+        // notification-driven re-read is not deduped away.
+        let settled = expectation(description: "first path update")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { settled.fulfill() }
+        wait(for: [settled], timeout: 2)
+        NetworkPathCapture._resetDedupeFingerprintForTesting()
+        let before = probe.calls.count
+
+        NotificationCenter.default.post(name: .CTServiceRadioAccessTechnologyDidChange, object: nil)
+
+        let deadline = Date().addingTimeInterval(2)
+        while probe.calls.count == before && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertGreaterThan(probe.calls.count, before)
+    }
+    #endif
 
     func test_emit_disabledRecorder_short_circuits() {
         let probe = CaptureProbeRecorder(enabled: false)

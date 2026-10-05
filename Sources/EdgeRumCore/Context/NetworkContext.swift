@@ -7,21 +7,29 @@
 // Wire keys (CLAUDE.md / docs/data-flow.md §3.3):
 //   network.type             — "wifi" / "cellular" / "wired" / "none" / "unknown"
 //   network.effectiveType    — best-effort radio access tech on iOS
-//                              ("2g" / "3g" / "4g" / "5g" / "wifi" / "unknown")
+//                              ("2g" / "3g" / "4g" / "5g" / "wifi" / "wired" / "unknown")
 //   network.expensive        — NWPath.isExpensive                    (F16/T16.3)
 //   network.constrained      — NWPath.isConstrained                  (F16/T16.3)
 //   network.interface        — Active NWInterface name (e.g. "en0")  (F16/T16.3)
 //
 // `effectiveType` is "best-effort on iOS" per CLAUDE.md "Required
 // identity attributes". For Wi-Fi paths we report `"wifi"`. For
-// cellular paths we report `"cellular"`; radio generation
-// (`CTTelephonyNetworkInfo`) is roadmap tranche 10, not a TODO here.
+// cellular paths we report the radio generation read from
+// `CTTelephonyNetworkInfo` (F35, roadmap tranche 10) — never
+// `"cellular"`. `4g` means "LTE radio", not web's throughput estimate.
 //
 // Refs: PLAN-iOS.md §7.5, §F3/T3.3, §16.4 / F16; docs/data-flow.md §3.3.
 //
 
 import Foundation
 import Network
+#if canImport(CoreTelephony) && os(iOS)
+import CoreTelephony
+
+// ponytail: one shared instance; CTTelephonyNetworkInfo is costly to create
+// and its read-only properties are safe to read off the main thread.
+nonisolated(unsafe) private let telephony = CTTelephonyNetworkInfo()
+#endif
 
 public struct NetworkContext: Sendable, Hashable {
 
@@ -93,7 +101,7 @@ public struct NetworkContext: Sendable, Hashable {
         if path.usesInterfaceType(.cellular) {
             return NetworkContext(
                 type: .cellular,
-                effectiveType: "cellular",
+                effectiveType: generation(radio: currentRadio()),
                 isExpensive: isExpensive,
                 isConstrained: isConstrained,
                 interface: interface
@@ -115,6 +123,36 @@ public struct NetworkContext: Sendable, Hashable {
             isConstrained: isConstrained,
             interface: interface
         )
+    }
+
+    /// Map a `CTRadioAccessTechnology*` value to `2g`…`5g`. `nil` or
+    /// unrecognised → `"unknown"`, never `"cellular"`. Matches the raw
+    /// constant strings so the table is testable where CoreTelephony
+    /// is absent (macOS `swift test`). F35.
+    public static func generation(radio: String?) -> String {
+        switch radio?.replacingOccurrences(of: "CTRadioAccessTechnology", with: "") {
+        case "GPRS", "Edge", "CDMA1x":
+            return "2g"
+        case "WCDMA", "HSDPA", "HSUPA", "CDMAEVDORev0", "CDMAEVDORevA", "CDMAEVDORevB", "eHRPD":
+            return "3g"
+        case "LTE":
+            return "4g"
+        case "NRNSA", "NR":
+            return "5g"
+        default:
+            return "unknown"
+        }
+    }
+
+    /// Radio access technology of the data-service SIM, `nil` when
+    /// unavailable (simulator, no SIM, non-iOS).
+    private static func currentRadio() -> String? {
+        #if canImport(CoreTelephony) && os(iOS)
+        guard let id = telephony.dataServiceIdentifier else { return nil }
+        return telephony.serviceCurrentRadioAccessTechnology?[id]
+        #else
+        return nil
+        #endif
     }
 
     /// First available interface name (e.g. `"en0"`, `"pdp_ip0"`),
@@ -167,6 +205,10 @@ public final class NetworkPathObserver: @unchecked Sendable {
         monitor.cancel()
         lock.lock(); _onChange = nil; lock.unlock()
     }
+
+    /// The monitor's latest path, for re-reads not driven by a path
+    /// transition (F35 radio handover).
+    public var currentPath: NWPath { monitor.currentPath }
 
     /// Synchronously snapshot the current path. Returns `.unknown`
     /// until the monitor has produced its first update.

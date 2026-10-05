@@ -75,7 +75,8 @@ let package = Package(
         // MARK: - Internal targets
         .target(
             name: "EdgeRumCore",
-            path: "Sources/EdgeRumCore"
+            path: "Sources/EdgeRumCore",
+            linkerSettings: [.linkedFramework("CoreTelephony", .when(platforms: [.iOS]))]
         ),
         .target(
             name: "EdgeRumCapture",
