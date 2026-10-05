@@ -566,7 +566,7 @@ A breadcrumb is a demoted event, not a new signal; the ring exists to **defeat t
 
 | key | type | on events | scope | presence | cardinality | pii | delta | notes |
 |---|---|---|---|---|---|---|---|---|
-| `breadcrumbs` | string | `app.crash`, `app.hang`, `app.error` | event | optional | unbounded string (≤ 100 rows, ~10 KB) | content | iOS-only | **+T6 breadcrumbs.** JSON array of objects as a string, oldest first. Replayed `app.crash` (and replayed `app.hang`) attach the **prior** session's ring from `breadcrumbs.json` (deleted after replay; attached only when its `session.id` matches the sidecar's). Live `app.hang` / `app.error` attach the current ring **at most once per session**. Ring cleared on session rotation |
+| `breadcrumbs` | string | `app.crash`, `app.hang`, `app.error` | event | optional | unbounded string (≤ 100 rows, ~10 KB) | content | iOS-only | **+T6 breadcrumbs.** JSON array of objects as a string, oldest first. Replayed `app.crash` attaches the **prior** session's ring from `breadcrumbs.json` (deleted after replay; attached only when its `session.id` matches the sidecar's). Live `app.hang` / `app.error` attach the current ring **at most once per session**. Ring cleared on session rotation |
 | `breadcrumb.dropped` | number (int) | `app.crash`, `app.hang`, `app.error` | event | optional | numeric | none | iOS-only | **+T6.** Rows lost to the 1 s coalescing window, ring eviction, the 128 B label cap or a `session.id` mismatch — one counted number from the file's monotonic sequence. Omitted when zero |
 
 **Row format inside `breadcrumbs`:**

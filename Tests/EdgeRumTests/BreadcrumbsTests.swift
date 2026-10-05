@@ -216,6 +216,25 @@ final class BreadcrumbsTests: XCTestCase {
         XCTAssertEqual(label, String(repeating: "é", count: 64))
     }
 
+    func testRotationAndResetIdentityDeleteTheFile() {
+        let crumbs = makeCrumbs()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
+        let (recorder, _) = makeRecorder(crumbs: crumbs, clock: clock)
+        recorder.recordEvent(name: "page_load", attributes: [:])
+        crumbs._drainForTesting()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        clock.advance(by: 31 * 60)
+        recorder.recordPerformance(name: "memory_usage", attributes: ["value": .double(1)])  // rotates, no crumb
+        crumbs._drainForTesting()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "no stale trail after rotation")
+
+        recorder.recordEvent(name: "page_load", attributes: [:])
+        recorder.resetIdentity()
+        crumbs._drainForTesting()
+        XCTAssertTrue(crumbs._rowsForTesting.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "no pre-erasure trail")
+    }
+
     func testRingClearedOnRotation() {
         let crumbs = makeCrumbs()
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))

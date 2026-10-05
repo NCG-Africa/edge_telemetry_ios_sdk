@@ -672,6 +672,12 @@ A second, **volatile** zone (F28) holds the riders `screen.name`,
 best-effort. `EdgeRum.start()` reads the file before this launch's first
 write so the replayed crash carries crash-time riders.
 
+Breadcrumbs (F31) live in their own `Library/Caches/edge-rum/breadcrumbs.json`
+(`Sources/EdgeRumCore/Breadcrumbs.swift`): whole-ring snapshot, ≤ 1 write/s,
+none while idle, carries its own `session.id`. `EdgeRum.start()` reads and
+deletes it; replay attaches it to `app.crash` only on a sidecar `session.id`
+match. Deleted on rotation and `resetIdentity()`.
+
 ---
 
 ## Transport rules

@@ -107,6 +107,8 @@ public final class Breadcrumbs: @unchecked Sendable {
     /// Project one recorded event into the ring. The caller has already
     /// excluded metrics and forced-emit names.
     public func record(name: String, attributes: [String: AttributeValue], at date: Date, sessionId: String) {
+        lock.lock(); let on = capturing; lock.unlock()
+        guard on else { return }
         let (label, status) = Self.project(name, attributes)
         var cut = 0
         var l = label
@@ -125,14 +127,18 @@ public final class Breadcrumbs: @unchecked Sendable {
         schedulePersistLocked()
     }
 
-    /// Session rotation: the ring belongs to one session. Writes
-    /// nothing — the next crumb rewrites the file.
+    /// Session rotation or identity reset: the ring belongs to one
+    /// session. Deletes the file off-thread, so a crash before the next
+    /// crumb replays no trail rather than a mismatched one.
     public func clear() {
         lock.lock(); defer { lock.unlock() }
         rows = []
         seq = 0
         truncated = 0
+        sessionId = ""
         attachedThisSession = false
+        guard let target = url else { return }
+        queue.async { try? FileManager.default.removeItem(at: target) }
     }
 
     // MARK: Readers
@@ -207,7 +213,10 @@ public final class Breadcrumbs: @unchecked Sendable {
             let file = File(sessionId: sessionId, seq: seq, truncated: truncated, rows: rows)
             let target = url
             lock.unlock()
-            guard let target, let data = try? Self.encoder.encode(file) else { return }
+            guard let target else { return }
+            // Cleared since this write was scheduled.
+            if file.rows.isEmpty { try? FileManager.default.removeItem(at: target); return }
+            guard let data = try? Self.encoder.encode(file) else { return }
             try? FileManager.default.createDirectory(
                 at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: target, options: .atomic)

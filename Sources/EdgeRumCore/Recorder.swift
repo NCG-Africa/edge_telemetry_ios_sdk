@@ -506,6 +506,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshDeviceIdentity(DeviceIdentitySnapshot(id: deviceId))
         context.refreshUser(UserContextSnapshot(id: userId))
         writeSidecar()
+        breadcrumbs.clear()  // F31: no pre-erasure trail on later errors
     }
 
     // MARK: Flush

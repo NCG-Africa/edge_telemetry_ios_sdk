@@ -1778,9 +1778,9 @@ W6 (#194). Three choices the spec left to the code.
 1. **The snapshot is trailing-edge**: the first crumb after a write
    schedules the next write one window (1 s) later; later crumbs in the
    window ride along. At most one write per second, none while idle.
-   The ring is cleared on rotation without a write — the next crumb
-   rewrites the file, and a crash before then is a `session.id`
-   mismatch, counted.
+   Rotation and `resetIdentity()` clear the ring and delete the file, so
+   a crash before the next crumb replays no trail — not the prior
+   session's trail counted as a false `breadcrumb.dropped`.
 2. **`breadcrumb.dropped` cannot count the coalescing window.** A
    snapshot written atomically with its own sequence counter cannot know
    about crumbs newer than itself. It counts ring eviction
