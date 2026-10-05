@@ -11,6 +11,16 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [2.0.0](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.3.0-alpha.2...v2.0.0) (2026-10-06)
+
+First stable release. Promotes the 1.x alpha line (F25–F37 RUM coverage
+tranches, including the F29 breaking batch) to `2.0.0`. No code changes
+since `1.4.0-alpha.2`.
+
+### Changed
+
+* Install snippets in the README and DocC `GettingStarted` now pin `2.0.0`.
+
 ## [1.4.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.3.0-alpha.2...v1.4.0-alpha.2) (2026-10-05)
 
 
