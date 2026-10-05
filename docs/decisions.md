@@ -1439,3 +1439,96 @@ reference rather than process start, and Darwin's sleep semantics for
   fresh ephemeral `URLSession` per intercepted request destroys connection
   reuse, so every span duration this spec produces carries an SDK-induced
   TLS handshake. Recorded as a measurement caveat, not a blocker.
+
+---
+
+## ADR-016 — iOS RUM coverage: iOS-native naming, catalogue as contract, value-per-work ranking
+
+**Date:** 2026-10-05
+
+**Status:** Accepted. Closes wayfinder map #188 (tickets #189–#211).
+Amends ADR-014's Processor-of-record stance for naming outside trace v3.
+
+**Context.** Map #188 audited the SDK at `1.0.0-alpha.2` against a
+16-area production-grade iOS RUM checklist: 1 area covered, 12 partial,
+3 absent. Closing the gaps meant settling several questions the code
+alone could not answer. Whose vocabulary does a new iOS signal use, when
+map #153 had frozen trace v3 to Android's names verbatim and ADR-014 had
+made the Processor the naming authority? Where are Apdex and the
+Experience Score computed, given that the SDK cannot observe
+abandonment without guessing? And in what order should roughly fourteen
+pieces of work ship, when ordering by dependency had already left epic
+#169's seventeen tasks unstarted?
+
+**Decision.**
+
+- **The artifacts are
+  [`docs/specs/rum-coverage-roadmap.md`](specs/rum-coverage-roadmap.md)
+  and `docs/catalogue/ios-data-catalogue.md`.** This entry only indexes
+  them. Where a ticket and a later ticket disagree, the roadmap wins.
+  Its §10 lists 21 such conflicts and the ruling on each.
+- **Naming is iOS-native.** Map #153's Android-verbatim freeze still
+  holds for trace v3's attributes. Everywhere else it is lifted, and new
+  signals take iOS names. **Stated cost:** the Processor runs three
+  platform-specific ingestion paths (web, Android, iOS) instead of one
+  shared vocabulary. The catalogue header states this so nobody has to
+  discover it. Renames fix only iOS's own incoherence and never chase
+  the Processor's spelling. New event names are dotted and new keys are
+  snake_case, but those style rules apply only going forward. Legacy
+  spellings stay frozen where renaming would break routing or the
+  collector's identity gate.
+- **The catalogue is the contract.** Every event and attribute gets a
+  row with its type, its scope (`context` / `rider` / `event`), its PII
+  class (`none` / `pseudonymous` / `identity` / `content`), and its
+  platform delta. A metric's unit is pinned per name, and that unit is
+  frozen with the name. The catalogue is also the backend hand-off. The
+  Processor adapts to it per platform rather than iOS bending to another
+  platform's vocabulary.
+- **Apdex and Experience Score are analytics-layer.** The SDK emits raw
+  action lifecycle: `action.started`, plus `action.ended` with
+  `action.outcome`, durations, and recorded background hops. It never
+  infers abandonment while an action could still complete. `abandoned`
+  fires at three deterministic points only: session rotation with the
+  action still open, next-launch reconstruction after process death,
+  and a leak-guard ceiling. The same principle declines on-device OOM
+  verdicts, hang tiers, slow/frozen labels and session rollups.
+- **Ranking axis: value per unit of work.** Dependency order breaks
+  ties and does nothing else. The result is fourteen tranches, 0–13,
+  each independently shippable. Distributed tracing (epic #169, F24) is
+  slotted at tranche 11, inside the order and not beside it.
+- **Renames are batched into one breaking tranche** (tranche 4, one
+  `1.0.0-alpha.N`, one migration note). It is scoped by names, not
+  values. Deletes, renames, event-name splits and unit changes ride the
+  batch. A value that becomes true under the same name and unit ships
+  with its feature tranche.
+- **O1 is the prerequisite (tranche 0).** `Recorder.enqueue` stops
+  writing the crash sidecar on every event, and the write moves to the
+  five sites where identity changes. `sdk.thread_time_ms` ships with it
+  as the acceptance instrument, so the before/after comparison has a
+  "before". Trace v3 §12.1 and §13 are amended to match (roadmap §9).
+  That is a spec-consistency correction, not a reopening.
+- **The backend is never a gate.** Processor and
+  `edge_telemetry_react_native` deltas are written up in this repo, in
+  the shape of #168, and handed to the driver to file. Agents make no
+  cross-repo writes. The tranche-4 Processor delta is handed over when
+  tranche 0 starts, so the backend gets lead time without SDK work ever
+  waiting on it.
+
+**Consequences.**
+
+- One epic per tranche (F24–F37) follows the repo's epic/task
+  convention. No second wayfinder map is opened.
+- ADR-014's "iOS conforms to the Processor of record" now applies only
+  to trace v3 and to the frozen legacy spellings. For new signals, the
+  catalogue is the record.
+- Three signal losses are accepted deliberately and recorded as cost
+  lines rather than free wins. `button_title` becomes default-off
+  (tranche 2). Readiness and interactivity need host adoption
+  (tranche 13). Un-touched animations go unmeasured once the frame
+  sampler runs in motion windows only (tranche 5).
+- The volume and retention budget stays open. Its first real numbers
+  come from tranche 0's before/after measurement and tranche 7's
+  envelope counters.
+- Symbolication upload and the symbol store form an unranked,
+  backend-dependent epic. The SDK half of that work sits inside
+  tranche 4.
