@@ -31,9 +31,9 @@ Pod::Spec.new do |s|
                          :tag => s.version.to_s }
 
   s.ios.deployment_target = '14.0'
-  # SwiftPM consumers build at language mode Swift 6 via
-  # `Package.swift`'s `swift-tools-version: 6.0`. CocoaPods consumers
-  # are deliberately pinned to Swift 5.10 because CLAUDE.md states
+  # `Package.swift` uses `swift-tools-version: 6.0` but pins
+  # `swiftLanguageModes: [.v5]`, so SwiftPM consumers also compile in
+  # Swift 5 mode. CocoaPods is pinned to Swift 5.10 because CLAUDE.md states
   # "nothing on our public surface requires Swift 6 strict
   # concurrency" — advertising 6.0 here makes Xcode promote every
   # MainActor-isolation warning to an error under iOS 26 SDK, blocking
@@ -42,7 +42,10 @@ Pod::Spec.new do |s|
   # F-future track).
   s.swift_versions        = ['5.10']
   s.requires_arc          = true
-  s.static_framework      = false
+  # PLCrashReporter ships as a static xcframework; a dynamic pod can't
+  # transitively embed a statically-linked binary, so the CocoaPods
+  # distribution builds static. (SPM linkage is governed by Package.swift.)
+  s.static_framework      = true
 
   # PrivacyInfo manifest. F1 ships an empty stub; real declarations
   # land with F20.
@@ -52,14 +55,18 @@ Pod::Spec.new do |s|
 
   s.default_subspec = 'Default'
 
+  # EdgeRumVersion.swift is produced by the SwiftPM build plugin at build
+  # time; CocoaPods doesn't run SwiftPM plugins, so regenerate it from the
+  # VERSION file at install time. Runs on the downloaded pod copy only —
+  # never touches the git checkout, so it can't collide with the plugin's
+  # SwiftPM output.
+  s.prepare_command = 'bash Tools/gen-version.sh Sources/EdgeRum/Generated/EdgeRumVersion.swift'
+
   s.subspec 'Default' do |ss|
     ss.dependency 'EdgeRum/Internal-Core'
     ss.dependency 'EdgeRum/Internal-Capture'
     ss.dependency 'EdgeRum/Internal-Crash'
     ss.source_files = 'Sources/EdgeRum/**/*.swift'
-    # The generated EdgeRumVersion.swift comes from the SwiftPM build
-    # plugin. For CocoaPods distribution it must be checked in before
-    # release tagging; see Tools/gen-version.sh.
   end
 
   # Internal subspecs — names prefixed with `Internal-` so they are
@@ -77,8 +84,11 @@ Pod::Spec.new do |s|
   s.subspec 'Internal-Crash' do |ss|
     ss.dependency 'EdgeRum/Internal-Core'
     ss.source_files = 'Sources/EdgeRumCrash/**/*.swift'
-    # PLCrashReporter ships as a vendored XCFramework. The fetch script
-    # downloads it into Frameworks/ before `pod lib lint` runs in CI.
-    ss.vendored_frameworks = 'Frameworks/CrashReporter.xcframework'
+    # SwiftPM vendors CrashReporter.xcframework locally (gitignored, so it
+    # isn't in the release tag). For CocoaPods we depend on the upstream
+    # PLCrashReporter pod instead — same `CrashReporter` module name, so
+    # the `@_implementationOnly import CrashReporter` in this target is
+    # unchanged. No binary committed to the repo.
+    ss.dependency 'PLCrashReporter', '~> 1.12'
   end
 end

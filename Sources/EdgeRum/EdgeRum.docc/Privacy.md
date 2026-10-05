@@ -7,8 +7,9 @@ Review.
 
 EdgeRum is designed to be App-Store-reviewable out of the box. It does
 not use the IDFA, does not trigger the App Tracking Transparency
-prompt, does not import `AdSupport`, and ships a privacy manifest that
-declares every restricted-reason API it uses.
+prompt, does not import `AdSupport`, and ships a privacy manifest in every
+distribution slice. The manifest is currently the F1 stub; its
+restricted-reason declarations land with F20.
 
 ## Identifiers
 
@@ -26,8 +27,10 @@ networks; they are never persisted to iCloud Keychain.
 
 ## Restricted-reason APIs
 
-The privacy manifest at `PrivacyInfo.xcprivacy` declares every
-restricted-reason API the SDK calls:
+The restricted-reason APIs the SDK calls, and the declarations the
+manifest will carry once F20 lands. The shipped manifest is still the
+F1 stub with an empty `NSPrivacyAccessedAPITypes` array, so host apps
+must declare these reasons themselves in the meantime:
 
 | API category | Reason code | Why we use it |
 |--------------|-------------|---------------|
@@ -66,7 +69,7 @@ URL sanitisation hooks let consumers redact further.
 
 The reference payload — every field that may appear on the wire — lives
 in [`docs/payload-example.jsonc`](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/main/docs/payload-example.jsonc)
-and [`docs/payload-schema.json`](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/main/docs/payload-schema.json)
+and [`docs/payload-example.jsonc`](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/main/docs/payload-example.jsonc)
 in the repo root.
 
 ## Data retention and the offline queue

@@ -2,8 +2,12 @@
 #
 # Five-job continuous integration for the EdgeRum SDK.
 #
-# Triggers on every pull request, every push to main, and manual dispatch.
-# Release-artifact builds live in release.yml and only fire on tag pushes.
+# Triggers ONLY on a SemVer tag push (`v*`) and manual dispatch. Pull
+# requests and pushes to main do NOT run these checks — a branch can be
+# merged with no CI signal, and breakage surfaces at tag time instead.
+# Run the suite by hand from the Actions tab (workflow_dispatch) before
+# merging anything risky. Release-artifact builds live in release.yml,
+# which fires on the same tag push.
 #
 #   build        — `swift build -c release` + `xcodebuild` against iOS device
 #                  + simulator destinations.
@@ -36,9 +40,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    tags:
+      - 'v*'              # vMAJOR.MINOR.PATCH[-PRERELEASE], e.g. v1.0.0-alpha.2
   workflow_dispatch:
 
 jobs:

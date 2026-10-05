@@ -1332,9 +1332,210 @@ Two design tensions surfaced during planning:
 - No new `eventName`. No new `metricName`. No transport change. No
   public API change.
 
+## ADR-014 — iOS↔Processor wire sync: Processor-of-record, manual reconciliation
+
+**Date:** 2026-07-22
+
+**Status:** Accepted. Closes wayfinder map #140.
+
+**Context.** Map #140 pinned five iOS wire changes so the
+EdgeTelemetryProcessor extractors consume iOS output: nav keys
+`to_screen`/`from_screen`/`method` (#143), drop the `screen.duration`
+metric (#144), `memory_usage` value in MB + `memory.pressure_level`
+(#145), add `http.success` + `frame.dropped` and strip the duplicated
+`value` attribute (#146), and wire the real `sdk.version` (#142). The
+iOS contract docs still described the pre-alignment wire, and there was
+no stated rule for who keeps the two repos aligned on the next Processor
+change.
+
+**Decision.**
+
+- **Source of truth: the Processor extractors.** The stance locked in
+  map #140 — *iOS conforms to the Processor of record* — is the standing
+  sync policy, not a one-off. When the Processor's
+  `app/services/parsers/extractors.py` /
+  `app/services/processors/event_processor.py` change and drift the iOS
+  wire, iOS adapts. Neither a shared third-party contract file nor a
+  CI-enforced key manifest is introduced (rejected: both add cross-repo
+  machinery the locked stance doesn't need).
+- **Reconciliation is manual, human-triggered.** The contract owner
+  re-runs a wayfinder reconciliation on iOS whenever Processor extractors
+  change. No automation notices drift for us.
+- **Docs amended now, prose only.** `CLAUDE.md` wire tables/examples and
+  `docs/payload-example.jsonc` were updated in this map to describe the
+  post-alignment (target) wire. `docs/payload-schema.json` is referenced
+  by CLAUDE.md but does not exist — no file to amend.
+  `Tests/Fixtures/golden-batch-ios.json` is **deliberately deferred** to
+  the Swift implementation PR: flipping the golden fixture before the
+  Swift lands would turn the contract test red with no code to match it.
+  Docs+code+fixture flip together in the impl handoff.
+
+**Consequences.**
+
+- The three pinned prose docs now lead the Swift implementation: they
+  are the spec the handoff PR implements against.
+- The golden fixture and the Swift changes are the only remaining wire
+  work, and they are out of this decide-only map's scope.
+- Next Processor extractor change → open a fresh iOS reconciliation map;
+  there is no automated guard, by design.
+
 ---
 
-## ADR-014 — Distribution model: public open-source SDK, SPM + CocoaPods, keys issued by NCG
+## ADR-015 — Distributed trace v3 on iOS: spec lives in `docs/specs/`, nine new wire attributes, five root types
+
+**Date:** 2026-09-15
+
+**Status:** Accepted. Closes wayfinder map #153 (tickets #154–#163, #166).
+
+**Context.** Android shipped distributed trace v3 (map #120), and the
+backend half is live at `EDGETELEMETRYPROCESSORGO@2874607` — seven trace
+columns, an index, and the `rum_action_envelopes` view. iOS had **zero**
+trace code. A naive port fails on iOS ground truth: HTTP capture is
+`URLProtocol`-based and runs on a Foundation queue that has never seen the
+caller's thread, `Clock` is `Date`-only, `launchStart` is `Date()` on first
+reference rather than process start, and Darwin's sleep semantics for
+`CLOCK_MONOTONIC_RAW` are the inverse of Linux's.
+
+**Decision.**
+
+- **The artifact is [`docs/specs/distributed-trace-v3-ios.md`](specs/distributed-trace-v3-ios.md)**,
+  not this entry. That document is implementation-ready and holds every
+  decision with its `file:line` evidence, verified at `b90a869`; this ADR
+  is an index entry, and the spec's §18 maps each section to the ticket
+  that owns it.
+- **Fidelity rule: wire-identical, mechanism free.** Attribute names, the
+  `traceparent.outcome` enum and `trace.root_type` values are frozen to
+  Android's contract; *how* iOS produces them was decided per-ticket on iOS
+  merits. Four iOS-only values were filed and cleared through
+  `EDGETELEMETRYPROCESSORGO#1`: `trace.root_type = resume`,
+  `trace.root_expired`, `interaction.name_source`, and `injected_expired`.
+- **Capture moves to the caller's thread** via an instance-swizzle of
+  `URLSession`'s task-creation family — including the five *private*
+  delegate-carrying selectors async/await dispatches to, discovered at
+  install by `class_copyMethodList` rather than by literal. `URLProtocol`
+  stays as-is for the load and the metrics, and becomes read-only with
+  respect to trace state.
+- **Five root types** — `launch`, `interaction`, `navigation`, `resume`,
+  `request` (accepted by the store, never minted by iOS) — each with a
+  minting site, a lifetime, and a carrying event holding its ids.
+- **Plan-only.** No SDK code merges from map #153. The spec is the
+  handoff; the implementation is a separate effort.
+
+**Consequences.**
+
+- `http.duration_ms` changes meaning: `span.start_time` is stamped at task
+  creation rather than in `startLoading()`, so it now includes caller-side
+  queueing — the interval the map is named after (defect D6).
+- Three prohibitions in the spec (§15) fail **silently** if ignored: a
+  numeric `span.start_time` NULLs the backend column, an `applicationState`
+  guard on the resume mint suppresses 100% of resume roots, and reading the
+  non-expiring `lastRoot` from the capture point fabricates attribution. The
+  spec's guard test (§14.1) enforces the third.
+- Two off-route defects were filed standalone rather than fixed here:
+  **#164** (`HangWatchdog` measures hang duration on `Date`) and **#165**
+  (the internal ephemeral session discards host session config and bypasses
+  host TLS pinning).
+- One overhead finding is not fixable inside the design this map kept: a
+  fresh ephemeral `URLSession` per intercepted request destroys connection
+  reuse, so every span duration this spec produces carries an SDK-induced
+  TLS handshake. Recorded as a measurement caveat, not a blocker.
+
+---
+
+## ADR-016 — iOS RUM coverage: iOS-native naming, catalogue as contract, value-per-work ranking
+
+**Date:** 2026-10-05
+
+**Status:** Accepted. Closes wayfinder map #188 (tickets #189–#211).
+Amends ADR-014's Processor-of-record stance for naming outside trace v3.
+
+**Context.** Map #188 audited the SDK at `1.0.0-alpha.2` against a
+16-area production-grade iOS RUM checklist: 1 area covered, 12 partial,
+3 absent. Closing the gaps meant settling several questions the code
+alone could not answer. Whose vocabulary does a new iOS signal use, when
+map #153 had frozen trace v3 to Android's names verbatim and ADR-014 had
+made the Processor the naming authority? Where are Apdex and the
+Experience Score computed, given that the SDK cannot observe
+abandonment without guessing? And in what order should roughly fourteen
+pieces of work ship, when ordering by dependency had already left epic
+#169's seventeen tasks unstarted?
+
+**Decision.**
+
+- **The artifacts are
+  [`docs/specs/rum-coverage-roadmap.md`](specs/rum-coverage-roadmap.md)
+  and `docs/catalogue/ios-data-catalogue.md`.** This entry only indexes
+  them. Where a ticket and a later ticket disagree, the roadmap wins.
+  Its §10 lists 21 such conflicts and the ruling on each.
+- **Naming is iOS-native.** Map #153's Android-verbatim freeze still
+  holds for trace v3's attributes. Everywhere else it is lifted, and new
+  signals take iOS names. **Stated cost:** the Processor runs three
+  platform-specific ingestion paths (web, Android, iOS) instead of one
+  shared vocabulary. The catalogue header states this so nobody has to
+  discover it. Renames fix only iOS's own incoherence and never chase
+  the Processor's spelling. New event names are dotted and new keys are
+  snake_case, but those style rules apply only going forward. Legacy
+  spellings stay frozen where renaming would break routing or the
+  collector's identity gate.
+- **The catalogue is the contract.** Every event and attribute gets a
+  row with its type, its scope (`context` / `rider` / `event`), its PII
+  class (`none` / `pseudonymous` / `identity` / `content`), and its
+  platform delta. A metric's unit is pinned per name, and that unit is
+  frozen with the name. The catalogue is also the backend hand-off. The
+  Processor adapts to it per platform rather than iOS bending to another
+  platform's vocabulary.
+- **Apdex and Experience Score are analytics-layer.** The SDK emits raw
+  action lifecycle: `action.started`, plus `action.ended` with
+  `action.outcome`, durations, and recorded background hops. It never
+  infers abandonment while an action could still complete. `abandoned`
+  fires at three deterministic points only: session rotation with the
+  action still open, next-launch reconstruction after process death,
+  and a leak-guard ceiling. The same principle declines on-device OOM
+  verdicts, hang tiers, slow/frozen labels and session rollups.
+- **Ranking axis: value per unit of work.** Dependency order breaks
+  ties and does nothing else. The result is fourteen tranches, 0–13,
+  each independently shippable. Distributed tracing (epic #169, F24) is
+  slotted at tranche 11, inside the order and not beside it.
+- **Renames are batched into one breaking tranche** (tranche 4, one
+  `1.0.0-alpha.N`, one migration note). It is scoped by names, not
+  values. Deletes, renames, event-name splits and unit changes ride the
+  batch. A value that becomes true under the same name and unit ships
+  with its feature tranche.
+- **O1 is the prerequisite (tranche 0).** `Recorder.enqueue` stops
+  writing the crash sidecar on every event, and the write moves to the
+  five sites where identity changes. `sdk.thread_time_ms` ships with it
+  as the acceptance instrument, so the before/after comparison has a
+  "before". Trace v3 §12.1 and §13 are amended to match (roadmap §9).
+  That is a spec-consistency correction, not a reopening.
+- **The backend is never a gate.** Processor and
+  `edge_telemetry_react_native` deltas are written up in this repo, in
+  the shape of #168, and handed to the driver to file. Agents make no
+  cross-repo writes. The tranche-4 Processor delta is handed over when
+  tranche 0 starts, so the backend gets lead time without SDK work ever
+  waiting on it.
+
+**Consequences.**
+
+- One epic per tranche (F24–F37) follows the repo's epic/task
+  convention. No second wayfinder map is opened.
+- ADR-014's "iOS conforms to the Processor of record" now applies only
+  to trace v3 and to the frozen legacy spellings. For new signals, the
+  catalogue is the record.
+- Three signal losses are accepted deliberately and recorded as cost
+  lines rather than free wins. `button_title` becomes default-off
+  (tranche 2). Readiness and interactivity need host adoption
+  (tranche 13). Un-touched animations go unmeasured once the frame
+  sampler runs in motion windows only (tranche 5).
+- The volume and retention budget stays open. Its first real numbers
+  come from tranche 0's before/after measurement and tranche 7's
+  envelope counters.
+- Symbolication upload and the symbol store form an unranked,
+  backend-dependent epic. The SDK half of that work sits inside
+  tranche 4.
+
+---
+
+## ADR-017 — Distribution model: public open-source SDK, SPM + CocoaPods, keys issued by NCG
 
 **Date:** 2026-07-02
 
@@ -1406,7 +1607,7 @@ and how a developer obtains a key.
 
 ---
 
-## ADR-015 — Release pipeline: release-please automation, stable-only with beta on-demand
+## ADR-018 — Release pipeline: release-please automation, stable-only with beta on-demand
 
 **Date:** 2026-07-02
 
@@ -1460,5 +1661,5 @@ maintained prerelease channel is needed.
 - Adopt Conventional Commits (document in `CONTRIBUTING.md`; optionally
   enforce with a commit-lint CI check).
 - `release.yml` gains the pre-publish test gate and the `pod trunk push`
-  step from ADR-014.
+  step from ADR-017.
 - `CHANGELOG.md` becomes release-please-managed; hand edits stop.

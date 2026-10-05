@@ -134,6 +134,9 @@ key, so the SDK does **not** send it.
   `resolveLocation == true`.
 - `batch_size`: integer equal to `events.count` — included for parity
   with web/Android.
+- `sdk.thread_time_ms`: integer, cumulative caller-thread wall-time (ms)
+  inside the Recorder ingress for the current session. iOS-only, additive
+  (#212).
 - `events`: array of event and metric items.
 
 ### Required identity attributes on every event
@@ -244,7 +247,7 @@ and logged when `debug == true`.
 | Signal                                       | `eventName` value                                | Where emitted                                                                 |
 |----------------------------------------------|--------------------------------------------------|-------------------------------------------------------------------------------|
 | UIKit screen entry                           | `navigation`                                     | `EdgeRumCapture/UIViewControllerCapture.swift` (`viewDidAppear` swizzle)      |
-| UIKit screen exit / dwell                    | `screen.duration`                                | same file (`viewWillDisappear` pair)                                          |
+| UIKit screen exit / dwell                    | *(not emitted — Processor synthesizes from `navigation`; see #144)* | —                                                          |
 | SwiftUI screen entry                         | `navigation` (with `navigation.kind = "swiftui"`)| `EdgeRum/SwiftUI/ViewModifiers.swift` (public `.edgeRumScreen` modifier) and  |
 |                                              |                                                  | `UIHostingController` auto-detection in the UIKit swizzle                     |
 | HTTP request                                 | `http.request`                                   | `EdgeRumCapture/HTTPCapture.swift` (URLProtocol + delegate swizzle)           |
@@ -278,14 +281,16 @@ and logged when `debug == true`.
 
 ## Payload examples
 
-A complete 4-event reference batch (`navigation`, `screen.duration`,
-`http.request`, `metric:frame_render_time`) lives in
-`docs/payload-example.jsonc`. All other event shapes — `app.crash`,
+A complete 4-event reference batch (`navigation`, `http.request`,
+`metric:resource_timing`, `metric:frame_render_time`) lives in
+`docs/payload-example.jsonc`. iOS does **not** emit `screen.duration`
+(the Processor synthesizes it from `navigation` — see #144). All other event shapes — `app.crash`,
 `user.profile.update`, `custom_event`, `app_lifecycle`, `page_load`,
 `network_change`, `session.started`, `session.finalized`, and the
 `metric` items from `EdgeRum.time()`, `memory_usage`, `long_task`,
 `resource_timing` — follow the same envelope and identity-attribute
-rules. `docs/payload-schema.json` is the authoritative attribute list.
+rules. `payload-schema.json` in the EdgeTelemetryProcessor repo is the
+authoritative attribute list; it has not been copied into this repo yet.
 
 ---
 
@@ -312,7 +317,8 @@ user, network) as flat attributes, the internal `Recorder` must:
 4. Never nest objects inside `attributes`. All values must be one of
    `String`, `Int`, `Double`, `Bool`. The `AttributeValue` enum
    enforces this at the type level — see
-   `Sources/EdgeRum/AttributeValue.swift`. Flatten any nested data with
+   `Sources/EdgeRumCore/AttributeValue.swift` (re-exported as a public
+   typealias from `Sources/EdgeRum/AttributeValue.swift`). Flatten any nested data with
    dot-notation keys at the capture layer, not in the `Recorder`.
 
 **Flattening example:**
@@ -339,16 +345,19 @@ struct DeviceInfo {
 
 ## Repository structure
 
-Four Swift targets, only the first is public:
+Five Swift targets, only the first is public:
 
 - `Sources/EdgeRum/` — PUBLIC umbrella. `EdgeRum.swift` (caseless enum,
   static API), `EdgeRumConfig.swift`, `UserContext.swift`,
-  `AttributeValue.swift` (sealed `.string`/`.int`/`.double`/`.bool` enum),
+  `AttributeValue.swift` (public typealias for the sealed
+  `.string`/`.int`/`.double`/`.bool` enum defined in `EdgeRumCore`),
   `RumTimer.swift`, `Environment.swift`, `SwiftUI/ViewModifiers.swift`
-  (the two `.edgeRum*` modifiers).
+  (the two `.edgeRum*` modifiers), `Generated/EdgeRumVersion.swift`
+  (build-plugin output), `Resources/PrivacyInfo.xcprivacy`.
 - `Sources/EdgeRumCore/` — internal: `Recorder` (single facade),
   `EventEnvelope`, `AttributeBag`, `IdentityProvider`, `SessionManager`,
-  `ContextProvider`, `DeviceContext`, `AppContext`, `NetworkContext`,
+  `Context/` (`ContextProvider`, `ContextObservers`, `DeviceContext`,
+  `AppContext`, `NetworkContext`, `PowerContext`, `StorageContext`, …),
   `Sampler`, `Clock`, `Persistence/` (Keychain, UserDefaults,
   QueueFile), `Transport/` (Batch, PayloadBuilder, OfflineQueue,
   RetryPolicy, BackgroundUploader).
@@ -362,12 +371,19 @@ Four Swift targets, only the first is public:
   `BridgeBootstrap`.
 
 Tests: `Tests/EdgeRumTests/` (units), `EdgeRumCaptureTests/` (swizzles),
-`EdgeRumContractTests/` (wire conformance), `Tests/Fixtures/golden-batch-ios.json`.
+`EdgeRumContractTests/` (wire conformance), `EdgeRumCrashTests/` (crash +
+hang), `Tests/Fixtures/golden-batch-ios.json`.
 Samples: `Samples/EdgeRum{Sample,SwiftUISample,CrashSample}App/`.
-Tools: `Tools/{firewall-check,build-xcframework,verify-privacy-manifest}.sh`.
-Top-level: `Package.swift`, `EdgeRum.podspec`, `PrivacyInfo.xcprivacy`,
-`docs/{payload-schema.json,payload-example.jsonc,decisions.md,terminology.md}`,
-`PLAN-iOS.md`, `THIRD_PARTY_LICENSES`.
+Tools: `Tools/` — `firewall-check.sh`, `build-xcframework.sh`,
+`gen-version.sh`, `fetch-plcrashreporter.sh`, `check-supported-ios.sh`,
+`check-links.sh`, `check-doc-coverage.sh`, `extract-readme-code.sh`,
+`check-edge-rum-core-coverage.sh`, `pick-simulator-slice.sh`,
+`gen-sample-xcodeproj.sh`.
+Top-level: `Package.swift`, `EdgeRum.podspec`, `VERSION`, `PLAN-iOS.md`,
+`README.md`, `CHANGELOG.md`, `docs/{payload-example.jsonc,decisions.md,data-flow.md,migration/}`.
+The privacy manifest lives at `Sources/EdgeRum/Resources/PrivacyInfo.xcprivacy`
+(not top-level). `docs/payload-schema.json`, `docs/terminology.md`,
+`THIRD_PARTY_LICENSES`, and a `LICENSE` file do not exist yet.
 
 **Binary dependencies** (vendored as SwiftPM `.binaryTarget` + CocoaPods
 `vendored_frameworks`): `CrashReporter.xcframework` (PLCrashReporter,
@@ -408,7 +424,7 @@ public struct EdgeRumConfig {
     public var maxQueueSize: Int = 200
     public var flushInterval: TimeInterval = 5.0
     public var batchSize: Int = 30                // max events per payload
-    public var sanitizeUrl: ((URL) -> URL)? = nil
+    public var sanitizeUrl: (@Sendable (URL) -> URL)? = nil
     public var captureNativeCrashes: Bool = true  // registers PLCrashReporter
     public var enableHangDetection: Bool = true   // registers CFRunLoopObserver watchdog
     public var hangTimeout: TimeInterval = 5.0
@@ -416,6 +432,9 @@ public struct EdgeRumConfig {
     public var captureHTTP: Bool = true
     public var captureTaps: Bool = true
     public var captureRenderingPerformance: Bool = true
+    public var captureLifecycle: Bool = true
+    public var captureNetworkChanges: Bool = true
+    public var capturePageLoad: Bool = true
     public var debug: Bool = false
 
     public init(apiKey: String, endpoint: URL)
@@ -440,6 +459,7 @@ public enum EdgeRum {
     public static var sessionId: String { get }
     public static var deviceId: String { get }
     public static var isEnabled: Bool { get }
+    public static let sdkVersion: String
 
     // For host apps that want offline-queue drain via background URLSession.
     // Wire from AppDelegate / SceneDelegate's background-events callback.
@@ -569,10 +589,11 @@ platform-specific values (`device.platform`, `device.model`,
   }
   ```
 
-- Both emit existing `eventName`s — `navigation` /`screen.duration` and
+- Both emit existing `eventName`s — `navigation` and
   `user.interaction` — with a `navigation.kind = "swiftui"` (or
   `interaction.kind = "tap"`) attribute differentiator. **No new
-  eventName is introduced for SwiftUI.** See `PLAN-iOS.md` § 6.2 and
+  eventName is introduced for SwiftUI.** (No `screen.duration` — the
+  Processor synthesizes dwell from `navigation`; see #144.) See `PLAN-iOS.md` § 6.2 and
   the "Backend asks" item 4.
 - `UIHostingController` is detected by the UIKit swizzle and routes the
   emitted `navigation` through the same allowlisted name.
@@ -618,8 +639,10 @@ its hex section is 128 bits and breaks the format.
 **Crash sidecar**
 
 `Library/Caches/edge-rum/last-session.json` mirrors the current
-`session.id`/`session.start_time`/`session.sequence`/`user.*`/`device.id`
-on every event. PLCrashReporter replay reads it on next launch so the
+`session.id`/`session.start_time`/`session.sequence`/`user.*`/`device.id`.
+It is written only at identity mutations (`installPersistedStores`,
+`start()`, `setUser`, idle rotation, batch ACK) — **never** from
+`Recorder.enqueue` (#212). PLCrashReporter replay reads it on next launch so the
 emitted `app.crash` event carries the **previous** session's identity,
 not the current one.
 
@@ -702,10 +725,11 @@ Attempt 4: +30s → push to OfflineQueue
    match. Also greps doc comments and the README.
 5. Attribute flatness check: contract tests assert no
    non-primitive value appears in any test payload's `attributes`.
-6. Privacy manifest check: `Tools/verify-privacy-manifest.sh` confirms
-   every restricted-reason API used in code is declared in
-   `PrivacyInfo.xcprivacy`.
-7. SwiftLint clean (`.swiftlint.yml` checked in).
+6. *(planned, F20)* Privacy manifest check:
+   `Tools/verify-privacy-manifest.sh` confirms every restricted-reason
+   API used in code is declared in `PrivacyInfo.xcprivacy`. Neither the
+   script nor the declarations exist yet.
+7. *(planned)* SwiftLint clean. No `.swiftlint.yml` is checked in yet.
 8. Snapshot test: `golden-batch-ios.json` matches generated output.
 9. Performance test: `XCTMetric.cpu` / `.memory` /
    `.applicationLaunch` budgets in `PLAN-iOS.md` § 11 hold.
@@ -720,8 +744,8 @@ Attempt 4: +30s → push to OfflineQueue
 2. **Touches the wire?** → Apply Rule 2 (JSON only, `telemetry_batch`
    envelope, ISO 8601 strings, primitives-only attributes).
 3. **Adding a new `eventName`?** → Stop. Confirm with the backend team,
-   update `docs/payload-schema.json` and the table above, and add it
-   to `Recorder.allowedEventNames`.
+   update the backend's `payload-schema.json` and the table above, and
+   add it to `Recorder.allowedEventNames`.
 4. **Attributes nested?** → Flatten with dot-notation keys at the
    capture site. The `Recorder` only takes `AttributeValue` primitives.
 5. **Timestamp field?** → ISO 8601 string with fractional seconds via

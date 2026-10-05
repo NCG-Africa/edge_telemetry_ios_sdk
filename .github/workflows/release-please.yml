@@ -1,6 +1,6 @@
 # .github/workflows/release-please.yml
 #
-# Conventional-commit driven release automation (ADR-015).
+# Conventional-commit driven release automation (ADR-018).
 #
 # On every push to main, release-please maintains a "chore: release
 # X.Y.Z" pull request that:

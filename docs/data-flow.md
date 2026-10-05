@@ -26,8 +26,9 @@ Cross-references:
 
 - `CLAUDE.md` — hard wire-format rules (envelope, identity, terminology
   firewall).
-- `payload-schema.json` — machine-readable attribute catalog (kept in
-  sync with this document).
+- `payload-schema.json` — machine-readable attribute catalog, held in
+  the EdgeTelemetryProcessor repo. Not yet copied into this repo; the
+  runnable reference here is `payload-example.jsonc`.
 - `PLAN-iOS.md` § 6 / § 8 — capture-site and identity internals.
 - `decisions.md` ADR-001 — iOS 14.0 floor rationale.
 

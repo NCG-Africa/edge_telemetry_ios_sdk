@@ -58,8 +58,12 @@ final class PodspecTests: XCTestCase {
     }
 
     func testVendorsPLCrashReporter() {
-        XCTAssertTrue(podspecSource.contains("Frameworks/CrashReporter.xcframework"),
-                      "Internal-Crash must vendor the PLCrashReporter xcframework.")
+        // The CocoaPods channel pulls PLCrashReporter via the upstream pod
+        // (same `CrashReporter` module name as the SwiftPM-vendored
+        // xcframework) rather than committing a binary to the tag — see the
+        // Internal-Crash subspec comment and commit c0d536e.
+        XCTAssertTrue(podspecSource.contains("ss.dependency 'PLCrashReporter'"),
+                      "Internal-Crash must pull PLCrashReporter for the CocoaPods channel.")
     }
 
     func testShipsPrivacyManifestAsResourceBundle() {

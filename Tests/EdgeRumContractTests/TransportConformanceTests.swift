@@ -45,6 +45,7 @@ final class TransportConformanceTests: XCTestCase {
             transport: sink,
             sdkVersion: "1.0.0"
         )
+        recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         sink.attach(recorder: recorder)
         recorder.configure(RecorderConfig(
             apiKey: "edge_contract_test",
@@ -115,6 +116,7 @@ final class TransportConformanceTests: XCTestCase {
             transport: sink,
             sdkVersion: "1.0.0"
         )
+        recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         sink.attach(recorder: recorder)
         recorder.configure(RecorderConfig(
             apiKey: "edge_x",

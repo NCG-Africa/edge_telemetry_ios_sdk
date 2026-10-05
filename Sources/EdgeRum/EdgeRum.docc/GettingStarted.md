@@ -23,7 +23,7 @@ Add the package to your `Package.swift`:
 ```swift-skip
 dependencies: [
     .package(url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git",
-             from: "1.0.0-alpha.1")
+             from: "1.0.0-alpha.2")
 ]
 ```
 
@@ -33,7 +33,7 @@ Then add the `EdgeRum` product to your app target:
 .target(
     name: "MyApp",
     dependencies: [
-        .product(name: "EdgeRum", package: "edge-rum-ios")
+        .product(name: "EdgeRum", package: "edge_telemetry_ios_sdk")
     ]
 )
 ```
@@ -44,7 +44,7 @@ product instead.
 ### CocoaPods
 
 ```ruby
-pod 'EdgeRum', '~> 1.0.0-alpha.1'
+pod 'EdgeRum', '~> 1.0.0-alpha.2'
 ```
 
 ### XCFramework

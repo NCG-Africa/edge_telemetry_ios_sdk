@@ -31,7 +31,7 @@ permissions:
   contents: write          # required for softprops/action-gh-release
 
 jobs:
-  # Belt-and-suspenders pre-publish gate (ADR-015). The release PR
+  # Belt-and-suspenders pre-publish gate (ADR-018). The release PR
   # already passed ci.yml before merge, but a terminology leak or wire
   # regression in a *public* artifact is expensive to walk back, so we
   # re-run the two cheapest high-value checks before building anything.

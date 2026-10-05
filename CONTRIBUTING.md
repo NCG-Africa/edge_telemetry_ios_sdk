@@ -4,7 +4,7 @@ Thanks for helping build the EdgeRum iOS SDK. This guide covers the two
 things that keep the release pipeline honest: **commit message format**
 and **how a change ships**. For architecture and the terminology
 firewall, read `CLAUDE.md`; for the "why" behind these choices, see
-`docs/decisions.md` (ADR-015 in particular).
+`docs/decisions.md` (ADR-018 in particular).
 
 ## Branch & PR flow
 
