@@ -11,6 +11,15 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [1.4.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.3.0-alpha.2...v1.4.0-alpha.2) (2026-10-05)
+
+
+### Features
+
+* **F35:** radio generation — RUM coverage tranche 10 ([#241](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/241)) ([96ddfce](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/96ddfceb92df4dda6354fec4412533e36fbaad04))
+* **F36:** action lifecycle — RUM coverage tranche 12 ([#243](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/243)) ([ee3f8ca](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/ee3f8ca3782586a7c610df4d9fd1afc2ae1db0e1))
+* **F37:** host-gated readiness — RUM coverage tranche 13 ([#244](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/244)) ([ccc5c5e](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/ccc5c5e2bab30a48ce84dd790c3bef7570028922)), closes [#224](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/224)
+
 ## [1.3.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.2.0-alpha.2...v1.3.0-alpha.2) (2026-10-05)
 
 
