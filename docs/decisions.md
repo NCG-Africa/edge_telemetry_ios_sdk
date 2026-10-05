@@ -1663,3 +1663,30 @@ maintained prerelease channel is needed.
 - `release.yml` gains the pre-publish test gate and the `pod trunk push`
   step from ADR-017.
 - `CHANGELOG.md` becomes release-please-managed; hand edits stop.
+
+## ADR-019 — Privacy tranche (F27): button titles opt-in, `resetIdentity()` keeps the session
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 2 of `docs/specs/rum-coverage-roadmap.md` (W7 #195).
+Two choices in it are not obvious from the code.
+
+**Decision.**
+
+1. **Button titles are opt-in** (`EdgeRumConfig.captureButtonTitles`,
+   default `false`). Rendered button text is user-visible content the
+   host never handed over (PII class `content`); only
+   `accessibilityIdentifier` ships by default. Every UIKit tap carries
+   `interaction.name_source` (`accessibility_identifier | button_title |
+   none`). Cost: taps on un-annotated buttons lose their label, so
+   `interaction.target_id` becomes frequently absent.
+2. **`resetIdentity()` regenerates `device.id` + `user.id` and drops host
+   identity, but does not rotate the session.** The spec names only the
+   two ids. Consequence: events either side of the reset share one
+   `session.id` until the next rotation. Revisit if the erasure
+   contract needs the session cut too — the rotation path is reshaped in
+   tranche 4 (W18), so it is not wired here.
+3. **Sidecar filters on read as well as write**, so a file left by a
+   pre-F27 build cannot replay host identity onto a crash event.

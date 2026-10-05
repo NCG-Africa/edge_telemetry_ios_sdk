@@ -228,8 +228,8 @@ Every other field has a documented default tuned for production use.
 | `appBuild`                     | `String?`                           | `nil`                                | Emitted as `app.build_number`. |
 | `environment`                  | `Environment?`                      | `nil`                                | `.production` / `.staging` / `.development`. |
 | `location`                     | `String?`                           | `nil`                                | Batch envelope `location`, e.g. `"Nairobi/Kenya"`. |
-| `resolveLocation`              | `Bool`                              | `false`                              | Opt-in IP geo. Calls `locationProviderUrl`, caches for 24h. |
-| `locationProviderUrl`          | `URL?`                              | `https://ipapi.co/json/`             | Used only when `resolveLocation == true`. |
+| `resolveLocation`              | `Bool`                              | `false`                              | Not wired up — no effect, no request made. Will be removed. |
+| `locationProviderUrl`          | `URL?`                              | `https://ipapi.co/json/`             | Not wired up — never contacted. Will be removed. |
 | `sampleRate`                   | `Double`                            | `1.0`                                | Per-session sample rate. `0.0`–`1.0`. |
 | `ignoreUrls`                   | `[NSRegularExpression]`             | `[]`                                 | HTTP captures matching any regex are dropped. |
 | `maxQueueSize`                 | `Int`                               | `200`                                | Offline-queue cap (events). |
@@ -242,6 +242,7 @@ Every other field has a documented default tuned for production use.
 | `captureScreens`               | `Bool`                              | `true`                               | UIKit screen-entry / dwell swizzle. |
 | `captureHTTP`                  | `Bool`                              | `true`                               | URLSession capture. |
 | `captureTaps`                  | `Bool`                              | `true`                               | Top-level tap capture. |
+| `captureButtonTitles`          | `Bool`                              | `false`                              | Label taps on buttons without an `accessibilityIdentifier` with their on-screen title. |
 | `captureRenderingPerformance`  | `Bool`                              | `true`                               | Frame / memory / long-task samplers. |
 | `captureLifecycle`             | `Bool`                              | `true`                               | Foreground / background transitions. |
 | `captureNetworkChanges`        | `Bool`                              | `true`                               | `NWPathMonitor` events. |

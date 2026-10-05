@@ -94,4 +94,12 @@ internal final class ProbeRecorder: Recording, @unchecked Sendable {
         _calls.append(.setUser(user))
         lock.unlock()
     }
+
+    internal func clearUser() {
+        lock.lock(); _calls.append(.clearUser); lock.unlock()
+    }
+
+    internal func resetIdentity() {
+        lock.lock(); _calls.append(.resetIdentity); lock.unlock()
+    }
 }

@@ -130,8 +130,8 @@ key, so the SDK does **not** send it.
 - `timestamp`: ISO 8601 string of the batch flush time. Includes
   fractional seconds. Never Unix ms.
 - `location`: optional per-app/install string (City/Country). Set via
-  `EdgeRumConfig.location` or resolved at runtime when
-  `resolveLocation == true`.
+  `EdgeRumConfig.location`. (`resolveLocation` is dead config — never
+  wired; deleted in tranche 4.)
 - `batch_size`: integer equal to `events.count` — included for parity
   with web/Android.
 - `sdk.thread_time_ms`: integer, cumulative caller-thread wall-time (ms)
@@ -415,9 +415,8 @@ public struct EdgeRumConfig {
     public var appBuild: String?                  // used as app.build_number; omitted when nil
     public var environment: Environment?          // .production, .staging, .development
     public var location: String?                  // batch envelope location, e.g. "Nairobi/Kenya"
-    public var resolveLocation: Bool = false      // opt-in IP geo; calls locationProviderUrl once
-                                                  // on init, caches "City/Country" for 24h in
-                                                  // UserDefaults. Sends device IP to third party.
+    public var resolveLocation: Bool = false      // dead config: never wired, no request is made;
+                                                  // deleted in tranche 4 (W7)
     public var locationProviderUrl: URL? = URL(string: "https://ipapi.co/json/")
     public var sampleRate: Double = 1.0           // 0.0–1.0; per-session
     public var ignoreUrls: [NSRegularExpression] = []
@@ -431,6 +430,7 @@ public struct EdgeRumConfig {
     public var captureScreens: Bool = true
     public var captureHTTP: Bool = true
     public var captureTaps: Bool = true
+    public var captureButtonTitles: Bool = false  // F27: button title as tap label is opt-in
     public var captureRenderingPerformance: Bool = true
     public var captureLifecycle: Bool = true
     public var captureNetworkChanges: Bool = true
@@ -447,6 +447,8 @@ public struct EdgeRumConfig {
 public enum EdgeRum {
     public static func start(_ config: EdgeRumConfig)
     public static func identify(_ user: UserContext)
+    public static func clearUser()                // F27: drop identify() profile (logout)
+    public static func resetIdentity()            // F27: new device.id + user.id (erasure)
     public static func track(_ name: String,
                              attributes: [String: AttributeValue]? = nil)
     public static func trackScreen(_ name: String,
@@ -644,9 +646,10 @@ its hex section is 128 bits and breaks the format.
 **Crash sidecar**
 
 `Library/Caches/edge-rum/last-session.json` mirrors the current
-`session.id`/`session.start_time`/`session.sequence`/`user.*`/`device.id`.
-It is written only at identity mutations (`installPersistedStores`,
-`start()`, `setUser`, idle rotation, batch ACK) — **never** from
+`session.id`/`session.start_time`/`session.sequence`/`user.id`/`device.id`
+(+ `sdk.*`). Host identity (`user.name`/`email`/`phone`) is **never**
+mirrored (F27). It is written only at identity mutations (`installPersistedStores`,
+`start()`, `setUser`, `clearUser`, `resetIdentity`, idle rotation, batch ACK) — **never** from
 `Recorder.enqueue` (#212). PLCrashReporter replay reads it on next launch so the
 emitted `app.crash` event carries the **previous** session's identity,
 not the current one.

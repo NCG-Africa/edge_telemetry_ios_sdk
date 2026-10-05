@@ -8,7 +8,9 @@
 //   - decideEmission for a UIButton with accessibilityIdentifier
 //     (T9.1 acceptance) — interaction.kind / target / target_id /
 //     screen
-//   - target_id fallback to UIButton.currentTitle when no a11y id
+//   - F27: button title is default-off — an un-annotated button emits
+//     name_source = none and no target_id; opt-in falls back to
+//     UIButton.currentTitle with name_source = button_title
 //   - target_id omitted when neither a11y id nor button title exists
 //   - UITableViewCell / UICollectionViewCell target resolution
 //   - UIControl wins over an enclosing cell in the chain
@@ -246,6 +248,7 @@ final class InteractionCaptureTests: XCTestCase {
         }
         XCTAssertEqual(attrs["interaction.kind"], .string("tap"))
         XCTAssertEqual(attrs["interaction.target_id"], .string("checkout"))
+        XCTAssertEqual(attrs["interaction.name_source"], .string("accessibility_identifier"))
         XCTAssertEqual(attrs["interaction.screen"], .string("Cart"))
         if case let .string(target) = attrs["interaction.target"] {
             XCTAssertTrue(
@@ -257,7 +260,7 @@ final class InteractionCaptureTests: XCTestCase {
         }
     }
 
-    func test_decideEmission_button_fallsBackToCurrentTitle() {
+    func test_decideEmission_buttonTitleIsDefaultOff() {
         let button = UIButton(type: .system)
         button.setTitle("Buy", for: .normal)
 
@@ -267,7 +270,23 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
+        XCTAssertNil(attrs["interaction.target_id"], "rendered button text must not ship by default")
+        XCTAssertEqual(attrs["interaction.name_source"], .string("none"))
+    }
+
+    func test_decideEmission_buttonTitleOptIn_fallsBackToCurrentTitle() {
+        let button = UIButton(type: .system)
+        button.setTitle("Buy", for: .normal)
+
+        guard let attrs = InteractionCapture.decideEmission(
+            for: button,
+            currentScreen: nil,
+            captureButtonTitles: true
+        ) else {
+            return XCTFail("Expected an attribute bag")
+        }
         XCTAssertEqual(attrs["interaction.target_id"], .string("Buy"))
+        XCTAssertEqual(attrs["interaction.name_source"], .string("button_title"))
     }
 
     func test_decideEmission_omitsTargetIdWhenNoIdOrTitle() {
@@ -279,6 +298,7 @@ final class InteractionCaptureTests: XCTestCase {
             return XCTFail("Expected an attribute bag for a plain view tap")
         }
         XCTAssertNil(attrs["interaction.target_id"])
+        XCTAssertEqual(attrs["interaction.name_source"], .string("none"))
     }
 
     func test_decideEmission_resolvesCellTargetForChildView() {

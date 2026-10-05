@@ -241,6 +241,8 @@ when `debug=true`, README, doc comments) follow the same firewall.
 public enum EdgeRum {
     public static func start(_ config: EdgeRumConfig)
     public static func identify(_ user: UserContext)
+    public static func clearUser()          // F27 — drop identify() profile
+    public static func resetIdentity()      // F27 — new device.id + user.id
     public static func track(_ name: String,
                              attributes: [String: AttributeValue]? = nil)
     public static func trackScreen(_ name: String,
@@ -280,6 +282,7 @@ public struct EdgeRumConfig {
     public var captureScreens: Bool = true
     public var captureHTTP: Bool = true
     public var captureTaps: Bool = true
+    public var captureButtonTitles: Bool = false  // F27 — opt-in tap label
     public var captureRenderingPerformance: Bool = true
     public var debug: Bool = false
 
@@ -1518,6 +1521,17 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     informational: quiet sessions now flush on `flushInterval`, and the
     offline backlog ceiling drops from ~6,000 to `maxQueueSize` (200)
     events. Confirm the Processor stores the double untouched.
+14. **F27 privacy (#214).** (a) `interaction.name_source`
+    (`accessibility_identifier | button_title | none`) now on every UIKit
+    `user.interaction` — already cleared via ADR-015. (b) **Human
+    sentence, not a schema change:** `interaction.target_id` becomes
+    *frequently absent* because button titles are opt-in
+    (`captureButtonTitles`, default off). Dashboards will read it as a
+    regression; it is the privacy default. (c) `user.name` /
+    `user.email` / `user.phone` no longer arrive on replayed crashes
+    (off the sidecar); `user.id` unchanged. (d) Advisory PII-class
+    obligations: catalogue §3.2. RN bridge: expose `clearUser()`,
+    `resetIdentity()`, `captureButtonTitles`.
 
 ---
 

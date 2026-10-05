@@ -40,6 +40,7 @@ final class EdgeRumConfigTests: XCTestCase {
         XCTAssertEqual(config.captureScreens, true)
         XCTAssertEqual(config.captureHTTP, true)
         XCTAssertEqual(config.captureTaps, true)
+        XCTAssertEqual(config.captureButtonTitles, false)
         XCTAssertEqual(config.captureRenderingPerformance, true)
         XCTAssertEqual(config.captureLifecycle, true)
         XCTAssertEqual(config.captureNetworkChanges, true)

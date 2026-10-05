@@ -88,6 +88,19 @@ final class EdgeRumAPITests: XCTestCase {
         XCTAssertTrue(probe.calls.isEmpty)
     }
 
+    func testClearUserAndResetIdentityBeforeStartAreNoOps() {
+        EdgeRum.clearUser()
+        EdgeRum.resetIdentity()
+        XCTAssertTrue(probe.calls.isEmpty)
+    }
+
+    func testClearUserAndResetIdentityRoute() {
+        EdgeRum.start(Self.validConfig())
+        EdgeRum.clearUser()
+        EdgeRum.resetIdentity()
+        XCTAssertEqual(probe.calls.suffix(2), [.clearUser, .resetIdentity])
+    }
+
     // MARK: - track / trackScreen
 
     func testTrackRoutesNameAndAttributes() {

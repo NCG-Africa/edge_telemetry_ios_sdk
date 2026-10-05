@@ -253,7 +253,10 @@ public enum EdgeRum {
         // runner) `install(...)` is a no-op so this call site stays
         // unconditional.
         if config.captureTaps {
-            InteractionCapture.install(debug: config.debug)
+            InteractionCapture.install(
+                debug: config.debug,
+                captureButtonTitles: config.captureButtonTitles
+            )
         }
 
         // F10 — install the performance samplers (frame, memory,
@@ -318,6 +321,24 @@ public enum EdgeRum {
             email: user.email,
             phone: user.phone
         ))
+    }
+
+    /// Detach the host-app user profile set by `identify(_:)` — call on
+    /// logout. Later events carry no `user.name`, `user.email` or
+    /// `user.phone`; the SDK's anonymous `user.id` is kept. Calling
+    /// before `start(_:)` is a no-op with a warning.
+    public static func clearUser() {
+        guard requireStarted("clearUser") else { return }
+        Recorder.shared.clearUser()
+    }
+
+    /// Erase the link between this install and past data — for a user's
+    /// data-deletion request. Generates a new ``deviceId`` and anonymous
+    /// user id, and detaches any `identify(_:)` profile. Calling before
+    /// `start(_:)` is a no-op with a warning.
+    public static func resetIdentity() {
+        guard requireStarted("resetIdentity") else { return }
+        Recorder.shared.resetIdentity()
     }
 
     // MARK: Recording

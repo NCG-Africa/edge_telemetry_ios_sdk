@@ -54,14 +54,13 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
     /// stamp. We intentionally omit transient values (network state,
     /// battery level) because the replayed crash event should carry
     /// the *prior* session's identity, not its network state.
+    /// Host-supplied `user.name` / `user.email` / `user.phone` are
+    /// never mirrored (F27) — they would sit on disk in plaintext.
     public static let mirroredKeys: Set<String> = [
         "session.id",
         "session.start_time",
         "session.sequence",
         "user.id",
-        "user.name",
-        "user.email",
-        "user.phone",
         "device.id",
         "sdk.version",
         "sdk.platform"
@@ -112,7 +111,10 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
     public func read() -> [String: AttributeValue]? {
         guard let url else { return nil }
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? Self.decoder.decode([String: AttributeValue].self, from: data)
+        // Filtered on read too: a file written by a pre-F27 build may
+        // still hold host identity keys.
+        return (try? Self.decoder.decode([String: AttributeValue].self, from: data))?
+            .filter { Self.mirroredKeys.contains($0.key) }
     }
 
     private func filter(_ bag: AttributeBag) -> [String: AttributeValue] {

@@ -63,6 +63,12 @@ public protocol Recording: AnyObject, Sendable {
 
     func setUser(_ user: RecorderUser)
 
+    /// Drop every host-supplied identity field; `user.id` is kept.
+    func clearUser()
+
+    /// Mint a fresh `device.id` + `user.id` and drop host identity.
+    func resetIdentity()
+
     /// Update the in-memory `NetworkContext` so subsequent events
     /// carry the new `network.type` / `network.effectiveType`.
     /// F11's `NetworkPathCapture` calls this on every NWPath transition.
@@ -94,4 +100,10 @@ public extension Recording {
     /// Default no-op so existing test probes don't have to adopt the
     /// new requirement. The real `Recorder` overrides this.
     func drainOfflineQueue() { }
+
+    /// Default no-op; the real `Recorder` overrides this.
+    func clearUser() { }
+
+    /// Default no-op; the real `Recorder` overrides this.
+    func resetIdentity() { }
 }
