@@ -20,6 +20,12 @@
 // the crash-time values. Best-effort: a crash inside that drain window
 // lands without them. `enqueue` never writes the sidecar (O1).
 //
+// F37 — beside the box sits the screen-ready token (screen + appear
+// time): set on each appear, consumed by the first `markScreenReady()`
+// (`screen_ready`, `ready`). `disappearScreen` drops a pending token of
+// that screen — as `abandoned` if it was marked earlier in this process
+// (ADR-028). Another screen's appear replaces it silently.
+//
 // Refs: docs/specs/rum-coverage-roadmap.md § Tranche 3;
 //       docs/catalogue/ios-data-catalogue.md §5.2, §5.16.
 
@@ -58,8 +64,23 @@ public final class Riders: @unchecked Sendable {
     private var actionId: String?
     private var sidecar: SessionSidecarWriting?
     private var persistPending = false
+    private var pending: (screen: Screen, at: Date)?
+    // ponytail: grows with distinct screen names this process — the
+    // 128 B-capped names a host's screens produce, not user input.
+    private var marked: Set<String> = []
+    private let clock: Clock
+    private let emitReady: @Sendable ([String: AttributeValue]) -> Void
 
-    public init() {}
+    /// `emitReady` receives each `screen_ready` row, outside the lock.
+    public init(
+        clock: Clock = SystemClock(),
+        emitReady: @escaping @Sendable ([String: AttributeValue]) -> Void = {
+            Recorder.shared.recordPerformance(name: "screen_ready", attributes: $0)
+        }
+    ) {
+        self.clock = clock
+        self.emitReady = emitReady
+    }
 
     deinit { lockPtr.deallocate() }
 
@@ -76,6 +97,8 @@ public final class Riders: @unchecked Sendable {
         guard !name.isEmpty else { return nil }
         let screen = Self.cap(name)
         lock(); defer { unlock() }
+        // A re-fired appear of the same screen keeps its anchor.
+        if pending?.screen != screen { pending = (screen, clock.now) }
         let previous = lastEntered
         lastEntered = screen.name
         guard screen != current else { return previous }
@@ -123,6 +146,48 @@ public final class Riders: @unchecked Sendable {
         lock(); defer { unlock() }
         self.sidecar = sidecar
         schedulePersistLocked()
+    }
+
+    /// The host says the current screen is ready. Consumes the appear
+    /// token; `false` (nothing emitted) once it is consumed or gone.
+    @discardableResult
+    public func markScreenReady() -> Bool {
+        lock()
+        guard let token = pending else { unlock(); return false }
+        pending = nil
+        marked.insert(token.screen.name)
+        let now = clock.now
+        unlock()
+        emitReady(Self.readyRow(token.screen, from: token.at, to: now, outcome: "ready"))
+        return true
+    }
+
+    /// `name` is disappearing (every UIKit `viewWillDisappear`, SwiftUI
+    /// `onDisappear`). Drops its pending token; a screen marked before
+    /// gets an `abandoned` row with the censored time-to-leave. Call
+    /// before `leaveScreen`, so the row's riders are still this screen's.
+    public func disappearScreen(_ name: String) {
+        let screen = Self.cap(name)
+        lock()
+        guard let token = pending, token.screen == screen else { unlock(); return }
+        pending = nil
+        let wasMarkedBefore = marked.contains(token.screen.name)
+        let now = clock.now
+        unlock()
+        // Outside the lock: the Recorder's enqueue reads this box.
+        if wasMarkedBefore {
+            emitReady(Self.readyRow(token.screen, from: token.at, to: now, outcome: "abandoned"))
+        }
+    }
+
+    private static func readyRow(_ screen: Screen, from: Date, to: Date, outcome: String) -> [String: AttributeValue] {
+        var row: [String: AttributeValue] = [
+            "screen.name": .string(screen.name),
+            "screen.ready_outcome": .string(outcome),
+            "value": .double((to.timeIntervalSince(from) * 1000).rounded())
+        ]
+        if screen.truncated > 0 { row["screen.name.truncated"] = .int(screen.truncated) }
+        return row
     }
 
     // MARK: Readers
@@ -204,6 +269,8 @@ public final class Riders: @unchecked Sendable {
         appState = nil
         actionId = nil
         sidecar = nil
+        pending = nil
+        marked = []
     }
     #endif
 }

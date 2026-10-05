@@ -1562,6 +1562,14 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     downstream from duration (`ended − started` timestamps) + outcome.
     Catalogue §5.14, ADR-027. RN: a handle-shaped API across the bridge
     (id mapping).
+18. **F37 host-gated readiness (#224).** Two new `metricName`s,
+    `screen_ready` and `launch_interactive` (both ms, unpromoted, in the
+    bag). `screen_ready` rows with `screen.ready_outcome = abandoned`
+    carry a **censored** value (time-to-leave) — never average them with
+    `ready` rows. `launch_interactive` shares `page_load.duration_ms`'s
+    anchor. Both are host-adoption-gated: absent until the host calls
+    `markScreenReady()` / `markInteractive()`. Catalogue §4.2/§5.11, ADR-028.
+    RN: expose both methods.
 
 ---
 

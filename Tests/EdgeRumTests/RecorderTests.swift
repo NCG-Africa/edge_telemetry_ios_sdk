@@ -180,7 +180,8 @@ final class RecorderTests: XCTestCase {
         XCTAssertTrue(sink.envelopes.isEmpty)
         XCTAssertEqual(Recorder.allowedMetricNames, [
             "resource_timing", "long_task", "frame_render_time",
-            "memory_usage", "cpu_usage", "custom_timer"
+            "memory_usage", "cpu_usage", "custom_timer",
+            "screen_ready", "launch_interactive"
         ])
     }
 

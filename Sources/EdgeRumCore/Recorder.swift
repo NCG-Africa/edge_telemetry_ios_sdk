@@ -76,7 +76,10 @@ public final class Recorder: Recording, @unchecked Sendable {
         "frame_render_time",
         "memory_usage",
         "cpu_usage",
-        "custom_timer"
+        "custom_timer",
+        // F37 — host-gated readiness.
+        "screen_ready",
+        "launch_interactive"
     ]
 
     /// Design-constant bound on the in-memory buffer (F32): flushes at

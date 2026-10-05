@@ -2028,3 +2028,41 @@ the raw material for Apdex — without the SDK guessing at abandonment.
    `action.name.dropped` = distinct names lost. Reset on rotation; a
    session continued across launches starts a fresh set.
 
+## ADR-028 — Host-gated readiness (F37): a token beside the box, abandon on supersede or leave
+
+**Date:** 2026-10-05
+
+**Status:** Accepted.
+
+**Context.** Tranche 13 of `docs/specs/rum-coverage-roadmap.md` (#224),
+W23 (#211), W9 (#197). Screen and launch readiness cannot be observed
+without the host; both ship as host calls.
+
+**Decision.**
+
+1. **`markScreenReady()`, no name.** Every `Riders.enterScreen` (UIKit
+   appear, `.edgeRumScreen`, `trackScreen`) stores a pending token
+   (capped screen + `clock.now`) under the box's own lock, so token and
+   box cannot disagree. The first mark consumes it → metric
+   `screen_ready`, `screen.ready_outcome = ready`, `value` = ms. No
+   token → no-op. A re-fired appear of the **same** screen keeps the
+   original anchor (SwiftUI re-fires `onAppear`).
+2. **Abandon trigger: disappear only.** `Riders.disappearScreen` runs
+   on every UIKit `viewWillDisappear` (not only `isLeaving`) and every
+   SwiftUI `onDisappear`; a pending token of that screen is dropped,
+   and emitted as `abandoned` if the screen is in the per-process
+   learned set (never persisted). Another screen's appear replaces the
+   token **silently**: a pageSheet, alert or child VC over a pending
+   screen never disappears it, so treating supersede as abandon would
+   invent false rows. Ceiling: when SwiftUI fires the next `onAppear`
+   before the old `onDisappear`, that abandon is lost (an undercount,
+   never a false row). The row is emitted before the box moves and
+   carries its own `screen.name`. Spec-literal re-anchoring: every
+   appear makes a token, so a screen re-shown after its mark (pop
+   back, tab switch) is judged again — hosts should mark on each
+   appear, not once per load.
+3. **`markInteractive()`** — once per process, first call after
+   `start()` wins (a pre-`start()` call is a no-op and does not
+   consume). Metric `launch_interactive`, ms on `CLOCK_MONOTONIC_RAW`
+   from `PageLoadCapture.launchStartNs`, the `page_load` anchor.
+4. Metric allowlist 6 → 8. Both rows follow session sampling.
