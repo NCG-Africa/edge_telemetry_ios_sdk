@@ -25,8 +25,9 @@
 // capture (`MainThreadStackSnapshot.capture`) runs on the watchdog
 // thread, suspends the main thread for a few microseconds while it
 // walks the frame-pointer chain, then resumes. `Recorder.recordEvent`
-// hops to its own utility queue so the hang event flushes
-// asynchronously and doesn't extend the stall.
+// runs synchronously on the calling (watchdog) thread; `app.crash`
+// forces a flush, whose encode + POST hop to the transport's own
+// queue, so recording never touches the stalled main thread.
 //
 // Refs: PLAN-iOS.md §6.8, §F15/T15.1, §F15/T15.2;
 //       docs/decisions.md ADR-011; CLAUDE.md "Touching crash code?"
@@ -84,7 +85,7 @@ public enum HangDetector {
             recorder: Recorder.shared,
             clock: SystemClock(),
             stackProvider: nil,
-            cpuProvider: nil
+            cpuProvider: nil  // → whole-process `ProcessCPUReader`
         )
     }
 
@@ -130,7 +131,8 @@ public enum HangDetector {
         }
         let clamped = max(minimumThresholdSeconds, threshold)
         let stack = stackProvider ?? { MainThreadStackSnapshot.capture() }
-        let cpu = cpuProvider ?? { nil }
+        // Primed at install so the first hang has a baseline to delta against.
+        let cpu = cpuProvider ?? ProcessCPUReader().sample
         let newWatchdog = HangWatchdog(
             threshold: clamped,
             clock: clock,

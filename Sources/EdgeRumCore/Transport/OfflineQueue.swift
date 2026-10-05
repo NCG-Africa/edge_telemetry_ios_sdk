@@ -3,16 +3,19 @@
 // File-backed FIFO of encoded envelopes that failed the live retry
 // schedule. Each file is one complete payload, ready to POST verbatim.
 //
-//   Location: Library/Caches/edge-rum/queue/<epochMs>-<seq>.json
-//   Cap:      EdgeRumConfig.maxQueueSize (default 200) files.
-//   Overflow: oldest file deleted first.
+//   Location: Library/Caches/edge-rum/queue/<epochMs>-<seq>-<n>.json
+//   Cap:      EdgeRumConfig.maxQueueSize (default 200) events across
+//             files. `<n>` is the file's event count, so trimming never
+//             reads a payload.
+//   Overflow: oldest files deleted first until the total is ≤ cap.
 //   Drain:    sequential — success deletes the file, failure leaves it
 //             and aborts the drain.
 //
 // Filename layout is deliberate: the epoch-ms prefix makes
 // lexicographic ordering match chronological ordering, so no separate
 // index file is needed. The `-<seq>` suffix disambiguates two enqueues
-// inside the same millisecond.
+// inside the same millisecond. Pre-F26 `<epochMs>-<seq>.json` files
+// have no `<n>` and count as one event.
 //
 // Concurrency: a single `NSLock` around directory mutation is enough —
 // the `HTTPTransportSink` calls `drain` and `enqueue` on its own serial
@@ -26,10 +29,11 @@ import Foundation
 import os.log
 
 public protocol OfflineQueueing: Sendable {
-    /// Atomically append a payload to the queue. Returns the URL of
-    /// the written file, or `nil` if the write failed.
+    /// Atomically append a payload holding `eventCount` events, then
+    /// trim oldest-first to ≤ `maxQueueSize` events. Returns the URL of
+    /// the written file, or `nil` if the write failed (or it was trimmed).
     @discardableResult
-    func enqueue(_ payload: Data) -> URL?
+    func enqueue(_ payload: Data, eventCount: Int) -> URL?
 
     /// Drain the queue sequentially via the supplied closure. The
     /// closure returns `true` to delete the file (success) or `false`
@@ -44,6 +48,12 @@ public protocol OfflineQueueing: Sendable {
 
     /// Remove every file in the queue directory. Test helper.
     func reset()
+}
+
+extension OfflineQueueing {
+    /// One-event enqueue — test convenience.
+    @discardableResult
+    public func enqueue(_ payload: Data) -> URL? { enqueue(payload, eventCount: 1) }
 }
 
 public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
@@ -93,7 +103,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
     }
 
     @discardableResult
-    public func enqueue(_ payload: Data) -> URL? {
+    public func enqueue(_ payload: Data, eventCount: Int) -> URL? {
         lock.lock()
         defer { lock.unlock() }
         do {
@@ -114,7 +124,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
         sequence &+= 1
         // %013lld + %06llu — `%d` would be a 32-bit `int` per C printf
         // and silently truncate epoch-millisecond values.
-        let filename = String(format: "%013lld-%06llu.json", now, sequence)
+        let filename = String(format: "%013lld-%06llu-%ld.json", now, sequence, max(1, eventCount))
         let url = directory.appendingPathComponent(filename, isDirectory: false)
 
         do {
@@ -132,7 +142,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
         }
 
         trimToCapLocked()
-        return url
+        return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
     @discardableResult
@@ -201,10 +211,16 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
 
     private func trimToCapLocked() {
         let entries = orderedFiles()
-        guard entries.count > maxQueueSize else { return }
-        let overflow = entries.count - maxQueueSize
-        for url in entries.prefix(overflow) {
+        var total = entries.reduce(0) { $0 + Self.eventCount(of: $1) }
+        for url in entries where total > maxQueueSize {
             try? fileManager.removeItem(at: url)
+            total -= Self.eventCount(of: url)
         }
+    }
+
+    /// `<n>` from `<epochMs>-<seq>-<n>.json`; legacy two-part names → 1.
+    static func eventCount(of url: URL) -> Int {
+        let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
+        return parts.count == 3 ? Int(parts[2]) ?? 1 : 1
     }
 }

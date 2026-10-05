@@ -170,3 +170,28 @@ final class HangDetectorDetectionTests: XCTestCase {
                       "pre-baseline ticks must never fire a hang event")
     }
 }
+
+final class HangCPUWiringTests: XCTestCase {
+
+    override func setUp() { super.setUp(); HangDetector._resetForTests() }
+    override func tearDown() { HangDetector._resetForTests(); super.tearDown() }
+
+    /// C4 (#213): production install (nil `cpuProvider`) carries `hang.cpu_usage`.
+    func testDefaultInstallWiresProcessCPUReader() throws {
+        let probe = HangProbeRecorder()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_000_000))
+        HangDetector._install(threshold: 2, debug: false, recorder: probe, clock: clock,
+                              stackProvider: { [] }, cpuProvider: nil)
+        let watchdog = try XCTUnwrap(HangDetector._activeWatchdog())
+        HangDetector.uninstall()  // stop the live thread; drive `tick` alone
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertFalse(watchdog.tick(currentHeartbeat: 1))  // baseline
+        clock.advance(by: 0.25)
+        XCTAssertFalse(watchdog.tick(currentHeartbeat: 1))  // stall begins
+        clock.advance(by: 3)
+        XCTAssertTrue(watchdog.tick(currentHeartbeat: 1))
+        guard case .double = probe.calls.first?.attributes["hang.cpu_usage"] else {
+            return XCTFail("hang.cpu_usage missing")
+        }
+    }
+}

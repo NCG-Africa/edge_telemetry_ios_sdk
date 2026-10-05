@@ -14,10 +14,8 @@
 //
 // `effectiveType` is "best-effort on iOS" per CLAUDE.md "Required
 // identity attributes". For Wi-Fi paths we report `"wifi"`. For
-// cellular we'd need `CTTelephonyNetworkInfo` (which is iOS-only and
-// adds Core Telephony as a dependency surface); F3 returns "cellular"
-// for cellular paths and leaves a TODO comment for the CT-based
-// refinement to land in F8.
+// cellular paths we report `"cellular"`; radio generation
+// (`CTTelephonyNetworkInfo`) is roadmap tranche 10, not a TODO here.
 //
 // Refs: PLAN-iOS.md §7.5, §F3/T3.3, §16.4 / F16; docs/data-flow.md §3.3.
 //
@@ -93,7 +91,6 @@ public struct NetworkContext: Sendable, Hashable {
             )
         }
         if path.usesInterfaceType(.cellular) {
-            // F8 refines effectiveType from `CTTelephonyNetworkInfo`.
             return NetworkContext(
                 type: .cellular,
                 effectiveType: "cellular",

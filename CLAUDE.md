@@ -523,6 +523,11 @@ helper, which asserts:
 - Request headers: `X-API-Key` value starts with `"edge_"`,
   `Content-Type: application/json`.
 
+**Test-per-claim:** a doc comment asserting runtime behaviour (a timer
+fires, a cap holds, a value is populated, a thread is used) must have a
+test that pins it. No test → amend the comment. (#213: four shipped
+doc comments described code that was never written.)
+
 **Golden batch test:** `Tests/Fixtures/golden-batch-ios.json` is checked
 into the repo. It is the byte-for-byte expected output for a fixed
 fixture (frozen `Clock`, frozen `IdentityProvider`, frozen
@@ -684,10 +689,12 @@ Attempt 4: +30s → push to OfflineQueue
 
 ## Offline queue rules
 
-- Storage: files under `Library/Caches/edge-rum/queue/<epochMs>-<seq>.json`.
-  Each file is one complete envelope payload, ready to POST verbatim.
-- Cap: `maxQueueSize` (default 200) events across files. Overflow drops
-  the oldest file first.
+- Storage: files under `Library/Caches/edge-rum/queue/<epochMs>-<seq>-<n>.json`,
+  `<n>` = the file's event count. Each file is one complete envelope
+  payload, ready to POST verbatim.
+- Cap: `maxQueueSize` (default 200) events across files, summed from
+  the filenames (no file reads). Overflow drops the oldest files until
+  the total is ≤ cap.
 - Flush: sequential. Success deletes the file. Failure leaves it.
 - Triggers: `NWPathMonitor` transitions to `.satisfied`,
   `UIApplication.didBecomeActiveNotification`, `EdgeRum.enable()`.

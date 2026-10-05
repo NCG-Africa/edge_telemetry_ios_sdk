@@ -158,7 +158,7 @@ private final class InMemoryQueue: OfflineQueueing, @unchecked Sendable {
     }
 
     @discardableResult
-    func enqueue(_ payload: Data) -> URL? {
+    func enqueue(_ payload: Data, eventCount: Int) -> URL? {
         lock.lock()
         _payloads.append(payload)
         lock.unlock()

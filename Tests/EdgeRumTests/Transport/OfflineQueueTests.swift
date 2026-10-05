@@ -5,7 +5,7 @@
 //   - Filling past `maxQueueSize` drops the OLDEST file first.
 //   - Drain reads files in chronological order, deletes on success,
 //     leaves on failure (and aborts further drain on failure).
-//   - Filename layout `<epochMs>-<seq>.json` keeps lexicographic order
+//   - Filename layout `<epochMs>-<seq>-<n>.json` keeps lexicographic order
 //     matching chronological order.
 //
 

@@ -114,19 +114,19 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             }
             return
         }
-        attempt(data: data, attempt: 1)
+        attempt(data: data, eventCount: envelope.events.count, attempt: 1)
     }
 
-    private func attempt(data: Data, attempt: Int) {
+    private func attempt(data: Data, eventCount: Int, attempt: Int) {
         transport.post(data) { [weak self] outcome in
             guard let self else { return }
             self.queue.async {
-                self.handle(outcome: outcome, data: data, attempt: attempt)
+                self.handle(outcome: outcome, data: data, eventCount: eventCount, attempt: attempt)
             }
         }
     }
 
-    private func handle(outcome: BatchSendOutcome, data: Data, attempt: Int) {
+    private func handle(outcome: BatchSendOutcome, data: Data, eventCount: Int, attempt: Int) {
         switch outcome {
         case .success:
             recorder?.didAckBatch()
@@ -142,11 +142,11 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             switch decision {
             case let .retry(after):
                 queue.asyncAfter(deadline: .now() + after) { [weak self] in
-                    self?.attempt(data: data, attempt: attempt + 1)
+                    self?.attempt(data: data, eventCount: eventCount, attempt: attempt + 1)
                 }
             case .toOfflineQueue:
                 if let offlineQueue {
-                    _ = offlineQueue.enqueue(data)
+                    _ = offlineQueue.enqueue(data, eventCount: eventCount)
                     if debug {
                         os_log(
                             "HTTPTransportSink batch handed to offline queue after %d attempts",
