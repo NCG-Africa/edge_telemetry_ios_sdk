@@ -266,6 +266,10 @@ final class EdgeRumAPITests: XCTestCase {
             XCTAssertTrue(stack.contains("testCaptureErrorRoutesAppCrashEventToRecorder")
                           || stack.contains("EdgeRumTests"),
                           "stack should include a frame from the calling test target")
+            // F29 offset frame format: `image +0x<offset> <hint>`.
+            XCTAssertTrue(stack.components(separatedBy: "\n").contains { $0.contains(" +0x") },
+                          "frames must use the image-relative offset format")
+            XCTAssertNotNil(attrs["error.binary_images"], "referenced images must be listed")
         } else {
             XCTFail("error.stack missing or wrong type")
         }

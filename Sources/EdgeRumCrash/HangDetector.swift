@@ -121,7 +121,7 @@ public enum HangDetector {
         debug: Bool,
         recorder: Recording,
         clock: Clock,
-        stackProvider: (() -> [String])?,
+        stackProvider: (() -> [StackFrame])?,
         cpuProvider: (() -> Double?)?
     ) {
         installLock.lock()
@@ -258,7 +258,7 @@ internal final class HangWatchdog {
     let threshold: TimeInterval
     private let clock: Clock
     private let recorder: Recording
-    private let stackProvider: () -> [String]
+    private let stackProvider: () -> [StackFrame]
     private let cpuProvider: () -> Double?
     private let debug: Bool
     private let log: OSLog
@@ -272,7 +272,7 @@ internal final class HangWatchdog {
         threshold: TimeInterval,
         clock: Clock,
         recorder: Recording,
-        stackProvider: @escaping () -> [String],
+        stackProvider: @escaping () -> [StackFrame],
         cpuProvider: @escaping () -> Double?,
         debug: Bool,
         log: OSLog

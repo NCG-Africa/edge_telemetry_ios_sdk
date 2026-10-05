@@ -71,7 +71,7 @@ final class RecorderPipelineContractTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: err,
             context: ["payment.method": .string("card")],
-            stack: ["0  edge_rum_ios  test_frame"],
+            stack: [StackFrame(text: "edge_rum_ios +0x1 test_frame")],
             debug: false
         )
         recorder.recordEvent(name: "app.error", attributes: attrs)

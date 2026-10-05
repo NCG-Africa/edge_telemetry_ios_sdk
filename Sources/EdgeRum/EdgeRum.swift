@@ -406,7 +406,7 @@ public enum EdgeRum {
         guard requireStarted("captureError") else { return }
         // Call-site stack capture — taken here, before the Recorder
         // call, so SDK frames stay out of the captured stack.
-        let stack = Thread.callStackSymbols
+        let stack = StackFrames.symbolicate(Thread.callStackReturnAddresses.map(\.uintValue))
         let recorder = Recorder.shared
         let attrs = AppErrorBuilder.build(
             error: error,

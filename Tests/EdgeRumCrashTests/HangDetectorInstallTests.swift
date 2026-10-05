@@ -34,7 +34,7 @@ final class HangDetectorInstallTests: XCTestCase {
             debug: false,
             recorder: probe,
             clock: SystemClock(),
-            stackProvider: { ["test-frame"] },
+            stackProvider: { [StackFrame(text: "test-frame")] },
             cpuProvider: { nil }
         )
         let firstWatchdog = HangDetector._activeWatchdog()
@@ -45,7 +45,7 @@ final class HangDetectorInstallTests: XCTestCase {
             debug: true,
             recorder: HangProbeRecorder(),
             clock: SystemClock(),
-            stackProvider: { ["should-not-be-used"] },
+            stackProvider: { [StackFrame(text: "should-not-be-used")] },
             cpuProvider: { 0.99 }
         )
         let secondWatchdog = HangDetector._activeWatchdog()

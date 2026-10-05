@@ -13,7 +13,8 @@
 //   - The frame-pointer chain is walked via `vm_read_overwrite` so
 //     a corrupted FP can't crash the process — invalid reads return
 //     `KERN_INVALID_ADDRESS` and we bail.
-//   - `dladdr` symbolicates each return address.
+//   - `StackFrames.symbolicate` formats each return address
+//     (`image +0x<offset> <hint>`).
 //
 // We deliberately avoid `_pthread_*` private functions (PLAN-iOS.md
 // §F15/T15.2 acceptance) and we keep the suspension window short:
@@ -32,6 +33,9 @@
 import Foundation
 import Darwin
 import Darwin.Mach
+#if canImport(EdgeRumCore)
+import EdgeRumCore
+#endif
 
 internal enum MainThreadStackSnapshot {
 
@@ -50,7 +54,7 @@ internal enum MainThreadStackSnapshot {
     /// this array and skips all Mach work. Tests use this to verify
     /// the `[]` → placeholder fallback in `HangEventEncoder` without
     /// having to coerce `thread_get_state` into failing.
-    nonisolated(unsafe) private static var testStubFrames: [String]?
+    nonisolated(unsafe) private static var testStubFrames: [StackFrame]?
 
     // MARK: - Install / reset
 
@@ -84,7 +88,7 @@ internal enum MainThreadStackSnapshot {
     /// Test hook — install a fixed result for `capture()` so the
     /// `HangEventEncoder` placeholder path can be exercised without
     /// coaxing `thread_get_state` into failing.
-    internal static func _installStubForTests(_ frames: [String]?) {
+    internal static func _installStubForTests(_ frames: [StackFrame]?) {
         stateLock.lock(); defer { stateLock.unlock() }
         testStubFrames = frames
     }
@@ -97,7 +101,7 @@ internal enum MainThreadStackSnapshot {
     /// thread other than the main thread — calling from the main
     /// thread would deadlock under the `thread_suspend` and is
     /// guarded against.
-    internal static func capture(maxFrames: Int = 64) -> [String] {
+    internal static func capture(maxFrames: Int = 64) -> [StackFrame] {
         // Test override short-circuit.
         stateLock.lock()
         if let stub = testStubFrames {
@@ -115,7 +119,8 @@ internal enum MainThreadStackSnapshot {
 
         // Suspend the main thread. KERN_SUCCESS == 0.
         guard thread_suspend(port) == KERN_SUCCESS else { return [] }
-        defer { _ = thread_resume(port) }
+        var resumed = false
+        defer { if !resumed { _ = thread_resume(port) } }
 
         // Read PC + FP from the saved register state.
         guard let registers = readRegisters(port: port) else { return [] }
@@ -143,8 +148,11 @@ internal enum MainThreadStackSnapshot {
         }
 
         // Symbolicate AFTER resume so we don't run dladdr (which can
-        // take dyld's lock) while the main thread is suspended.
-        return addresses.map(symbolicate(_:))
+        // take dyld's lock) while the main thread is suspended. Resume
+        // explicitly: a `defer` would run after the return expression.
+        _ = thread_resume(port)
+        resumed = true
+        return StackFrames.symbolicate(addresses)
     }
 
     // MARK: - Internals
@@ -213,44 +221,5 @@ internal enum MainThreadStackSnapshot {
             return nil
         }
         return buffer
-    }
-
-    /// Best-effort symbolication. Falls back to `0x<hex>` when
-    /// `dladdr` fails (very young dyld state, JIT pages, etc.).
-    /// Mirrors the look of `Thread.callStackSymbols` so downstream
-    /// dashboards can parse both kinds of frames uniformly.
-    private static func symbolicate(_ address: UInt) -> String {
-        var info = Dl_info()
-        let rawPtr = UnsafeRawPointer(bitPattern: address)
-        guard let rawPtr, dladdr(rawPtr, &info) != 0 else {
-            return String(format: "0x%016lx", address)
-        }
-        let imageName: String
-        if let fnamePtr = info.dli_fname {
-            let full = String(cString: fnamePtr)
-            imageName = (full as NSString).lastPathComponent
-        } else {
-            imageName = "???"
-        }
-        let symbolName: String
-        let offset: UInt
-        if let snamePtr = info.dli_sname {
-            symbolName = String(cString: snamePtr)
-            if let saddr = info.dli_saddr {
-                offset = address &- UInt(bitPattern: saddr)
-            } else {
-                offset = 0
-            }
-        } else {
-            symbolName = "<unknown>"
-            offset = 0
-        }
-        return String(
-            format: "%-30s 0x%016lx %@ + %lu",
-            (imageName as NSString).utf8String!,
-            address,
-            symbolName,
-            offset
-        )
     }
 }

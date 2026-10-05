@@ -11,6 +11,7 @@
 
 import XCTest
 @testable import EdgeRumCrash
+import EdgeRumCore
 
 final class MainThreadStackSnapshotTests: XCTestCase {
 
@@ -65,7 +66,7 @@ final class MainThreadStackSnapshotTests: XCTestCase {
         // (arm64) and Intel (x86_64), the Mach state read returns a
         // valid PC, so the result MUST include at least one frame.
         let captured = XCTestExpectation(description: "background capture")
-        var frames: [String] = []
+        var frames: [StackFrame] = []
         DispatchQueue.global(qos: .userInitiated).async {
             frames = MainThreadStackSnapshot.capture()
             captured.fulfill()
@@ -74,10 +75,10 @@ final class MainThreadStackSnapshotTests: XCTestCase {
 
         XCTAssertFalse(frames.isEmpty,
                        "capture from background thread must yield ≥1 frame")
-        // Best-effort symbolication — at least the PC line should be
-        // present. Frames are ordered with PC first.
-        XCTAssertTrue(frames.first!.contains("0x"),
-                      "first frame should include a hex address")
+        // Offset format — frames are ordered with PC first; at least
+        // one resolves to `image +0x<offset>` with a referenced image.
+        XCTAssertTrue(frames.contains { $0.text.contains(" +0x") && $0.image != nil },
+                      "expected an `image +0x<offset>` frame, got \(frames.map(\.text))")
     }
 
     func testStubFramesAreReturnedVerbatim() {
@@ -87,7 +88,8 @@ final class MainThreadStackSnapshotTests: XCTestCase {
         MainThreadStackSnapshot._installStubForTests([])
         XCTAssertTrue(MainThreadStackSnapshot.capture().isEmpty)
 
-        MainThreadStackSnapshot._installStubForTests(["A", "B", "C"])
-        XCTAssertEqual(MainThreadStackSnapshot.capture(), ["A", "B", "C"])
+        let stub = ["A", "B", "C"].map { StackFrame(text: $0) }
+        MainThreadStackSnapshot._installStubForTests(stub)
+        XCTAssertEqual(MainThreadStackSnapshot.capture(), stub)
     }
 }
