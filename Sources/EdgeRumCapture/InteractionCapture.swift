@@ -17,9 +17,6 @@
 //                            omitted when neither applies
 //   interaction.name_source — `accessibility_identifier | button_title |
 //                            none`: which branch produced interaction.name
-//   interaction.screen     — current navigation screen name (from F6's
-//                            UIViewControllerCapture); omitted when no
-//                            screen has appeared yet
 //
 // Privacy carve-out (T9.2): if the hit view's responder chain reaches a
 // `UITextField` with `isSecureTextEntry == true`, the tap is silently

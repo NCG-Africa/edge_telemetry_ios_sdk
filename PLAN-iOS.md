@@ -1472,6 +1472,11 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
 
 ## 14. Backend asks
 
+The consolidated, tranche-ordered record of everything below — plus the
+React Native bridge delta — is [#225](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/225).
+Copy from it by hand; agents do not file on the Processor or RN repos.
+Only the F29 asks (item 19) need a decision; the rest is informational.
+
 1. **Accept `sdk.platform = "ios-native"` as a valid value.** Only
    new identity-attribute value in the iOS payload.
 
@@ -1479,14 +1484,20 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
    `runtime = "native"`. Confirm the backend's symbolication pipeline
    handles `crash.report_json` containing the PLCR raw report.
    Confirm or define a `/symbols/upload` endpoint for dSYMs.
+   From F29, `hang.stack` / `long_task.stack` / `error.stack` frames are
+   `image +0x<image-relative offset> <hint>` with the image UUIDs in
+   `<prefix>.binary_images`; lookup is `(uuid, offset)`. Ingest-time
+   symbolication recommended (grouping needs symbolicated frames). A
+   missing dSYM degrades to the on-device hint, never an error.
 
 3. **Confirm absence of Web Vital metrics is fine.**
 
 4. **Confirm SwiftUI does not require new eventNames.** We ship under
-   `navigation` / `screen.duration` with `navigation.kind = "swiftui"`.
+   `navigation` with `navigation.kind = "swiftui"` (no `screen.duration`
+   — the Processor synthesizes dwell, #144).
 
-5. **Hang events under `app.crash` with `cause = "Hang"`.** Confirm
-   crash dashboards do not double-count hangs as fatal crashes.
+5. ~~**Hang events under `app.crash` with `cause = "Hang"`.**~~
+   Superseded by F29: hangs are `app.hang`, `cause` is deleted (item 19).
 
 6. **`crash.report_json` size cap.** Please confirm a max single-event
    size. We'll truncate top-30 frames per thread by default.
@@ -1570,6 +1581,39 @@ iPhone SE 2, one iPhone 11, one iPhone 15 Pro). Results posted to
     anchor. Both are host-adoption-gated: absent until the host calls
     `markScreenReady()` / `markInteractive()`. Catalogue §4.2/§5.11, ADR-028.
     RN: expose both methods.
+19. **F29 breaking batch (#216) — the only decisions.** Rollout:
+    Processor first, then the iOS alpha. (A1) Switch on
+    `user.interaction` for `rum_ui_interactions` (today keys
+    `ui.interaction`, so iOS falls to `default:`). (A2) Promote
+    `type: metric` items instead of returning before the event switch.
+    (A3) Accept `app.error` and `app.hang`. (A4) Route errors on event
+    name, not `cause` (deleted). A1–A3 silently drop data if missed.
+    Renames, deletions, the metric allowlist + frozen units, stack
+    format and session semantics: `docs/migration/1.0.0-alpha.2-to-alpha.N.md`.
+    RN: drop `resolveLocation` / `locationProviderUrl` from config
+    mapping; host attributes under SDK prefixes are now dropped;
+    JS timers arrive as `custom_timer` + `timer.name`.
+20. **F31 breadcrumbs (#218).** `breadcrumbs` (JSON **string**, ≤ 100
+    rows `{t, n, l, s?}`; `l` is `content`) + `breadcrumb.dropped` on
+    `app.crash` / `app.hang` / `app.error`. A replayed crash carries the
+    **previous** session's trail. RN: expose `captureBreadcrumbs`.
+21. **F32 SDK health (#219).** Flat `sdk.*` envelope counters,
+    **cumulative per scope — take the max, never sum**; omitted when
+    zero. `sdk.capabilities_failed` (comma-joined subsystem names) is
+    the highest-value field. Gap detection: `sdk.events_generated` vs
+    events received. ADR-023. RN: none.
+22. **F33 error evidence + two-phase hang (#220).** `previous_session.*`
+    + `device.boot_time` on `session.started` — evidence, not a verdict;
+    `end = unknown` never means `oom`. `error_type` on `app.error`
+    (host free string; not the `http.request` vocabulary).
+    `crash.mach_exception` on `app.crash`; exception keys win over
+    signal keys. `hang.duration_ms` is now the real stall;
+    `hang.terminated = true` on a replayed hang. RN: expose `type` on
+    `captureError`.
+23. **F34 launch (#221).** `launch.pre_sdk_duration_ms` on `page_load`
+    (absent when `prewarmed`, never zero);
+    `sdk.start_duration_ms` + `sdk.start_replayed_crash` on the
+    envelope — split the p95 on the bool. ADR-025. RN: none.
 
 ---
 
