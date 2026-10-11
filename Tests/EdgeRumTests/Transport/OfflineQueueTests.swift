@@ -68,7 +68,7 @@ final class OfflineQueueTests: XCTestCase {
         XCTAssertNotNil(queue.enqueue(Data("a".utf8), eventCount: 1))
         XCTAssertNotNil(queue.enqueue(Data("b".utf8), eventCount: 1))
 
-        let drained = queue.drain { _, _ in true }
+        let drained = queue.drain { _, _ in .sent }
         XCTAssertEqual(drained, 2)
         XCTAssertEqual(queue.count, 0)
     }
@@ -84,12 +84,12 @@ final class OfflineQueueTests: XCTestCase {
         var seen: [Data] = []
         let drained = queue.drain { payload, _ in
             seen.append(payload)
-            // Succeed on the first two, fail on the third.
-            return seen.count < 3
+            // Succeed on the first two, stop on the third.
+            return seen.count < 3 ? .sent : .stop
         }
         XCTAssertEqual(drained, 2)
         XCTAssertEqual(seen, [Data("a".utf8), Data("b".utf8), Data("c".utf8)])
-        // "c" remains on disk because its drain returned false.
+        // "c" remains on disk because its drain returned .stop.
         let remaining = try queue.orderedFiles().map { try Data(contentsOf: $0) }
         XCTAssertEqual(remaining, [Data("c".utf8)])
     }
@@ -146,9 +146,22 @@ final class OfflineQueueTests: XCTestCase {
         queue.enqueue(Data("x".utf8), eventCount: 7)
 
         var counts: [Int] = []
-        queue.drain { _, n in counts.append(n); return true }
+        queue.drain { _, n in counts.append(n); return .sent }
 
         XCTAssertEqual(counts, [7])
         XCTAssertEqual(health.snapshot()["queue_depth_max"], .int(7))
+    }
+
+    /// #252 R12: `[a, b, c]` → dropped, sent, stop ⇒ only `c` is left.
+    func testDroppedFilesAreDeletedAndTheDrainContinues() throws {
+        var epoch: Int64 = 1_717_000_000_000
+        let queue = makeQueue(maxQueueSize: 10) { defer { epoch += 1 }; return epoch }
+        for p in ["a", "b", "c"] { queue.enqueue(Data(p.utf8), eventCount: 1) }
+
+        var steps: [DrainStep] = [.dropped, .sent, .stop]
+        let removed = queue.drain { _, _ in steps.removeFirst() }
+
+        XCTAssertEqual(removed, 2)
+        XCTAssertEqual(try queue.orderedFiles().map { try Data(contentsOf: $0) }, [Data("c".utf8)])
     }
 }

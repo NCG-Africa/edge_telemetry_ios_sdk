@@ -192,28 +192,40 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
     private func drainNow() {
         guard let offlineQueue else { return }
         _ = offlineQueue.drain { [weak self] payload, eventCount in
-            guard let self else { return false }
+            guard let self else { return .stop }
             // Block until the per-file POST resolves so the next file
             // doesn't fire concurrently — the drain has to be
-            // sequential per spec. Sendable container is the Swift 6
-            // / strict-concurrency-safe alternative to a captured
-            // `var` mutated from inside the post callback.
+            // sequential per spec.
             let semaphore = DispatchSemaphore(value: 0)
             let outcomeBox = OutcomeBox()
             // R13: a queued batch is re-stamped, never sent with its stored time.
             self.transport.post(EventEnvelope.restamp(payload, at: self.now())) { outcome in
-                if case .success = outcome { outcomeBox.markSuccess() }
+                outcomeBox.set(outcome)
                 semaphore.signal()
             }
             semaphore.wait()
-            let ok = outcomeBox.isSuccess
-            if ok {
+            switch outcomeBox.value {
+            case .success:
                 self.countUpload(eventCount)
                 self.recorder?.didAckBatch()
-            } else {
+                return .sent
+            case let .failure(status, _):
                 self.health.add(.uploadFailures)
+                // #252 R12: replay follows the live policy — a non-429
+                // 4xx is dropped so it can't wedge the files behind it;
+                // 0/429/5xx keep the file for the next drain.
+                guard self.retryPolicy.decide(attempt: 1, status: status) == .drop else { return .stop }
+                self.health.add(.nonRetryable, eventCount)
+                if self.debug {
+                    os_log(
+                        "HTTPTransportSink dropped queued batch — status %d non-retryable",
+                        log: self.log,
+                        type: .info,
+                        status
+                    )
+                }
+                return .dropped
             }
-            return ok
         }
     }
 
@@ -222,22 +234,21 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
         health.add(.batchesUploaded)
     }
 
-    /// Sendable box for the success flag shared between the drain
-    /// callback and the post completion handler. Swift 6 strict
-    /// concurrency rejects mutating a captured `var` from inside the
-    /// completion closure even when a `DispatchSemaphore` is forcing
-    /// the writes to happen-before the reads.
+    /// Sendable box for the outcome shared between the drain callback
+    /// and the post completion handler. Swift 6 strict concurrency
+    /// rejects mutating a captured `var` from inside the completion
+    /// closure even when a `DispatchSemaphore` orders the accesses.
     private final class OutcomeBox: @unchecked Sendable {
         private let lock = NSLock()
-        private var _success = false
+        private var _value = BatchSendOutcome.failure(status: 0, retryAfter: nil)
 
-        func markSuccess() {
-            lock.lock(); _success = true; lock.unlock()
+        func set(_ outcome: BatchSendOutcome) {
+            lock.lock(); _value = outcome; lock.unlock()
         }
 
-        var isSuccess: Bool {
+        var value: BatchSendOutcome {
             lock.lock(); defer { lock.unlock() }
-            return _success
+            return _value
         }
     }
 
