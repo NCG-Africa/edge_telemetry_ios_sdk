@@ -2,7 +2,7 @@
 //
 // PLAN-iOS.md §F5/T5.1 — happy-path POST + header contract:
 //
-//   POST <endpoint>/collector/telemetry
+//   POST <endpoint, as given>
 //   X-API-Key: <apiKey>           (must start with "edge_")
 //   Content-Type: application/json
 //   User-Agent: EdgeRum-iOS/<v> (<model>; iOS <os>)
@@ -20,16 +20,14 @@ final class BatchTransportTests: XCTestCase {
         MockURLProtocol.reset()
     }
 
-    func testCollectorPathAppendedToEndpoint() {
-        let endpoint = URL(string: "https://collect.example.com")!
-        let url = BatchTransport.makeCollectorURL(endpoint: endpoint)
-        XCTAssertEqual(url.absoluteString, "https://collect.example.com/collector/telemetry")
-    }
-
-    func testCollectorPathWithTrailingSlash() {
-        let endpoint = URL(string: "https://collect.example.com/")!
-        let url = BatchTransport.makeCollectorURL(endpoint: endpoint)
-        XCTAssertTrue(url.absoluteString.hasSuffix("collector/telemetry"))
+    func testEndpointIsUsedExactlyAsGiven() {
+        for raw in ["https://h/collector-go/telemetry", "https://h/collector-go/telemetry/"] {
+            let transport = BatchTransport(
+                endpoint: URL(string: raw)!, apiKey: "edge_t", sdkVersion: "4.0.0",
+                deviceModel: "iPhone15,3", osVersion: "17.4.1"
+            )
+            XCTAssertEqual(transport.url.absoluteString, raw)
+        }
     }
 
     func testUserAgentShape() {
@@ -42,7 +40,7 @@ final class BatchTransportTests: XCTestCase {
     }
 
     func testHappyPathPostSendsHeadersAndBody() throws {
-        let endpoint = URL(string: "https://collect.example.com")!
+        let endpoint = URL(string: "https://collect.example.com/collector-go/telemetry")!
         let session = MockURLProtocol.makeSession()
         let transport = BatchTransport(
             endpoint: endpoint,
@@ -73,7 +71,7 @@ final class BatchTransportTests: XCTestCase {
         XCTAssertEqual(recorded.count, 1)
         let req = try XCTUnwrap(recorded.first)
         XCTAssertEqual(req.httpMethod, "POST")
-        XCTAssertEqual(req.url?.absoluteString, "https://collect.example.com/collector/telemetry")
+        XCTAssertEqual(req.url?.absoluteString, "https://collect.example.com/collector-go/telemetry")
 
         XCTAssertEqual(req.value(forHTTPHeaderField: "X-API-Key"), "edge_test_abc")
         XCTAssertTrue(req.value(forHTTPHeaderField: "X-API-Key")?.hasPrefix("edge_") ?? false)

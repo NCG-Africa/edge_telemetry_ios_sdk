@@ -195,7 +195,7 @@ final class HTTPCaptureTests: XCTestCase {
     }
 
     func test_shouldCaptureRequest_rejectsCollectorEndpointHost() {
-        let request = URLRequest(url: URL(string: "https://collect.example.com/collector/telemetry")!)
+        let request = URLRequest(url: URL(string: "https://collect.example.com/collector-go/telemetry")!)
         let config = HTTPCaptureConfig(endpointHost: "collect.example.com")
         XCTAssertFalse(HTTPCapture.shouldCaptureRequest(
             request,
@@ -358,7 +358,7 @@ final class HTTPCaptureTests: XCTestCase {
     }
 
     func test_recordOutcome_dropsEndpointHostMatch() {
-        let request = URLRequest(url: URL(string: "https://collect.example.com/collector/telemetry")!)
+        let request = URLRequest(url: URL(string: "https://collect.example.com/collector-go/telemetry")!)
         let config = HTTPCaptureConfig(endpointHost: "collect.example.com")
 
         HTTPCapture.recordOutcome(

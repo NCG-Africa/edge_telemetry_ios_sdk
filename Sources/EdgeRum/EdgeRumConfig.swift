@@ -31,8 +31,8 @@ public struct EdgeRumConfig: Sendable {
     /// every request.
     public var apiKey: String
 
-    /// Base URL of the EdgeRum collector backend. The SDK appends
-    /// the collector path automatically. Must be `https://` unless
+    /// The full collector URL. Every batch is posted to exactly this
+    /// URL; the SDK appends no path. Must be `https://` unless
     /// `debug == true`.
     public var endpoint: URL
 

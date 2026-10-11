@@ -13,7 +13,7 @@ import XCTest
 final class HTTPTransportSinkTests: XCTestCase {
 
     func testSuccessfulSendCallsBackTransportAndDrainsQueue() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         let sink = HTTPTransportSink(
             transport: transport,
@@ -32,7 +32,7 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 
     func testFourFailuresPushPayloadToOfflineQueue() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         // Drive the schedule fast — replace the 2/8/30 schedule with
         // sub-millisecond delays so the test runs in ~ms not 40s.
@@ -59,7 +59,7 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 
     func testDrainReplaysQueuedPayloadsViaTransport() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         queue.enqueue(Data("queued".utf8), eventCount: 1)
         queue.enqueue(Data("queued2".utf8), eventCount: 1)
@@ -84,7 +84,7 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 
     func testDrainStopsOnFirstFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         queue.enqueue(Data("first".utf8), eventCount: 1)
         queue.enqueue(Data("second".utf8), eventCount: 1)
@@ -125,7 +125,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testSuccessCountsEventsAndBatchesUploaded() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -139,7 +139,7 @@ extension HTTPTransportSinkTests {
 
     /// #250 R4: `batch_size` counts `sdk.health`; `events_uploaded` does not.
     func testEventsUploadedExcludesTheHealthEvent() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -158,7 +158,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testProcessCountersCorrectWhenNineInTenUploadsFail() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -176,7 +176,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testNonRetryableCountsEventsAndFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         transport.alwaysOutcome = .failure(status: 400, retryAfter: nil)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
@@ -189,7 +189,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testMissingOfflineQueueCountsEnqueueFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.001, 0.001, 0.001]),
@@ -209,7 +209,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testQueuedBatchIsRestampedWhenSentNotReplayedWithItsStoredTime() throws {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
         let queue = InMemoryQueue()
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
@@ -234,7 +234,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testRetryAttemptsAreRestamped() throws {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
         transport.nextOutcome = .failure(status: 503, retryAfter: nil)
         let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.2, 0.2, 0.2]),
@@ -268,7 +268,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testUnencodableEnvelopeCountsEncodeFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
