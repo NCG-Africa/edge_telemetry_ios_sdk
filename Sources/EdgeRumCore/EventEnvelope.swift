@@ -89,6 +89,24 @@ public struct EventEnvelope: Sendable, Encodable {
         case events
     }
 
+    /// R13: replace the root `timestamp` of an encoded 4.x payload with
+    /// `date`, leaving every other byte alone (a JSON round-trip would
+    /// rewrite doubles). Relies on `.sortedKeys` encoding: the root
+    /// `timestamp` sorts after `events` and `sdk`, so it is the last
+    /// `"timestamp":"` in the payload — inside a string value the
+    /// quotes would be escaped. A legacy (pre-4.0) payload, with no
+    /// guaranteed key order, is returned unchanged.
+    public static func restamp(_ payload: Data, at date: Date) -> Data {
+        guard payload.range(of: Data(#""contract_version":"4."#.utf8)) != nil,
+              let key = payload.range(of: Data(#""timestamp":""#.utf8), options: .backwards),
+              let end = payload[key.upperBound...].firstIndex(of: UInt8(ascii: "\"")) else {
+            return payload
+        }
+        var out = payload
+        out.replaceSubrange(key.upperBound..<end, with: Data(WireDateFormatter.string(from: date).utf8))
+        return out
+    }
+
     private enum SdkKeys: String, CodingKey { case name, version }
 
     private enum AppKeys: String, CodingKey {

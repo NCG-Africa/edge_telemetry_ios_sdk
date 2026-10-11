@@ -202,6 +202,56 @@ extension HTTPTransportSinkTests {
         XCTAssertEqual(health.snapshot()["upload_failures"], .int(4))
     }
 
+    // MARK: R13 — re-stamped at send time (#250)
+
+    private static func rootTimestamp(_ payload: Data) -> String? {
+        (try? JSONSerialization.jsonObject(with: payload) as? [String: Any])?["timestamp"] as? String
+    }
+
+    func testQueuedBatchIsRestampedWhenSentNotReplayedWithItsStoredTime() throws {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
+        let queue = InMemoryQueue()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
+        let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.001, 0.001, 0.001]),
+                                     offlineQueue: queue, apiKey: "edge_t", userAgent: "ua",
+                                     pathObserver: nil, health: SdkHealth(), now: { clock.now })
+        let event = Event.event(name: "navigation", timestamp: clock.now, attributes: AttributeBag())
+        sink.send(PayloadBuilder().build(events: [event], context: AttributeBag(), flushTime: clock.now), reason: .immediate)
+        waitUntil { queue.payloads.count == 1 }
+        XCTAssertEqual(queue.payloads.first.flatMap(Self.rootTimestamp), "2024-06-01T09:41:16.512Z")
+
+        clock.advance(by: 3_600)
+        transport.alwaysOutcome = nil
+        let before = transport.posts.count
+        sink.drainOfflineQueue()
+        XCTAssertTrue(transport.waitForPosts(count: before + 1, timeout: 3))
+
+        let sent = try XCTUnwrap(transport.posts.last)
+        XCTAssertEqual(Self.rootTimestamp(sent), "2024-06-01T10:41:16.512Z")
+        let events = (try JSONSerialization.jsonObject(with: sent) as? [String: Any])?["events"] as? [[String: Any]]
+        XCTAssertEqual(events?.first?["timestamp"] as? String, "2024-06-01T09:41:16.512Z", "event times are kept")
+    }
+
+    func testRetryAttemptsAreRestamped() throws {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
+        transport.nextOutcome = .failure(status: 503, retryAfter: nil)
+        let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.2, 0.2, 0.2]),
+                                     offlineQueue: InMemoryQueue(), apiKey: "edge_t", userAgent: "ua",
+                                     pathObserver: nil, health: SdkHealth(), now: { clock.now })
+        sink.send(PayloadBuilder().build(events: [], context: AttributeBag(), flushTime: clock.now), reason: .immediate)
+        XCTAssertTrue(transport.waitForOnePost(timeout: 3))
+        clock.advance(by: 2)
+        XCTAssertTrue(transport.waitForPosts(count: 2, timeout: 3))
+        XCTAssertEqual(transport.posts.map { Self.rootTimestamp($0) }, ["2024-06-01T09:41:16.512Z", "2024-06-01T09:41:18.512Z"])
+    }
+
+    func testRestampLeavesLegacyPayloadsUntouched() {
+        let legacy = Data(#"{"type":"telemetry_batch","timestamp":"2024-06-01T09:41:16.512Z","events":[]}"#.utf8)
+        XCTAssertEqual(EventEnvelope.restamp(legacy, at: Date()), legacy)
+    }
+
     func testUnencodableEnvelopeCountsEncodeFailure() {
         let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
         let health = SdkHealth()
