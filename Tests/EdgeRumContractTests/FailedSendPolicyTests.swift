@@ -47,7 +47,8 @@ final class FailedSendPolicyTests: XCTestCase {
             endpoint: endpoint, apiKey: "edge_252", sdkVersion: "4.0.0",
             deviceModel: "iPhone15,3", osVersion: "17.4.1"
         )
-        let queue = try XCTUnwrap(OfflineQueue(directory: queueDir, health: health))
+        let dir = queueDir.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let queue = try XCTUnwrap(OfflineQueue(directory: dir, health: health))
         let sink = HTTPTransportSink(
             transport: transport, retryPolicy: RetryPolicy(schedule: schedule),
             offlineQueue: queue, apiKey: "edge_252", userAgent: "EdgeRum-iOS/4.0.0",
@@ -89,5 +90,49 @@ final class FailedSendPolicyTests: XCTestCase {
             XCTAssertTrue(stub.waitForRequests(before + 2))
             XCTAssertEqual(stub.requests[before...].map(\.path), [path, path], "nothing appended to \(path)")
         }
+    }
+
+    // MARK: R12 — live sends
+
+    func testRetryableFailuresAreRetriedThenQueuedOffline() throws {
+        let cases: [(String, LocalHTTPStub.Reply)] = [
+            ("network error", .networkError), ("429", .status(429)), ("500", .status(500)), ("503", .status(503)),
+        ]
+        for (label, reply) in cases {
+            let rig = try makeRig(endpoint: stub.baseURL)
+            let before = stub.requests.count
+            stub.script(reply, reply, reply, reply)
+            sendOne(rig, label)
+            XCTAssertTrue(stub.waitForRequests(before + 4), label)
+            XCTAssertTrue(waitUntil { rig.queue.count == 1 }, "\(label): queued after 4 attempts")
+            Thread.sleep(forTimeInterval: 0.1)
+            XCTAssertEqual(stub.requests.count, before + 4, "\(label): exactly 4 attempts")
+            XCTAssertNil(rig.health.snapshot()["events_dropped.non_retryable"], label)
+        }
+    }
+
+    func testOtherClientErrorsAreDroppedAndNeverQueued() throws {
+        for status in [400, 401, 403, 404, 413] {
+            let rig = try makeRig(endpoint: stub.baseURL)
+            let before = stub.requests.count
+            stub.script(.status(status))
+            sendOne(rig, "\(status)")
+            XCTAssertTrue(stub.waitForRequests(before + 1))
+            XCTAssertTrue(waitUntil { rig.health.snapshot()["events_dropped.non_retryable"] != nil }, "\(status)")
+            Thread.sleep(forTimeInterval: 0.1)
+            XCTAssertEqual(stub.requests.count, before + 1, "\(status): never retried")
+            XCTAssertEqual(rig.queue.count, 0, "\(status): never queued")
+        }
+    }
+
+    func test503RetryAfterOverridesTheSchedule() throws {
+        // A 30 s schedule slot; the server asks for 1 s.
+        let rig = try makeRig(endpoint: stub.baseURL, schedule: [0, 30, 30, 30])
+        stub.script(.status(503, ["Retry-After": "1"]))
+        sendOne(rig)
+        XCTAssertTrue(stub.waitForRequests(2, timeout: 10))
+        let gap = stub.requests[1].receivedAt.timeIntervalSince(stub.requests[0].receivedAt)
+        XCTAssertGreaterThanOrEqual(gap, 0.9)
+        XCTAssertLessThan(gap, 5, "Retry-After, not the 30 s slot")
     }
 }
