@@ -207,6 +207,50 @@ final class FailedSendPolicyTests: XCTestCase {
             XCTAssertEqual(r.json["timestamp"] as? String, "2030-03-17T17:46:40.000Z", "re-stamped at send")
         }
     }
+
+    // MARK: R14 — replayed crash / hang batches
+
+    private let savedApp = AppContext(name: "Shop Old", version: "3.9.0", buildNumber: "390")
+
+    func testReplayedCrashAndHangAreQueuedOnOutageAndReplayUnderTheirOwnBuild() throws {
+        for name in ["app.crash", "app.hang"] {
+            let sendTime = SendTime()
+            let rig = try makeRig(endpoint: stub.baseURL, now: { sendTime.value })
+            let before = stub.requests.count
+            stub.script(.status(503), .status(503), .status(503), .status(503))
+            rig.recorder.recordReplayed(name: name, attributes: ["error.message": "boom"], savedApp: savedApp)
+            XCTAssertTrue(stub.waitForRequests(before + 4), name)
+            XCTAssertTrue(waitUntil { rig.queue.count == 1 }, "\(name) queued")
+
+            sendTime.value = Date(timeIntervalSince1970: 1_900_000_000)
+            rig.sink.drainOfflineQueue()
+            XCTAssertTrue(stub.waitForRequests(before + 5), name)
+            XCTAssertTrue(waitUntil { rig.queue.count == 0 }, "\(name) delivered")
+
+            let json = stub.requests[before + 4].json
+            let app = try XCTUnwrap(json["app"] as? [String: Any])
+            XCTAssertEqual(app["version"] as? String, "3.9.0", name)
+            XCTAssertEqual(app["build_number"] as? String, "390", name)
+            XCTAssertEqual(app["name"] as? String, "Shop Old", name)
+            XCTAssertEqual(json["timestamp"] as? String, "2030-03-17T17:46:40.000Z", "\(name) re-stamped")
+            let events = try XCTUnwrap(json["events"] as? [[String: Any]])
+            XCTAssertEqual(events.map { $0["eventName"] as? String }, [name], "own batch, no sdk.health")
+        }
+    }
+
+    func testReplayedCrashAndHangRejectedWithAClientErrorAreDroppedNotQueued() throws {
+        for name in ["app.crash", "app.hang"] {
+            let rig = try makeRig(endpoint: stub.baseURL)
+            let before = stub.requests.count
+            stub.script(.status(401))
+            rig.recorder.recordReplayed(name: name, attributes: ["error.message": "boom"], savedApp: savedApp)
+            XCTAssertTrue(stub.waitForRequests(before + 1), name)
+            XCTAssertTrue(waitUntil { rig.health.snapshot()["events_dropped.non_retryable"] == .int(1) }, name)
+            Thread.sleep(forTimeInterval: 0.1)
+            XCTAssertEqual(stub.requests.count, before + 1, name)
+            XCTAssertEqual(rig.queue.count, 0, name)
+        }
+    }
 }
 
 private final class SendTime: @unchecked Sendable {
