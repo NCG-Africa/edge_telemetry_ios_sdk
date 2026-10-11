@@ -142,7 +142,7 @@ Untagged rows are unchanged from as-is.
 
 ## 2. Envelope
 
-`EventEnvelope.swift:31-64`. One envelope per flush, `POST <endpoint>/collector/telemetry`,
+`EventEnvelope.swift:31-64`. One envelope per flush, `POST <endpoint>` (as given, #252),
 `Content-Type: application/json`, `X-API-Key` starting `edge_`. JSON only — no compression.
 
 ### 2.1 Batch fields

@@ -13,7 +13,7 @@ documented default tuned for production use.
 ```swift
 var config = EdgeRumConfig(
     apiKey: "edge_live_abc123",
-    endpoint: URL(string: "https://collect.example.com")!
+    endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
 )
 config.appName = "Shop"
 config.appVersion = "2.1.0"
@@ -26,8 +26,9 @@ EdgeRum.start(config)
 
 ``EdgeRumConfig/apiKey`` must start with the literal `"edge_"` prefix
 and is sent as the `X-API-Key` request header. ``EdgeRumConfig/endpoint``
-is the collector base URL; the SDK appends the `/collector/telemetry`
-path automatically. `https://` is required unless
+is the full collector URL, for example
+`https://collect.example.com/collector-go/telemetry`. Every batch is
+posted to exactly that URL; the SDK appends no path. `https://` is required unless
 ``EdgeRumConfig/debug`` is `true`.
 
 ``EdgeRumConfig/appName``, ``EdgeRumConfig/appVersion``,

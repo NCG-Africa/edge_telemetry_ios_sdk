@@ -4,7 +4,7 @@
 // network context. The last event is the SDK's own `sdk.health`.
 // Generated from Tests/Fixtures/golden-batch-ios.json.
 //
-// POST /collector/telemetry
+// POST <endpoint>   (as configured, e.g. https://<host>/collector-go/telemetry)
 // Content-Type: application/json
 // X-API-Key: edge_your_api_key_here
 // User-Agent: EdgeRum-iOS/4.0.0 (iPhone15,3; iOS 17.4.1)

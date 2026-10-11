@@ -29,7 +29,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let apiKey = Bundle.main.object(forInfoDictionaryKey: "EdgeRumAPIKey") as? String ?? "edge_REPLACE_ME"
         var config = EdgeRumConfig(
             apiKey: apiKey,
-            endpoint: URL(string: "https://telemetry.ncgafrica.com")!
+            endpoint: URL(string: "https://telemetry.ncgafrica.com/collector-go/telemetry")!
         )
         config.appName = "EdgeRum Sample (UIKit)"
         config.appPackage = Bundle.main.bundleIdentifier

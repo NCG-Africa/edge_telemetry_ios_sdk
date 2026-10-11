@@ -227,7 +227,7 @@ Every event still carries the rest of the context:
 | `session.start_time`      | in `attributes`                  | NOT `session.startTime`                                |
 | `device.platform_version` | in `attributes`                  | NOT `device.osVersion`                                 |
 | Auth header               | `X-API-Key`                      | Value MUST start with `"edge_"`                        |
-| Path                      | `POST /collector/telemetry`      | Same path as Android/web                               |
+| Path                      | `POST <config.endpoint>`, as given | Nothing appended (#252 R10); collector route `/telemetry` |
 
 ### ID formats
 
@@ -729,7 +729,7 @@ deletes the file and closes each as `action.ended` `abandoned` /
 ```
 Auth:         X-API-Key: <apiKey>            (must start with "edge_")
 Content-Type: application/json
-Endpoint:     POST <config.endpoint>/collector/telemetry
+Endpoint:     POST <config.endpoint>   (as given — nothing appended, #252 R10)
 User-Agent:   EdgeRum-iOS/<sdk.version> (<device.model>; iOS <os>)
 ```
 
@@ -766,7 +766,9 @@ Attempt 4: +30s → push to OfflineQueue
 - Cap: `maxQueueSize` (default 200) events across files, summed from
   the filenames (no file reads). Overflow drops the oldest files until
   the total is ≤ cap.
-- Flush: sequential. Success deletes the file. Failure leaves it.
+- Flush: sequential, oldest first. 2xx deletes the file; a non-429 4xx
+  deletes it too (counted `non_retryable`, #252 R12 — never wedges the
+  queue); 0/429/5xx leave it and end the drain.
 - Triggers: `NWPathMonitor` transitions to `.satisfied`,
   `UIApplication.didBecomeActiveNotification`, `EdgeRum.enable()`.
 - `EdgeRum.disable()` halts emission and stops the flush timer.

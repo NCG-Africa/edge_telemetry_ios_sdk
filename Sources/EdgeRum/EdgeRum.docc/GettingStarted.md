@@ -72,7 +72,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         var config = EdgeRumConfig(
             apiKey: "edge_live_abc123",
-            endpoint: URL(string: "https://collect.example.com")!
+            endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
         )
         config.appName = "Shop"
         config.appVersion = "2.1.0"
@@ -108,7 +108,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         var config = EdgeRumConfig(
             apiKey: "edge_live_abc123",
-            endpoint: URL(string: "https://collect.example.com")!
+            endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
         )
         config.appName = "Shop"
         EdgeRum.start(config)
@@ -127,7 +127,7 @@ struct ShopApp: App {
     init() {
         var config = EdgeRumConfig(
             apiKey: "edge_live_abc123",
-            endpoint: URL(string: "https://collect.example.com")!
+            endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
         )
         config.appName = "Shop"
         EdgeRum.start(config)

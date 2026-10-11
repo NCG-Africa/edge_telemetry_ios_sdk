@@ -16,7 +16,7 @@ import Foundation
 /// ```swift
 /// var config = EdgeRumConfig(
 ///     apiKey: "edge_live_abc123",
-///     endpoint: URL(string: "https://collect.example.com")!
+///     endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
 /// )
 /// config.appName = "Shop"
 /// config.appVersion = "2.1.0"

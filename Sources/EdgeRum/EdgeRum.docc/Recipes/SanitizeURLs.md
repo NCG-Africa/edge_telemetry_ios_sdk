@@ -21,7 +21,7 @@ import EdgeRum
 
 var config = EdgeRumConfig(
     apiKey: "edge_live_abc123",
-    endpoint: URL(string: "https://collect.example.com")!
+    endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
 )
 config.sanitizeUrl = { url in
     guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
@@ -54,7 +54,7 @@ let analyticsHost = try NSRegularExpression(
 )
 var config = EdgeRumConfig(
     apiKey: "edge_live_abc123",
-    endpoint: URL(string: "https://collect.example.com")!
+    endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
 )
 config.ignoreUrls = [analyticsHost]
 EdgeRum.start(config)

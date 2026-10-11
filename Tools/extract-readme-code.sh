@@ -197,12 +197,13 @@ for md in "${DOC_FILES[@]}"; do
         # would also be caught.
         #
         # `edge_telemetry_ios_sdk` is the repository slug; the wire-
-        # contract literals `telemetry_batch` and `/collector/telemetry`
-        # appear verbatim in doc snippets that describe the envelope.
-        # Strip all three before scanning each snippet line.
+        # contract literals `telemetry_batch` and the collector URL path
+        # (`/collector-go/telemetry`, legacy `/collector/telemetry`)
+        # appear verbatim in doc snippets. Strip them before scanning.
         sanitised="${snippet}.sanitised"
         sed -e 's|edge_telemetry_ios_sdk||g' \
             -e 's|telemetry_batch||g' \
+            -e 's|/collector-go/telemetry||g' \
             -e 's|/collector/telemetry||g' \
             "${snippet}" > "${sanitised}"
         for token in "${BANNED_TOKENS[@]}"; do
