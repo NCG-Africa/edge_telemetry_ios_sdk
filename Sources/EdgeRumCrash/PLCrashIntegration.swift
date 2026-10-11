@@ -179,10 +179,9 @@ public enum PLCrashIntegration {
 
         attrs.merge(Breadcrumbs.replayAttributes(priorBreadcrumbs, sessionId: snapshot?.sessionId)) { own, _ in own }
 
-        recorder.recordEvent(name: "app.crash", attributes: attrs)
-        // `Recorder.recordEvent("app.crash", ...)` triggers an
-        // immediate flush internally (Recorder.swift), so no explicit
-        // `flush(reason:)` call is needed here.
+        // #250 R14: sent at once in its own batch, on the build that
+        // saved the sidecar.
+        recorder.recordReplayed(name: "app.crash", attributes: attrs, savedApp: snapshot.map(CrashSidecarReader.savedApp))
 
         if !reporter.purgePendingCrashReport(), debug {
             os_log("PLCrashReporter purge returned false", log: log, type: .info)

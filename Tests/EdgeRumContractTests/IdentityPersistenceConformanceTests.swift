@@ -55,8 +55,7 @@ final class IdentityPersistenceConformanceTests: XCTestCase {
         recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         recorder.configure(RecorderConfig(
             apiKey: "edge_test_abc",
-            endpoint: URL(string: "https://collect.example.com")!,
-            location: "Nairobi/Kenya"
+            endpoint: URL(string: "https://collect.example.com")!
         ))
         recorder.installPersistedStores(
             identityProvider: IdentityProvider(
@@ -79,6 +78,9 @@ final class IdentityPersistenceConformanceTests: XCTestCase {
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
+        // Contract 4.0: device identity rides the envelope root (R1).
+        XCTAssertEqual(json["device_id"] as? String, "device_1717100000000_aabbccddeeff0011_ios",
+                       "device_id must equal the persisted Keychain value")
 
         for (idx, event) in events.enumerated() {
             let attrs = try XCTUnwrap(
@@ -90,22 +92,14 @@ final class IdentityPersistenceConformanceTests: XCTestCase {
 
             // Persisted-value pinning.
             XCTAssertEqual(
-                attrs["device.id"] as? String,
-                "device_1717100000000_aabbccddeeff0011_ios",
-                "event \(idx) device.id must equal the persisted Keychain value"
-            )
-            XCTAssertEqual(
                 attrs["user.id"] as? String,
                 "user_1717100000000_2233445566778899",
                 "event \(idx) user.id must equal the persisted UserDefaults value"
             )
 
             // Format regex pinning.
-            let deviceId = attrs["device.id"] as? String ?? ""
             let sessionId = attrs["session.id"] as? String ?? ""
             let userId = attrs["user.id"] as? String ?? ""
-            XCTAssertTrue(IdentityFormat.isValid(deviceId, kind: .device),
-                          "event \(idx) device.id format invalid: \(deviceId)")
             XCTAssertTrue(IdentityFormat.isValid(sessionId, kind: .session),
                           "event \(idx) session.id format invalid: \(sessionId)")
             XCTAssertTrue(IdentityFormat.isValid(userId, kind: .user),
@@ -117,7 +111,7 @@ final class IdentityPersistenceConformanceTests: XCTestCase {
         let firstAttrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         XCTAssertEqual(
             mirrored["device.id"],
-            .string(firstAttrs["device.id"] as? String ?? "")
+            .string(json["device_id"] as? String ?? "")
         )
         XCTAssertEqual(
             mirrored["session.id"],

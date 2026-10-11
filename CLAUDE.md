@@ -114,61 +114,72 @@ The iOS SDK must produce payloads matching the EdgeTelemetryProcessor wire
 contract. The backend collector tier resolves `tenant_id` from the API
 key, so the SDK does **not** send it.
 
-### Envelope structure
+### Envelope structure — contract 4.0.0 (#250)
 
 ```json
 {
   "type": "telemetry_batch",
+  "contract_version": "4.0.0",
   "timestamp": "2026-06-14T10:30:00.512Z",
-  "location": "Nairobi/Kenya",
   "batch_size": 3,
-  "events": [ /* …events… */ ]
+  "device_id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+  "sdk": { "name": "ios", "version": "4.0.0" },
+  "app": { "name": "Shop", "package_name": "com.example.shop", "platform": "ios",
+           "version": "2.1.0", "build_number": "412" },
+  "events": [ /* …events…, then one sdk.health event */ ]
 }
 ```
 
-- `type`: always the string `"telemetry_batch"`.
-- `timestamp`: ISO 8601 string of the batch flush time. Includes
-  fractional seconds. Never Unix ms.
-- `location`: optional per-app/install string (City/Country). Set via
-  `EdgeRumConfig.location`. (`resolveLocation` / `locationProviderUrl`
-  were removed in F29 — the SDK never resolves a location itself.)
-- `batch_size`: integer equal to `events.count` — included for parity
-  with web/Android.
-- `sdk.thread_time_ms`: integer, cumulative caller-thread wall-time (ms)
-  inside the Recorder ingress for the current session. iOS-only, additive
-  (#212).
-- SDK health counters (F32, #219): flat `sdk.*` keys, cumulative per
-  scope, never deltas. Session: `sdk.events_generated`,
-  `sdk.events_dropped.{sampled,unknown_name}`. Process (`SdkHealth`):
-  `sdk.events_uploaded`, `sdk.batches_uploaded`, `sdk.upload_failures`,
-  `sdk.events_dropped.{queue_overflow,encode_failure,non_retryable,enqueue_failure}`,
-  `sdk.queue_depth_max`, `sdk.storage_bytes_max`, `sdk.capabilities_failed`.
-  Markers omitted when zero; wire-only, no public accessor (ADR-023).
-  F34 (#221): `sdk.start_duration_ms` (the `start()` call, monotonic) +
-  `sdk.start_replayed_crash` (bool), set at the end of `start()` and on
-  every later envelope of the process (ADR-025).
-- `events`: array of event and metric items.
+- **Closed at exactly these eight keys** (R3). Nothing else on the root.
+- `contract_version`: `EventEnvelope.contractVersion` (`"4.0.0"`).
+- `timestamp`: ISO 8601 UTC with fractional seconds and `Z`, set at
+  **send** time — retries and offline-queue replays are re-stamped
+  (`EventEnvelope.restamp`, relies on the production encoder's
+  `.sortedKeys`). Never Unix ms.
+- `batch_size`: `events.count`, the `sdk.health` event included.
+- `device_id`: `IdentityProvider`'s persisted id, on every batch.
+- `sdk`: `name` is always `"ios"`; `version` is `EdgeRum.sdkVersion`
+  (handed to the Recorder via `RecorderConfig.sdkVersion`).
+- `app`: `platform` always `"ios"`; `name`, `package_name`, `version`,
+  `build_number` from `Info.plist` or the `EdgeRumConfig.app*`
+  overrides. A nil value is **omitted, never `""`** (R15).
+- No `location`, no `app.environment`, no `sdk.platform` anywhere.
+  `EdgeRumConfig.location` / `.environment` are deprecated and ignored.
+- **`sdk.health`** (R4): the last event of every live batch, built by
+  `PayloadBuilder` (bypasses the allowlist and sampler), timestamped at
+  flush, carrying the non-identity context. Attribute keys have **no
+  `sdk.` prefix**. Session: `events_generated`,
+  `events_dropped.{sampled,unknown_name}`, `thread_time_ms` (#212).
+  Process (`SdkHealth`): `events_uploaded`, `batches_uploaded`,
+  `upload_failures`,
+  `events_dropped.{queue_overflow,encode_failure,non_retryable,enqueue_failure}`,
+  `queue_depth_max`, `storage_bytes_max`, `capabilities_failed`.
+  Markers omitted when zero (ADR-023). F34: `start_duration_ms`,
+  `start_replayed_crash` (ADR-025). `events_uploaded` excludes the
+  `sdk.health` event itself.
+- **Replayed crash / hang** (R14): `Recording.recordReplayed` sends it at
+  once in a one-event batch with no `sdk.health`; envelope
+  `app.name`/`version`/`build_number` come from the sidecar (nil when an
+  older SDK never mirrored them), everything else is current.
 
-### Required identity attributes on every event
+### Identity lives in the envelope only (R1)
 
-The collector drops events missing these. `Recorder` merges them in from
-the internal `ContextProvider` so every emitted event carries them:
+`PayloadBuilder` lifts the identity out of the `ContextProvider` bag
+into the envelope and strips it from every event — context- **and**
+event-supplied (`PayloadBuilder.isIdentityKey`): `app.name`,
+`app.package_name`, `app.version`, `app.build_number`, `app.platform`,
+`app.environment`, any `sdk.*`, `device.id`. Non-identity `app.*` keys
+(`app.state`, `app.background_refresh`) stay on events.
 
-- `app.package_name`, `app.name`, `app.version`, `app.build_number`,
-  `app.environment`
-- `device.id`, `device.platform` (= `"ios"`), `device.model`,
-  `device.manufacturer` (= `"Apple"`), `device.os` (= `"ios"`),
-  `device.platform_version`, `device.isVirtual`,
-  `device.screenWidth`, `device.screenHeight`, `device.pixelRatio`,
-  `device.batteryLevel`, `device.batteryCharging`
+Every event still carries the rest of the context:
+
+- `device.platform` (= `"ios"`), `device.model`, `device.manufacturer`
+  (= `"Apple"`), `device.os` (= `"ios"`), `device.platform_version`,
+  `device.isVirtual`, `device.screenWidth`, `device.screenHeight`,
+  `device.pixelRatio`, `device.batteryLevel`, `device.batteryCharging`
 - `network.type`, `network.effectiveType` (best-effort on iOS)
 - `session.id`, `session.start_time`, `session.sequence`
 - `user.id` (plus optional `user.name`, `user.email`, `user.phone`)
-- `sdk.version`, `sdk.platform` = `"ios-native"`
-
-`sdk.platform = "ios-native"` is a **new value** not previously seen by
-the backend. Confirmation that the backend accepts it is the first item
-in `PLAN-iOS.md` § "Backend asks".
 
 ### Individual event structure
 
@@ -178,12 +189,6 @@ in `PLAN-iOS.md` § "Backend asks".
   "eventName": "navigation",
   "timestamp": "2026-06-14T10:30:00.123Z",
   "attributes": {
-    "app.name": "Shop",
-    "app.version": "2.1.0",
-    "app.package_name": "com.example.shop",
-    "app.build_number": "412",
-    "app.environment": "production",
-    "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
     "device.platform": "ios",
     "device.model": "iPhone15,3",
     "device.manufacturer": "Apple",
@@ -201,8 +206,6 @@ in `PLAN-iOS.md` § "Backend asks".
     "session.start_time": "2026-06-14T10:25:00.002Z",
     "session.sequence": 42,
     "user.id": "user_1717100000000_deadbeefcafef00d",
-    "sdk.version": "1.0.0",
-    "sdk.platform": "ios-native",
     "...eventSpecificAttributes": "..."
   }
 }
@@ -213,11 +216,14 @@ in `PLAN-iOS.md` § "Backend asks".
 | Field                     | Value                            | Notes                                                  |
 |---------------------------|----------------------------------|--------------------------------------------------------|
 | Outer batch `type`        | `"telemetry_batch"`              | Never the old `"batch"` value                          |
+| `contract_version`        | `"4.0.0"`                        | Root; R11                                              |
+| Root keys                 | exactly 8                        | `type, contract_version, timestamp, batch_size, device_id, sdk, app, events` |
+| `sdk.name`, `app.platform` | `"ios"`, `"ios"`                | Envelope; `sdk.platform` / `"ios-native"` is gone      |
 | Per-event `type`          | `"event"` (or `"metric"`)        | Discriminator                                          |
 | `eventName`               | see mapping table below          | Backend routes by this; unknown names are dropped      |
-| `timestamp`               | ISO 8601 string with fractional  | `ISO8601DateFormatter` with `withFractionalSeconds`    |
-| `attributes`              | flat key-value object            | Primitives only, no nesting, no arrays of objects      |
-| `app.package_name`        | in `attributes`                  | NOT `app.package`                                      |
+| `timestamp`               | ISO 8601 UTC, fractional, `Z`    | `ISO8601DateFormatter` with `withFractionalSeconds`    |
+| `attributes`              | flat key-value object            | Primitives only, no nesting; no identity keys          |
+| `app.package_name`        | envelope `app.package_name`      | NOT `app.package`                                      |
 | `session.start_time`      | in `attributes`                  | NOT `session.startTime`                                |
 | `device.platform_version` | in `attributes`                  | NOT `device.osVersion`                                 |
 | Auth header               | `X-API-Key`                      | Value MUST start with `"edge_"`                        |
@@ -283,6 +289,7 @@ and logged when `debug == true`.
 | `RumAction.complete()` / `fail()` / abandon  | `action.ended` (`action.outcome`)                | same; abandon on rotation, next launch (`process_death`), 600 s `timeout`     |
 | `EdgeRum.markScreenReady()` / abandon        | (`metric`, `metricName` = `"screen_ready"`, `screen.ready_outcome`) | `Sources/EdgeRum/EdgeRum.swift` (token: `EdgeRumCore/Riders.swift`) |
 | `EdgeRum.markInteractive()` (once/process)   | (`metric`, `metricName` = `"launch_interactive"`) | `Sources/EdgeRum/EdgeRum.swift` (ms from `launchStart`)                      |
+| SDK health counters (one per live batch, last) | `sdk.health`                                   | `EdgeRumCore/PayloadBuilder.swift` (#250 R4; never via `recordEvent`)         |
 
 > **Not emitted on iOS:** `LCP`, `FCP`, `CLS`, `INP`, `TTFB`. iOS has
 > no native analogue to Web Vitals. Confirmation that the backend
@@ -290,7 +297,9 @@ and logged when `debug == true`.
 > `PLAN-iOS.md` § "Backend asks" item 3.
 >
 > **Not emitted on iOS:** any `eventName` outside this table. The
-> backend silently drops unknowns. The allowlist is exactly 15 names;
+> backend silently drops unknowns. The allowlist is exactly 15 names
+> (`sdk.health` is outside it: the SDK builds it in `PayloadBuilder`,
+> never through `recordEvent`, contract 4.0.0 R4);
 > `metricName` has its own 8-name allowlist (`Recorder.allowedMetricNames`:
 > `resource_timing`, `long_task`, `frame_render_time`, `memory_usage`,
 > `cpu_usage`, `custom_timer`, `screen_ready`, `launch_interactive`).
@@ -318,8 +327,9 @@ authoritative attribute list; it has not been copied into this repo yet.
 
 ## Recorder + transport implementation notes
 
-Because every event carries the full context (app, device, session,
-user, network) as flat attributes, the internal `Recorder` must:
+Because every event carries the non-identity context (device, session,
+user, network) as flat attributes, and the envelope carries the
+identity (app, SDK, device id), the internal `Recorder` must:
 
 1. Hold a `ContextProvider` that snapshots app/device/network/session/
    user attributes into an in-memory `AttributeBag`. Updated on init
@@ -328,14 +338,10 @@ user, network) as flat attributes, the internal `Recorder` must:
 2. On each `recordEvent` / `recordMetric` call, merge:
    `contextBag.merging(eventBag) { _, new in new }` (event attributes
    win on conflict).
-3. Build the outer envelope at flush time:
-   ```
-   { "type": "telemetry_batch",
-     "timestamp": <ISO 8601 of flush time>,
-     "location"?: <from config or resolved>,
-     "batch_size": events.count,
-     "events": [...] }
-   ```
+3. Build the outer envelope at flush time via `PayloadBuilder.build`:
+   identity lifted out of the context bag into `device_id` / `sdk` /
+   `app`, stripped from every event, `sdk.health` appended last (see
+   "Envelope structure").
 4. Never nest objects inside `attributes`. All values must be one of
    `String`, `Int`, `Double`, `Bool`. The `AttributeValue` enum
    enforces this at the type level — see
@@ -431,12 +437,12 @@ short form:
 public struct EdgeRumConfig {
     public var apiKey: String                     // sent as X-API-Key — must start with "edge_"
     public var endpoint: URL                      // required; no default; host app provides
-    public var appName: String?                   // used as app.name in all events
-    public var appVersion: String?                // used as app.version
-    public var appPackage: String?                // used as app.package_name
-    public var appBuild: String?                  // used as app.build_number; omitted when nil
-    public var environment: Environment?          // .production, .staging, .development
-    public var location: String?                  // batch envelope location, e.g. "Nairobi/Kenya"
+    public var appName: String?                   // envelope app.name
+    public var appVersion: String?                // envelope app.version; omitted when nil
+    public var appPackage: String?                // envelope app.package_name
+    public var appBuild: String?                  // envelope app.build_number; omitted when nil
+    @available(*, deprecated) public var environment: Environment?  // ignored (#250 R8)
+    @available(*, deprecated) public var location: String?          // ignored (#250 R7)
     public var sampleRate: Double = 1.0           // 0.0–1.0; per-session
     public var ignoreUrls: [NSRegularExpression] = []
     public var maxQueueSize: Int = 200
@@ -537,12 +543,15 @@ Test target: `Tests/EdgeRumContractTests/` carries the wire conformance
 tests. Every transport-touching test must use the `WireAssertions`
 helper, which asserts:
 
-- Envelope: `type == "telemetry_batch"`, `timestamp` is ISO 8601 string,
-  `batch_size == events.count`.
-- Per-event: `type ∈ {"event","metric"}`, `timestamp` present.
-- Identity attrs present and well-formed: `session.id` has
-  `"session_"` prefix, `device.id` has `"device_"` prefix,
-  `sdk.platform == "ios-native"`.
+- Envelope: exactly the eight 4.0 root keys, `type == "telemetry_batch"`,
+  `contract_version == "4.0.0"`, `timestamp` ISO 8601 UTC with `Z`,
+  `batch_size == events.count`, `device_id` has the `"device_"` prefix,
+  `sdk.name == "ios"`, `app.platform == "ios"`, no `""` in `app`.
+- Per-event: `type ∈ {"event","metric"}`, `timestamp` present, no
+  identity key (`PayloadBuilder.isIdentityKey`); `sdk.health` only last.
+- `session.id` on each event has the `"session_"` prefix.
+- `assertValidEnvelope` returns `json["events"]` without the trailing
+  `sdk.health` event; `Contract4EnvelopeTests` pins it.
 - No forbidden tokens anywhere in the raw bytes:
   `traceId`, `spanId`, `resourceSpans`, `opentelemetry`.
 - `attributes` values are all primitives — `String`/`Int`/`Double`/`Bool`.
@@ -561,7 +570,7 @@ fixture (frozen `Clock`, frozen `IdentityProvider`, frozen
 diffs against the fixture. The fixture is reviewed against the Android
 and web SDKs' equivalent fixtures so the platforms stay aligned modulo
 platform-specific values (`device.platform`, `device.model`,
-`sdk.platform`).
+`sdk.name`, `app.platform`).
 
 ---
 
@@ -695,6 +704,9 @@ Breadcrumbs (F31) live in their own `Library/Caches/edge-rum/breadcrumbs.json`
 none while idle, carries its own `session.id`. `EdgeRum.start()` reads and
 deletes it; replay attaches it to `app.crash` only on a sidecar `session.id`
 match. Deleted on rotation and `resetIdentity()`.
+
+#250 (R14) adds `app.build_number` / `app.name` and drops `sdk.platform`:
+a replayed crash / hang is sent under the build that saved it.
 
 F33 adds `app.version` / `device.platform_version` to the mirrored identity
 and a `session.clean_exit` marker written at `willTerminate`.

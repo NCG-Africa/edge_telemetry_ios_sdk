@@ -188,8 +188,8 @@ public enum EdgeRum {
         }
 
         // Hand the full settings to the internal Recorder before
-        // it starts so context snapshots, sample rate, batch size,
-        // and location are all in place when the first event lands.
+        // it starts so context snapshots, sample rate and batch size
+        // are all in place when the first event lands.
         Recorder.shared.configure(RecorderConfig(
             apiKey: config.apiKey,
             endpoint: config.endpoint,
@@ -197,12 +197,11 @@ public enum EdgeRum {
             sampleRate: config.sampleRate,
             batchSize: config.batchSize,
             flushInterval: config.flushInterval,
-            location: config.location,
             appName: config.appName,
             appVersion: config.appVersion,
             appPackage: config.appPackage,
             appBuild: config.appBuild,
-            environmentName: config.environment?.rawValue
+            sdkVersion: EdgeRum.sdkVersion
         ))
         // F14 — replay BEFORE rotating to a new session. If the prior
         // launch crashed, PLCrashIntegration reads the pending PLCR

@@ -79,10 +79,13 @@ public final class SessionSidecar: SessionSidecarWriting, @unchecked Sendable {
         "user.id",
         "device.id",
         "sdk.version",
-        "sdk.platform",
         // F33 — upgrade exclusion for `previous_session.*`.
         "app.version",
-        "device.platform_version"
+        "device.platform_version",
+        // #250 R14 — a replayed crash / hang is sent on the build that
+        // saved it.
+        "app.build_number",
+        "app.name"
     ]
 
     /// Present (`true`) once `willTerminate` was observed (F33).

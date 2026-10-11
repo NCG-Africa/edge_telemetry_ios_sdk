@@ -26,6 +26,14 @@ final class SamplePayloadDocTests: XCTestCase {
 
         XCTAssertEqual(envelope["type"] as? String, "telemetry_batch",
                        "outer envelope must use the wire-contract `telemetry_batch` discriminator")
+        // Contract 4.0.0 (#250): closed root, identity in the envelope.
+        XCTAssertEqual(Set(envelope.keys), [
+            "type", "contract_version", "timestamp", "batch_size", "device_id", "sdk", "app", "events"
+        ])
+        XCTAssertEqual(envelope["contract_version"] as? String, "4.0.0")
+        XCTAssertTrue((envelope["device_id"] as? String)?.hasPrefix("device_") == true)
+        XCTAssertEqual((envelope["sdk"] as? [String: Any])?["name"] as? String, "ios")
+        XCTAssertEqual((envelope["app"] as? [String: Any])?["platform"] as? String, "ios")
 
         let timestamp = envelope["timestamp"] as? String
         XCTAssertNotNil(timestamp, "envelope.timestamp must be present")
@@ -57,21 +65,17 @@ final class SamplePayloadDocTests: XCTestCase {
                 continue
             }
 
-            XCTAssertEqual(attributes["sdk.platform"] as? String, "ios-native",
-                           "event[\(idx)].attributes['sdk.platform'] must be \"ios-native\"")
-            XCTAssertEqual(attributes["device.platform"] as? String, "ios",
-                           "event[\(idx)].attributes['device.platform'] must be \"ios\"")
+            let identity: Set<String> = [
+                "app.name", "app.package_name", "app.version", "app.build_number", "app.environment", "device.id"
+            ]
+            for key in attributes.keys where identity.contains(key) || key.hasPrefix("sdk.") {
+                XCTFail("event[\(idx)] carries envelope identity \(key)")
+            }
             if let sessionId = attributes["session.id"] as? String {
                 XCTAssertTrue(sessionId.hasPrefix("session_"),
                               "session.id must start with \"session_\", got \(sessionId)")
             } else {
                 XCTFail("event[\(idx)] missing session.id attribute")
-            }
-            if let deviceId = attributes["device.id"] as? String {
-                XCTAssertTrue(deviceId.hasPrefix("device_"),
-                              "device.id must start with \"device_\", got \(deviceId)")
-            } else {
-                XCTFail("event[\(idx)] missing device.id attribute")
             }
 
             // Primitives-only — no nested objects or arrays allowed

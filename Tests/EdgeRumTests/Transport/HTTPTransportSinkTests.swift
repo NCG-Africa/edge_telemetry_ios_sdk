@@ -22,7 +22,7 @@ final class HTTPTransportSinkTests: XCTestCase {
             userAgent: "EdgeRum-iOS/1.0.0 (X; iOS 17)"
         )
 
-        let envelope = EventEnvelope(timestamp: Date(), location: nil, events: [])
+        let envelope = EventEnvelope(timestamp: Date(), deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios", sdkVersion: "1.0.0", app: AppContext(), events: [])
         // Empty events still encode to a valid envelope (`batch_size: 0`).
         transport.nextOutcome = .success(status: 200)
         sink.send(envelope, reason: .immediate)
@@ -46,7 +46,7 @@ final class HTTPTransportSinkTests: XCTestCase {
         )
 
         transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
-        let envelope = EventEnvelope(timestamp: Date(), location: nil, events: [])
+        let envelope = EventEnvelope(timestamp: Date(), deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios", sdkVersion: "1.0.0", app: AppContext(), events: [])
         sink.send(envelope, reason: .immediate)
 
         XCTAssertTrue(transport.waitForPosts(count: 4, timeout: 3))
@@ -116,7 +116,7 @@ extension HTTPTransportSinkTests {
 
     private func threeEvents() -> EventEnvelope {
         let e = Event.event(name: "navigation", timestamp: Date(), attributes: AttributeBag([:]))
-        return EventEnvelope(timestamp: Date(), location: nil, events: [e, e, e])
+        return EventEnvelope(timestamp: Date(), deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios", sdkVersion: "1.0.0", app: AppContext(), events: [e, e, e])
     }
 
     private func waitUntil(_ condition: @escaping () -> Bool) {
@@ -131,10 +131,30 @@ extension HTTPTransportSinkTests {
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
         sink.send(threeEvents(), reason: .immediate)
         sink.send(threeEvents(), reason: .immediate)
-        waitUntil { health.snapshot()["sdk.batches_uploaded"] == .int(2) }
+        waitUntil { health.snapshot()["batches_uploaded"] == .int(2) }
 
-        XCTAssertEqual(health.snapshot()["sdk.events_uploaded"], .int(6))
-        XCTAssertNil(health.snapshot()["sdk.upload_failures"])
+        XCTAssertEqual(health.snapshot()["events_uploaded"], .int(6))
+        XCTAssertNil(health.snapshot()["upload_failures"])
+    }
+
+    /// #250 R4: `batch_size` counts `sdk.health`; `events_uploaded` does not.
+    func testEventsUploadedExcludesTheHealthEvent() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
+                                     apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
+        let e = Event.event(name: "navigation", timestamp: Date(), attributes: AttributeBag())
+        let envelope = PayloadBuilder().build(
+            events: [e, e, e],
+            context: AttributeBag(["device.id": "device_1717234876123_a1b2c3d4e5f60718_ios"]),
+            flushTime: Date(),
+            health: ["events_generated": 3]
+        )
+        XCTAssertEqual(envelope.batchSize, 4)
+        sink.send(envelope, reason: .immediate)
+        waitUntil { health.snapshot()["batches_uploaded"] == .int(1) }
+
+        XCTAssertEqual(health.snapshot()["events_uploaded"], .int(3))
     }
 
     func testProcessCountersCorrectWhenNineInTenUploadsFail() {
@@ -144,15 +164,15 @@ extension HTTPTransportSinkTests {
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
         transport.alwaysOutcome = .failure(status: 400, retryAfter: nil)
         for _ in 0..<9 { sink.send(threeEvents(), reason: .immediate) }
-        waitUntil { health.snapshot()["sdk.upload_failures"] == .int(9) }
+        waitUntil { health.snapshot()["upload_failures"] == .int(9) }
         transport.alwaysOutcome = nil
         sink.send(threeEvents(), reason: .immediate)
-        waitUntil { health.snapshot()["sdk.batches_uploaded"] == .int(1) }
+        waitUntil { health.snapshot()["batches_uploaded"] == .int(1) }
 
         let snap = health.snapshot()
-        XCTAssertEqual(snap["sdk.events_dropped.non_retryable"], .int(27))
-        XCTAssertEqual(snap["sdk.events_uploaded"], .int(3))
-        XCTAssertEqual(snap["sdk.upload_failures"], .int(9))
+        XCTAssertEqual(snap["events_dropped.non_retryable"], .int(27))
+        XCTAssertEqual(snap["events_uploaded"], .int(3))
+        XCTAssertEqual(snap["upload_failures"], .int(9))
     }
 
     func testNonRetryableCountsEventsAndFailure() {
@@ -162,10 +182,10 @@ extension HTTPTransportSinkTests {
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
         sink.send(threeEvents(), reason: .immediate)
-        waitUntil { health.snapshot()["sdk.events_dropped.non_retryable"] != nil }
+        waitUntil { health.snapshot()["events_dropped.non_retryable"] != nil }
 
-        XCTAssertEqual(health.snapshot()["sdk.events_dropped.non_retryable"], .int(3))
-        XCTAssertEqual(health.snapshot()["sdk.upload_failures"], .int(1))
+        XCTAssertEqual(health.snapshot()["events_dropped.non_retryable"], .int(3))
+        XCTAssertEqual(health.snapshot()["upload_failures"], .int(1))
     }
 
     func testMissingOfflineQueueCountsEnqueueFailure() {
@@ -176,10 +196,75 @@ extension HTTPTransportSinkTests {
                                      offlineQueue: nil, apiKey: "edge_t", userAgent: "ua",
                                      pathObserver: nil, health: health)
         sink.send(threeEvents(), reason: .immediate)
-        waitUntil { health.snapshot()["sdk.events_dropped.enqueue_failure"] != nil }
+        waitUntil { health.snapshot()["events_dropped.enqueue_failure"] != nil }
 
-        XCTAssertEqual(health.snapshot()["sdk.events_dropped.enqueue_failure"], .int(3))
-        XCTAssertEqual(health.snapshot()["sdk.upload_failures"], .int(4))
+        XCTAssertEqual(health.snapshot()["events_dropped.enqueue_failure"], .int(3))
+        XCTAssertEqual(health.snapshot()["upload_failures"], .int(4))
+    }
+
+    // MARK: R13 — re-stamped at send time (#250)
+
+    private static func rootTimestamp(_ payload: Data) -> String? {
+        (try? JSONSerialization.jsonObject(with: payload) as? [String: Any])?["timestamp"] as? String
+    }
+
+    func testQueuedBatchIsRestampedWhenSentNotReplayedWithItsStoredTime() throws {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
+        let queue = InMemoryQueue()
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
+        let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.001, 0.001, 0.001]),
+                                     offlineQueue: queue, apiKey: "edge_t", userAgent: "ua",
+                                     pathObserver: nil, health: SdkHealth(), now: { clock.now })
+        let event = Event.event(name: "navigation", timestamp: clock.now, attributes: AttributeBag())
+        sink.send(PayloadBuilder().build(events: [event], context: AttributeBag(), flushTime: clock.now), reason: .immediate)
+        waitUntil { queue.payloads.count == 1 }
+        XCTAssertEqual(queue.payloads.first.flatMap(Self.rootTimestamp), "2024-06-01T09:41:16.512Z")
+
+        clock.advance(by: 3_600)
+        transport.alwaysOutcome = nil
+        let before = transport.posts.count
+        sink.drainOfflineQueue()
+        XCTAssertTrue(transport.waitForPosts(count: before + 1, timeout: 3))
+
+        let sent = try XCTUnwrap(transport.posts.last)
+        XCTAssertEqual(Self.rootTimestamp(sent), "2024-06-01T10:41:16.512Z")
+        let events = (try JSONSerialization.jsonObject(with: sent) as? [String: Any])?["events"] as? [[String: Any]]
+        XCTAssertEqual(events?.first?["timestamp"] as? String, "2024-06-01T09:41:16.512Z", "event times are kept")
+    }
+
+    func testRetryAttemptsAreRestamped() throws {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
+        transport.nextOutcome = .failure(status: 503, retryAfter: nil)
+        let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.2, 0.2, 0.2]),
+                                     offlineQueue: InMemoryQueue(), apiKey: "edge_t", userAgent: "ua",
+                                     pathObserver: nil, health: SdkHealth(), now: { clock.now })
+        sink.send(PayloadBuilder().build(events: [], context: AttributeBag(), flushTime: clock.now), reason: .immediate)
+        XCTAssertTrue(transport.waitForOnePost(timeout: 3))
+        clock.advance(by: 2)
+        XCTAssertTrue(transport.waitForPosts(count: 2, timeout: 3))
+        XCTAssertEqual(transport.posts.map { Self.rootTimestamp($0) }, ["2024-06-01T09:41:16.512Z", "2024-06-01T09:41:18.512Z"])
+    }
+
+    /// A `"timestamp":"` inside an attribute string is escaped, so only
+    /// the root stamp changes.
+    func testRestampIgnoresTimestampTextInsideStringValues() throws {
+        let t0 = Date(timeIntervalSince1970: 1_717_234_876.512)
+        let trap = #"{"timestamp":"1999-01-01T00:00:00.000Z"}"#
+        let event = Event.event(name: "custom_event", timestamp: t0, attributes: AttributeBag(["note": .string(trap)]))
+        let envelope = PayloadBuilder().build(events: [event], context: AttributeBag(), flushTime: t0)
+        let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys]
+        let restamped = EventEnvelope.restamp(try enc.encode(envelope), at: t0.addingTimeInterval(60))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: restamped) as? [String: Any])
+        XCTAssertEqual(root["timestamp"] as? String, "2024-06-01T09:42:16.512Z")
+        let attrs = (root["events"] as? [[String: Any]])?.first?["attributes"] as? [String: Any]
+        XCTAssertEqual(attrs?["note"] as? String, trap)
+    }
+
+    func testRestampLeavesLegacyPayloadsUntouched() {
+        let legacy = Data(#"{"type":"telemetry_batch","timestamp":"2024-06-01T09:41:16.512Z","events":[]}"#.utf8)
+        XCTAssertEqual(EventEnvelope.restamp(legacy, at: Date()), legacy)
     }
 
     func testUnencodableEnvelopeCountsEncodeFailure() {
@@ -188,10 +273,10 @@ extension HTTPTransportSinkTests {
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
         let nan = Event.event(name: "navigation", timestamp: Date(), attributes: AttributeBag(["x": .double(.nan)]))
-        sink.send(EventEnvelope(timestamp: Date(), location: nil, events: [nan, nan]), reason: .immediate)
-        waitUntil { health.snapshot()["sdk.events_dropped.encode_failure"] != nil }
+        sink.send(EventEnvelope(timestamp: Date(), deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios", sdkVersion: "1.0.0", app: AppContext(), events: [nan, nan]), reason: .immediate)
+        waitUntil { health.snapshot()["events_dropped.encode_failure"] != nil }
 
-        XCTAssertEqual(health.snapshot()["sdk.events_dropped.encode_failure"], .int(2))
+        XCTAssertEqual(health.snapshot()["events_dropped.encode_failure"], .int(2))
         XCTAssertTrue(transport.posts.isEmpty)
     }
 }

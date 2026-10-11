@@ -43,6 +43,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
     private let log: OSLog
     private let debug: Bool
     private let health: SdkHealth
+    private let now: @Sendable () -> Date
 
     private weak var recorder: Recorder?
 
@@ -62,9 +63,11 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
         queue: DispatchQueue = DispatchQueue(label: "edge.rum.transport", qos: .utility),
         pathObserver: NetworkPathObserver? = NetworkPathObserver(),
         log: OSLog = OSLog(subsystem: "com.edge.rum", category: "HTTPTransportSink"),
-        health: SdkHealth = .shared
+        health: SdkHealth = .shared,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.health = health
+        self.now = now
         self.transport = transport
         self.retryPolicy = retryPolicy
         self.offlineQueue = offlineQueue
@@ -107,7 +110,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
         do {
             data = try Self.encoder.encode(envelope)
         } catch {
-            health.add(.encodeFailure, envelope.events.count)
+            health.add(.encodeFailure, envelope.recordedEventCount)
             if debug {
                 os_log(
                     "HTTPTransportSink encode failed: %{public}@",
@@ -118,10 +121,12 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             }
             return
         }
-        attempt(data: data, eventCount: envelope.events.count, attempt: 1)
+        attempt(data: data, eventCount: envelope.recordedEventCount, attempt: 1)
     }
 
     private func attempt(data: Data, eventCount: Int, attempt: Int) {
+        // R13: every POST carries its own send time, retries included.
+        let data = attempt == 1 ? data : EventEnvelope.restamp(data, at: now())
         transport.post(data) { [weak self] outcome in
             guard let self else { return }
             self.queue.async {
@@ -195,7 +200,8 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             // `var` mutated from inside the post callback.
             let semaphore = DispatchSemaphore(value: 0)
             let outcomeBox = OutcomeBox()
-            self.transport.post(payload) { outcome in
+            // R13: a queued batch is re-stamped, never sent with its stored time.
+            self.transport.post(EventEnvelope.restamp(payload, at: self.now())) { outcome in
                 if case .success = outcome { outcomeBox.markSuccess() }
                 semaphore.signal()
             }
@@ -252,7 +258,8 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
 
     private static let encoder: JSONEncoder = {
         let e = JSONEncoder()
-        e.outputFormatting = []
+        // `EventEnvelope.restamp` relies on sorted root keys.
+        e.outputFormatting = [.sortedKeys]
         return e
     }()
 }

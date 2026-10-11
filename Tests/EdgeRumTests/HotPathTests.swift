@@ -114,7 +114,7 @@ final class HotPathTests: XCTestCase {
         XCTAssertEqual(file.read()?["session.sequence"], .int(1))
     }
 
-    // MARK: (b) sdk.thread_time_ms
+    // MARK: (b) sdk.health thread_time_ms
 
     func testEnvelopeCarriesCumulativeThreadTime() throws {
         let (recorder, sink) = makeRecorder()
@@ -129,7 +129,8 @@ final class HotPathTests: XCTestCase {
         XCTAssertGreaterThan(second, first, "cumulative, never a delta")
 
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(sink.envelopes.last!)) as? [String: Any]
-        XCTAssertEqual(json?["sdk.thread_time_ms"] as? Int, second)
+        let health = (json?["events"] as? [[String: Any]])?.last?["attributes"] as? [String: Any]
+        XCTAssertEqual(health?["thread_time_ms"] as? Int, second)
     }
 
     func testThreadTimeResetsOnSessionRotation() throws {
@@ -261,5 +262,14 @@ private final class SeqBytes: @unchecked Sendable {
         counter &+= 1
         var v = counter.bigEndian
         return withUnsafeBytes(of: &v) { Data($0) }
+    }
+}
+
+private extension EventEnvelope {
+    /// `thread_time_ms` from the batch's `sdk.health` event.
+    var sdkThreadTimeMs: Int? {
+        guard case .int(let ms)? = events.last(where: { $0.name == PayloadBuilder.healthEventName })?
+            .attributes["thread_time_ms"] else { return nil }
+        return ms
     }
 }

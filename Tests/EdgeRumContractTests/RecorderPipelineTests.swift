@@ -20,8 +20,7 @@ final class RecorderPipelineContractTests: XCTestCase {
         recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         recorder.configure(RecorderConfig(
             apiKey: "edge_test_abc",
-            endpoint: URL(string: "https://collect.example.com")!,
-            location: "Nairobi/Kenya"
+            endpoint: URL(string: "https://collect.example.com")!
         ))
         return (recorder, sink, clock)
     }
@@ -35,7 +34,7 @@ final class RecorderPipelineContractTests: XCTestCase {
         recorder.flush(reason: .manual)
         let envelope = try XCTUnwrap(sink.envelopes.first)
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
-        XCTAssertEqual(json["location"] as? String, "Nairobi/Kenya")
+        XCTAssertNil(json["location"])
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)

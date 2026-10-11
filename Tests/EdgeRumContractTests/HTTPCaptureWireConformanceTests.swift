@@ -35,8 +35,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         recorder.setEnabled(true)  // #212: enqueue is consent-gated; start() is the usual enable boundary
         recorder.configure(RecorderConfig(
             apiKey: "edge_test_abc",
-            endpoint: URL(string: "https://collect.example.com")!,
-            location: "Nairobi/Kenya"
+            endpoint: URL(string: "https://collect.example.com")!
         ))
         return (recorder, sink)
     }

@@ -20,7 +20,6 @@ import Foundation
 /// )
 /// config.appName = "Shop"
 /// config.appVersion = "2.1.0"
-/// config.environment = .production
 /// EdgeRum.start(config)
 /// ```
 public struct EdgeRumConfig: Sendable {
@@ -37,7 +36,7 @@ public struct EdgeRumConfig: Sendable {
     /// `debug == true`.
     public var endpoint: URL
 
-    /// Host app display name. Sent as `app.name` on every event.
+    /// Host app display name. Sent as `app.name` on every batch.
     public var appName: String?
 
     /// Host app version (SemVer). Sent as `app.version`.
@@ -50,13 +49,16 @@ public struct EdgeRumConfig: Sendable {
     /// from the wire when `nil`.
     public var appBuild: String?
 
-    /// Deployment environment. Sent as `app.environment`.
+    /// Deprecated and ignored: never sent. The API key selects the
+    /// environment.
+    @available(*, deprecated, message: "Ignored: the API key selects the environment.")
     public var environment: Environment?
 
     // MARK: Location
 
-    /// Optional batch-level location string in `City/Country` form
-    /// (e.g. `"Nairobi/Kenya"`). Sent as-is on every batch.
+    /// Deprecated and ignored: never sent. Location is derived from
+    /// the request's IP address on the backend.
+    @available(*, deprecated, message: "Ignored: location is derived server-side.")
     public var location: String?
 
     // MARK: Sampling + queuing

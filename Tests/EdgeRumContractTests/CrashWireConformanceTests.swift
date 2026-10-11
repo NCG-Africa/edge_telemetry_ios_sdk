@@ -66,7 +66,6 @@ final class CrashWireConformanceTests: XCTestCase {
         let envelope = builder.build(
             events: [event],
             context: context,
-            location: "Nairobi/Kenya",
             flushTime: now
         )
 
@@ -91,7 +90,8 @@ final class CrashWireConformanceTests: XCTestCase {
         // a replayed crash (per PLAN-iOS §6.7, §8.4).
         XCTAssertEqual(evAttrs["session.id"] as? String,
                        "session_1717234870002_ff009988aabbccdd_ios")
-        XCTAssertEqual(evAttrs["device.id"] as? String,
-                       "device_1717234876123_a1b2c3d4e5f60718_ios")
+        XCTAssertNil(evAttrs["device.id"], "R1: device identity rides the envelope")
+        XCTAssertEqual(json["device_id"] as? String, "device_0_0000000000000000_ios",
+                       "the envelope's device_id comes from the live context")
     }
 }

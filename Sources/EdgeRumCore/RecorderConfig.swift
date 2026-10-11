@@ -20,12 +20,12 @@ public struct RecorderConfig: Sendable, Hashable {
     public var sampleRate: Double
     public var batchSize: Int
     public var flushInterval: TimeInterval
-    public var location: String?
     public var appName: String?
     public var appVersion: String?
     public var appPackage: String?
     public var appBuild: String?
-    public var environmentName: String?
+    /// `EdgeRum.sdkVersion`; `nil` keeps the Recorder's init value.
+    public var sdkVersion: String?
 
     public init(
         apiKey: String,
@@ -34,12 +34,11 @@ public struct RecorderConfig: Sendable, Hashable {
         sampleRate: Double = 1.0,
         batchSize: Int = 30,
         flushInterval: TimeInterval = 5.0,
-        location: String? = nil,
         appName: String? = nil,
         appVersion: String? = nil,
         appPackage: String? = nil,
         appBuild: String? = nil,
-        environmentName: String? = nil
+        sdkVersion: String? = nil
     ) {
         self.apiKey = apiKey
         self.endpoint = endpoint
@@ -47,11 +46,10 @@ public struct RecorderConfig: Sendable, Hashable {
         self.sampleRate = sampleRate
         self.batchSize = batchSize
         self.flushInterval = flushInterval
-        self.location = location
         self.appName = appName
         self.appVersion = appVersion
         self.appPackage = appPackage
         self.appBuild = appBuild
-        self.environmentName = environmentName
+        self.sdkVersion = sdkVersion
     }
 }

@@ -2068,3 +2068,42 @@ without the host; both ship as host calls.
    consume). Metric `launch_interactive`, ms on `CLOCK_MONOTONIC_RAW`
    from `PageLoadCapture.launchStartNs`, the `page_load` anchor.
 4. Metric allowlist 6 → 8. Both rows follow session sampling.
+
+## ADR-029 — Contract 4.0.0 envelope (#250): identity keys only, splice the re-stamp, omit unsaved build keys
+
+**Date:** 2026-10-11
+
+**Status:** Accepted.
+
+**Context.** #250 moves app / SDK / device identity into a closed
+eight-key envelope (R1, R3), turns the health counters into an
+`sdk.health` event (R4), re-stamps queued batches at send (R13) and sends
+a replayed crash or hang alone under its saved build (R14).
+
+**Decision.**
+
+1. **Strip identity keys, not every `app.*`.** R1 forbids `app.*` on
+   events, but `app.state` (F28 rider) and `app.background_refresh`
+   (storage context) are event data, not identity. `PayloadBuilder`
+   strips `app.name`, `app.package_name`, `app.version`,
+   `app.build_number`, `app.platform`, `app.environment`, every `sdk.*`
+   and `device.id` — context- and event-supplied — and keeps the rest.
+2. **Splice the re-stamp in place.** The offline queue stores encoded
+   bytes; a `JSONSerialization` round-trip rewrites doubles
+   (`0.82` → `0.81999999999999995`). The production encoder now sorts
+   keys, so the root `timestamp` is the last `"timestamp":"` in a 4.x
+   payload and `EventEnvelope.restamp` replaces its 24 bytes. Pre-4.0
+   queue files (no key order guarantee) are sent unchanged.
+3. **Unsaved build keys are omitted, not borrowed.** A sidecar written
+   by SDK ≤ 2.0.0 mirrors `app.version` but not `app.build_number` /
+   `app.name`. The replay envelope then omits them (the processor stores
+   `unknown`) rather than pairing the old version with the current build.
+4. **Replay keeps the ingress gate.** `Recording.recordReplayed` runs the
+   same allowlist, session touch and sampler as `recordEvent` (a
+   replayed `app.hang` stays sampled), then sends a one-event batch with
+   no `sdk.health`; live events stay buffered for the next batch.
+
+**Consequences.** `action.ended` closed as `process_death` (F36) still
+rides a live batch, so after an app update it is filed under the
+current build. Out of #250's scope (R14 names crash and hang only).
+

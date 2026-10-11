@@ -18,8 +18,7 @@ final class RecorderTests: XCTestCase {
     private func makeRecorder(
         batchSize: Int = 30,
         sampleRate: Double = 1.0,
-        debug: Bool = false,
-        location: String? = nil
+        debug: Bool = false
     ) -> (recorder: Recorder, sink: RecordingTransportSink, clock: FixedClock) {
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
         let sink = RecordingTransportSink()
@@ -36,8 +35,7 @@ final class RecorderTests: XCTestCase {
             debug: debug,
             sampleRate: sampleRate,
             batchSize: batchSize,
-            flushInterval: 5.0,
-            location: location
+            flushInterval: 5.0
         ))
         return (recorder, sink, clock)
     }
@@ -57,8 +55,8 @@ final class RecorderTests: XCTestCase {
         recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
         recorder.flush(reason: .manual)
         XCTAssertEqual(sink.envelopes.count, 1)
-        XCTAssertEqual(sink.envelopes.first?.events.count, 1)
-        XCTAssertEqual(sink.envelopes.first?.events.first?.name, "navigation")
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.count, 1)
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.first?.name, "navigation")
     }
 
     func testAllowedEventNamesContainsExpectedSet() {
@@ -83,7 +81,7 @@ final class RecorderTests: XCTestCase {
         XCTAssertTrue(sink.envelopes.isEmpty, "No flush yet at 2 events")
         recorder.recordEvent(name: "navigation", attributes: [:])
         XCTAssertEqual(sink.envelopes.count, 1)
-        XCTAssertEqual(sink.envelopes.first?.events.count, 3)
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.count, 3)
         XCTAssertEqual(sink.sends.first?.reason, .batchSize)
     }
 
@@ -92,7 +90,7 @@ final class RecorderTests: XCTestCase {
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.recordEvent(name: "http.request", attributes: [:])
         recorder.flush(reason: .manual)
-        XCTAssertEqual(sink.envelopes.first?.events.count, 2)
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.count, 2)
     }
 
     func testFlushOnEmptyBufferIsNoOp() {
@@ -110,7 +108,7 @@ final class RecorderTests: XCTestCase {
         recorder.recordEvent(name: "app.crash", attributes: ["runtime": "native"])
         XCTAssertEqual(sink.envelopes.count, 1)
         XCTAssertEqual(sink.sends.first?.reason, .immediate)
-        XCTAssertEqual(sink.envelopes.first?.events.first?.name, "app.crash")
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.first?.name, "app.crash")
     }
 
     // F29 acceptance: a `captureError` call neither bypasses the
@@ -121,7 +119,7 @@ final class RecorderTests: XCTestCase {
         recorder.recordEvent(name: "app.hang", attributes: ["runtime": "native"])
         XCTAssertTrue(sink.envelopes.isEmpty)
         recorder.flush(reason: .manual)
-        XCTAssertEqual(sink.envelopes.first?.events.map(\.name), ["app.error", "app.hang"])
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.map(\.name), ["app.error", "app.hang"])
     }
 
     func testAppErrorAndAppHangFollowTheSampler() {
@@ -150,7 +148,7 @@ final class RecorderTests: XCTestCase {
         let (recorder, sink, _) = makeRecorder()
         recorder.setUser(RecorderUser(id: "ext-1", name: "Asha", email: "a@b.c", phone: nil))
         recorder.flush(reason: .manual)
-        let event = sink.envelopes.first?.events.first
+        let event = sink.envelopes.first?.recordedEvents.first
         XCTAssertEqual(event?.name, "user.profile.update")
         XCTAssertEqual(event?.attributes["user.name"], .string("Asha"))
         XCTAssertEqual(event?.attributes["user.email"], .string("a@b.c"))
@@ -164,7 +162,7 @@ final class RecorderTests: XCTestCase {
         let (recorder, sink, _) = makeRecorder()
         recorder.recordPerformance(name: "custom_timer", attributes: ["duration_ms": 250])
         recorder.flush(reason: .manual)
-        guard case let .metric(name, value, _, attributes) = sink.envelopes.first?.events.first else {
+        guard case let .metric(name, value, _, attributes) = sink.envelopes.first?.recordedEvents.first else {
             return XCTFail("Expected a metric Event")
         }
         XCTAssertEqual(name, "custom_timer")
@@ -189,7 +187,7 @@ final class RecorderTests: XCTestCase {
         let (recorder, sink, _) = makeRecorder()
         recorder.recordPerformance(name: "long_task", attributes: ["value": 72.5, "long_task.threshold_ms": 50.0])
         recorder.flush(reason: .manual)
-        guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.events.first else {
+        guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.recordedEvents.first else {
             return XCTFail("Expected a metric Event")
         }
         XCTAssertEqual(value, 72.5)
@@ -201,7 +199,7 @@ final class RecorderTests: XCTestCase {
         let (recorder, sink, _) = makeRecorder()
         recorder.recordPerformance(name: "long_task", attributes: ["value": .int(80)])
         recorder.flush(reason: .manual)
-        guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.events.first else {
+        guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.recordedEvents.first else {
             return XCTFail("Expected a metric Event")
         }
         XCTAssertEqual(value, 80)
@@ -228,7 +226,7 @@ final class RecorderTests: XCTestCase {
         recorder.recordEvent(name: "app.crash", attributes: [:])
         // app.crash is forced-emit AND triggers immediate flush; the
         // navigation must NOT survive.
-        let names = sink.envelopes.flatMap { $0.events.map { $0.name } }
+        let names = sink.envelopes.flatMap { $0.recordedEvents.map { $0.name } }
         XCTAssertEqual(names, ["app.crash"],
                        "configure() must wire sampleRate=0.0 so only forced-emit names land")
     }
@@ -240,7 +238,7 @@ final class RecorderTests: XCTestCase {
         // session.finalized triggers an immediate flush, so the
         // sink should have exactly the forced-emit event.
         XCTAssertEqual(sink.envelopes.count, 1)
-        let names = sink.envelopes.flatMap { $0.events.map { $0.name } }
+        let names = sink.envelopes.flatMap { $0.recordedEvents.map { $0.name } }
         XCTAssertEqual(names, ["session.finalized"])
     }
 
@@ -250,22 +248,23 @@ final class RecorderTests: XCTestCase {
         let (recorder, sink, _) = makeRecorder()
         recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
         recorder.flush(reason: .manual)
-        let event = sink.envelopes.first?.events.first
-        // sdk.* identity attrs are part of every emitted event.
-        XCTAssertEqual(event?.attributes["sdk.platform"], .string("ios-native"))
-        XCTAssertEqual(event?.attributes["sdk.version"], .string("1.0.0"))
+        let event = sink.envelopes.first?.recordedEvents.first
+        XCTAssertNotNil(event?.attributes["session.id"], "context rides every event")
         XCTAssertEqual(event?.attributes["navigation.kind"], .string("uikit"),
                        "Event-supplied attrs must survive the merge")
+        // #250 R1: SDK identity rides the envelope only.
+        XCTAssertNil(event?.attributes["sdk.version"])
+        XCTAssertEqual(sink.envelopes.first?.sdkVersion, "1.0.0")
     }
 
     func testEventAttrsWinOnConflictWithContext() {
         let (recorder, sink, _) = makeRecorder()
-        // sdk.version is a context-supplied key; if the event happens
-        // to set the same key, the event wins.
-        recorder.recordEvent(name: "navigation", attributes: ["sdk.version": "override"])
+        // session.id is a context-supplied key; if the event happens
+        // to set the same key, the event wins (replay relies on it).
+        recorder.recordEvent(name: "navigation", attributes: ["session.id": "override"])
         recorder.flush(reason: .manual)
-        let event = sink.envelopes.first?.events.first
-        XCTAssertEqual(event?.attributes["sdk.version"], .string("override"))
+        let event = sink.envelopes.first?.recordedEvents.first
+        XCTAssertEqual(event?.attributes["session.id"], .string("override"))
     }
 
     // MARK: Envelope timestamps (T3.5)
@@ -279,7 +278,7 @@ final class RecorderTests: XCTestCase {
         let env = sink.envelopes.first
         XCTAssertEqual(env?.timestamp, Date(timeIntervalSince1970: 200),
                        "Envelope timestamp must be flush time, not enqueue time")
-        XCTAssertEqual(env?.events.first?.timestamp, Date(timeIntervalSince1970: 100),
+        XCTAssertEqual(env?.recordedEvents.first?.timestamp, Date(timeIntervalSince1970: 100),
                        "Per-event timestamp must be the moment of recordEvent()")
     }
 
@@ -295,6 +294,6 @@ final class RecorderTests: XCTestCase {
         DispatchQueue.global().async { exp.fulfill() }
         wait(for: [exp], timeout: 2.0)
         recorder.flush(reason: .manual)
-        XCTAssertEqual(sink.envelopes.flatMap { $0.events }.count, total)
+        XCTAssertEqual(sink.envelopes.flatMap { $0.recordedEvents }.count, total)
     }
 }

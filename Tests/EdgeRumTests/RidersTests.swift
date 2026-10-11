@@ -66,7 +66,7 @@ final class RidersTests: XCTestCase {
         recorder.recordPerformance(name: "memory_usage", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let events = try XCTUnwrap(sink.envelopes.last).events
+        let events = try XCTUnwrap(sink.envelopes.last).recordedEvents
         XCTAssertEqual(events.count, 2, "one batch")
         XCTAssertEqual(attributes(events[0])["device.orientation"], .string("portrait"))
         XCTAssertEqual(attributes(events[1])["device.orientation"], .string("landscape"))
@@ -81,7 +81,7 @@ final class RidersTests: XCTestCase {
         recorder.recordEvent(name: "network_change", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.events.first))
+        let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.recordedEvents.first))
         XCTAssertEqual(attrs["app.state"], .string("background"))
         XCTAssertEqual(attrs["screen.name"], .string("Checkout"))
     }
@@ -93,7 +93,7 @@ final class RidersTests: XCTestCase {
         recorder.recordEvent(name: "custom_event", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.events.first))
+        let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.recordedEvents.first))
         XCTAssertNil(attrs["screen.name"])
         XCTAssertNil(attrs["device.orientation"])
         XCTAssertNil(attrs["app.state"])
@@ -107,7 +107,7 @@ final class RidersTests: XCTestCase {
         recorder.recordPerformance(name: "custom_timer", attributes: ["screen.name": .string("Leaving")])
         recorder.flush(reason: .manual)
 
-        let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.events.first))
+        let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.recordedEvents.first))
         XCTAssertEqual(attrs["screen.name"], .string("Leaving"))
     }
 
@@ -124,7 +124,7 @@ final class RidersTests: XCTestCase {
         recorder.recordEvent(name: "app.error", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let events = sink.envelopes.flatMap(\.events)
+        let events = sink.envelopes.flatMap(\.recordedEvents)
         XCTAssertEqual(events.count, 2)
         let native = attributes(events[0])
         XCTAssertEqual(native["screen.name"], .string("Checkout"))
@@ -142,7 +142,7 @@ final class RidersTests: XCTestCase {
         recorder.recordEvent(name: "app.hang", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let events = sink.envelopes.flatMap(\.events)
+        let events = sink.envelopes.flatMap(\.recordedEvents)
         XCTAssertEqual(events.count, 2)
         XCTAssertNil(attributes(events[0])["screen.name"])
         XCTAssertEqual(attributes(events[1])["screen.name"], .string("ReportingLaunchHome"))

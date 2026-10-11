@@ -79,11 +79,13 @@ final class TransportConformanceTests: XCTestCase {
             try JSONSerialization.jsonObject(with: body) as? [String: Any]
         )
         XCTAssertEqual(json["type"] as? String, "telemetry_batch")
-        XCTAssertEqual(json["batch_size"] as? Int, 30)
+        // 30 recorded events + the trailing `sdk.health` (#250 R4).
+        XCTAssertEqual(json["batch_size"] as? Int, 31)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
-        XCTAssertEqual(events.count, 30)
-        let firstAttrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
-        XCTAssertEqual(firstAttrs["sdk.platform"] as? String, "ios-native")
+        XCTAssertEqual(events.count, 31)
+        XCTAssertEqual(events.last?["eventName"] as? String, "sdk.health")
+        XCTAssertEqual(json["contract_version"] as? String, "4.0.0")
+        XCTAssertEqual((json["sdk"] as? [String: Any])?["name"] as? String, "ios")
     }
 
     /// F4 carry-over #43 acceptance: every successful 2xx response

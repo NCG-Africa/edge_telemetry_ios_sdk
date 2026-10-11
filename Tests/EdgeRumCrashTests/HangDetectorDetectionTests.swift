@@ -211,6 +211,16 @@ final class HangDetectorDetectionTests: XCTestCase {
         XCTAssertEqual(probe.calls.first?.attributes["hang.duration_ms"], .double(2_000))
     }
 
+    /// #250 R14: a terminated hang from an older build goes out alone,
+    /// on the saved build, with no `sdk.health`.
+    func testTerminatedHangFromAnOlderBuildIsSentAloneOnTheSavedBuild() throws {
+        let pending = tempPending()
+        pending.write(["hang.duration_ms": .double(2_500)])
+        let (recorder, sink) = ReplayBatch.liveRecorder()
+        HangDetector._replayPending(recorder: recorder, sidecarContents: ReplayBatch.priorSidecar(), pending: pending)
+        try ReplayBatch.assertReplayBatch(sink, recorder, eventName: "app.hang", app: ReplayBatch.savedApp)
+    }
+
     /// Tranche 8 acceptance: killed mid-stall ⇒ next launch replays one
     /// `app.hang` with `hang.terminated = true` on the previous session.
     func testReplayEmitsTerminatedHangOnPreviousSessionIdentity() throws {

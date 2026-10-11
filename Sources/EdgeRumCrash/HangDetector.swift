@@ -123,10 +123,12 @@ public enum HangDetector {
         guard var attrs = pending.read() else { return }
         pending.delete()
         attrs["hang.terminated"] = .bool(true)
-        if let snapshot = sidecarContents.flatMap(CrashSidecarReader.parse) {
+        let snapshot = sidecarContents.flatMap(CrashSidecarReader.parse)
+        if let snapshot {
             attrs.merge(CrashSidecarReader.replayAttributes(snapshot)) { own, _ in own }
         }
-        recorder.recordEvent(name: "app.hang", attributes: attrs)
+        // #250 R14: its own batch, on the build that saved it.
+        recorder.recordReplayed(name: "app.hang", attributes: attrs, savedApp: snapshot.map(CrashSidecarReader.savedApp))
     }
 
     /// Tear down the watchdog. Removes the runloop observer and

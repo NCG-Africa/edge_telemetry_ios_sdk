@@ -138,7 +138,7 @@ final class BatchTransportTests: XCTestCase {
                 attributes: AttributeBag(["i": .int(i)])
             ))
         }
-        let envelope = EventEnvelope(timestamp: Date(), location: nil, events: events)
+        let envelope = EventEnvelope(timestamp: Date(), deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios", sdkVersion: "1.0.0", app: AppContext(), events: events)
         let body = try JSONEncoder().encode(envelope)
 
         var ackCount = 0

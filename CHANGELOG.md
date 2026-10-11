@@ -11,6 +11,42 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [Unreleased]
+
+### ⚠ BREAKING CHANGES
+
+* **Wire contract 4.0.0** ([#250](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/250)).
+  Install a backend that accepts contract 4.0.0 before shipping this.
+  * The batch envelope has exactly eight keys: `type`, `contract_version`
+    (`"4.0.0"`), `timestamp`, `batch_size`, `device_id`, `sdk`
+    (`{name: "ios", version}`), `app` (`{name?, package_name, platform:
+    "ios", version?, build_number?}`), `events`. An unknown
+    `version` / `build_number` is omitted, never sent empty.
+  * Events no longer carry `app.name`, `app.package_name`, `app.version`,
+    `app.build_number`, `app.environment`, any `sdk.*` key, or
+    `device.id`. `sdk.platform` / `"ios-native"` is gone.
+  * The envelope `location` and the `sdk.*` health keys are gone. The
+    health counters ride one `sdk.health` event, last in each batch,
+    with the `sdk.` prefix dropped (`events_uploaded`, `thread_time_ms`,
+    `events_dropped.queue_overflow`, …); it counts in `batch_size`, not
+    in `events_uploaded`.
+  * The envelope `timestamp` is set at send time: a retried or queued
+    batch is re-stamped.
+  * A crash or hang replayed after an app update is sent in its own
+    batch, under the version, build and name that recorded it, with no
+    `sdk.health` event.
+
+### Deprecated
+
+* `EdgeRumConfig.location` and `EdgeRumConfig.environment` (and the
+  `Environment` type) are ignored and never sent. The API key selects
+  the environment; location is derived server-side.
+
+### Fixed
+
+* `sdk.version` now reports the package version; the shared recorder
+  previously sent its `0.0.0` placeholder.
+
 ## [2.0.0](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.3.0-alpha.2...v2.0.0) (2026-10-06)
 
 First stable release. Promotes the 1.x alpha line (F25–F37 RUM coverage
@@ -57,12 +93,6 @@ since `1.4.0-alpha.2`.
 
 * **F25:** hot path — O1 sidecar inversion, sdk.thread_time_ms, consent guard ([#212](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/212)) ([#228](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/228)) ([7f9102b](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/7f9102b3022bb6dcb896e43abeae86222772b848))
 * **F26:** doc-truth — flushInterval timer, event-count queue cap, hang.cpu_usage ([#230](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/230)) ([fadbdbf](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/commit/fadbdbf159e590734fad3e0bf1504272dac0c39b))
-
-## [Unreleased]
-
-Nothing in this slot yet.
-
----
 
 ## [1.0.0-alpha.2] — 2026-06-24
 

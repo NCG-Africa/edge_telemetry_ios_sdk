@@ -36,7 +36,6 @@ final class PayloadBuilderContractTests: XCTestCase {
                 .metric(name: "frame_render_time", value: 18.4, timestamp: t0, attributes: ["frame.target_hz": 60])
             ],
             context: sampleContext(),
-            location: "Nairobi/Kenya",
             flushTime: t0
         )
         let result = try WireAssertions.assertValidEnvelope(envelope)
@@ -56,7 +55,6 @@ final class PayloadBuilderContractTests: XCTestCase {
         let envelope = builder.build(
             events: [.event(name: "navigation", timestamp: enqueue, attributes: AttributeBag())],
             context: AttributeBag(),
-            location: nil,
             flushTime: flush
         )
         XCTAssertEqual(envelope.timestamp, flush,
@@ -68,12 +66,33 @@ final class PayloadBuilderContractTests: XCTestCase {
     func testEventAttributesWinOnConflictWithContext() {
         let builder = PayloadBuilder()
         let env = builder.build(
-            events: [.event(name: "navigation", timestamp: t0, attributes: ["app.name": "Override"])],
-            context: AttributeBag(["app.name": "FromContext"]),
-            location: nil,
+            events: [.event(name: "navigation", timestamp: t0, attributes: ["screen.name": "Override"])],
+            context: AttributeBag(["screen.name": "FromContext"]),
             flushTime: t0
         )
-        XCTAssertEqual(env.events.first?.attributes["app.name"], .string("Override"))
+        XCTAssertEqual(env.events.first?.attributes["screen.name"], .string("Override"))
+    }
+
+    /// #250 R1: identity keys leave every event — context- and
+    /// event-supplied — and the context's identity fills the envelope.
+    func testIdentityIsLiftedToTheEnvelopeAndStrippedFromEvents() {
+        let env = PayloadBuilder().build(
+            events: [.event(name: "custom_event", timestamp: t0, attributes: [
+                "app.name": "Evil", "app.version": "0", "app.environment": "prod",
+                "sdk.version": "0", "sdk.platform": "ios-native", "device.id": "x",
+                "app.state": "active"
+            ])],
+            context: AttributeBag([
+                "app.name": "Shop", "app.package_name": "com.example.shop", "app.version": "2.1.0",
+                "app.build_number": "412", "sdk.version": "1.0.0",
+                "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios", "session.id": "s"
+            ]),
+            flushTime: t0
+        )
+        XCTAssertEqual(env.events.first?.attributes.values, ["app.state": "active", "session.id": "s"])
+        XCTAssertEqual(env.app, AppContext(name: "Shop", packageName: "com.example.shop", version: "2.1.0", buildNumber: "412"))
+        XCTAssertEqual(env.sdkVersion, "1.0.0")
+        XCTAssertEqual(env.deviceId, "device_1717234876123_a1b2c3d4e5f60718_ios")
     }
 
     func testBatchSizeMatchesEventsCount() throws {
@@ -81,7 +100,7 @@ final class PayloadBuilderContractTests: XCTestCase {
         let events: [Event] = (0..<7).map { _ in
             .event(name: "navigation", timestamp: t0, attributes: AttributeBag())
         }
-        let env = builder.build(events: events, context: sampleContext(), location: nil, flushTime: t0)
+        let env = builder.build(events: events, context: sampleContext(), flushTime: t0)
         let (_, json) = try WireAssertions.assertValidEnvelope(env)
         XCTAssertEqual(json["batch_size"] as? Int, 7)
     }

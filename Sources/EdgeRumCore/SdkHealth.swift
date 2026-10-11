@@ -6,11 +6,13 @@
 // number. Resets on process death (the queue outlives the process, so
 // uploads are not a session's property).
 //
-// Session-scoped counters (`sdk.events_generated`,
-// `sdk.events_dropped.sampled|unknown_name`) live on the Recorder
-// beside `sdk.thread_time_ms`.
+// Session-scoped counters (`events_generated`,
+// `events_dropped.sampled|unknown_name`) live on the Recorder beside
+// `thread_time_ms`.
 //
-// Wire-only: nothing in the public module reads this.
+// Wire-only: nothing in the public module reads this. Contract 4.0
+// (#250, R4): the counters ride the last event of each live batch,
+// `sdk.health`, with the old `sdk.` key prefix dropped.
 //
 // Refs: docs/catalogue/ios-data-catalogue.md § 2.2; W8 (#196).
 
@@ -23,15 +25,15 @@ public final class SdkHealth: @unchecked Sendable {
 
     /// A process-scoped counter; the raw value is its wire key.
     public enum Counter: String, CaseIterable, Sendable {
-        case eventsUploaded = "sdk.events_uploaded"
-        case batchesUploaded = "sdk.batches_uploaded"
-        case uploadFailures = "sdk.upload_failures"
-        case queueOverflow = "sdk.events_dropped.queue_overflow"
-        case encodeFailure = "sdk.events_dropped.encode_failure"
-        case nonRetryable = "sdk.events_dropped.non_retryable"
-        case enqueueFailure = "sdk.events_dropped.enqueue_failure"
-        case queueDepthMax = "sdk.queue_depth_max"
-        case storageBytesMax = "sdk.storage_bytes_max"
+        case eventsUploaded = "events_uploaded"
+        case batchesUploaded = "batches_uploaded"
+        case uploadFailures = "upload_failures"
+        case queueOverflow = "events_dropped.queue_overflow"
+        case encodeFailure = "events_dropped.encode_failure"
+        case nonRetryable = "events_dropped.non_retryable"
+        case enqueueFailure = "events_dropped.enqueue_failure"
+        case queueDepthMax = "queue_depth_max"
+        case storageBytesMax = "storage_bytes_max"
 
         /// Always on the wire; every other counter is a marker,
         /// omitted when zero.
@@ -75,8 +77,8 @@ public final class SdkHealth: @unchecked Sendable {
         lock.lock(); failed.insert(capability.rawValue); lock.unlock()
     }
 
-    /// Envelope fields: required counters always, markers when > 0,
-    /// `sdk.capabilities_failed` (sorted, comma-joined) when any failed.
+    /// `sdk.health` attributes: required counters always, markers when
+    /// > 0, `capabilities_failed` (sorted, comma-joined) when any failed.
     public func snapshot() -> [String: AttributeValue] {
         lock.lock(); defer { lock.unlock() }
         var out: [String: AttributeValue] = [:]
@@ -88,7 +90,7 @@ public final class SdkHealth: @unchecked Sendable {
             if counter.required || n > 0 { out[counter.rawValue] = .int(n) }
         }
         if !failed.isEmpty {
-            out["sdk.capabilities_failed"] = .string(failed.sorted().joined(separator: ","))
+            out["capabilities_failed"] = .string(failed.sorted().joined(separator: ","))
         }
         return out
     }

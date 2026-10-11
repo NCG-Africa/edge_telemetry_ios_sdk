@@ -41,7 +41,7 @@ internal struct CrashSidecarSnapshot: Equatable {
     internal let userId: String?
 
     /// All other mirrored attributes passed through verbatim (e.g.
-    /// `sdk.version`, `sdk.platform`; host identity is never mirrored
+    /// `sdk.version`, `app.version`; host identity is never mirrored
     /// since F27). Stashed so the caller can merge them into the
     /// emitted event without re-walking the sidecar's key list.
     internal let extras: [String: AttributeValue]
@@ -105,6 +105,18 @@ internal enum CrashSidecarReader {
         attrs["device.id"] = .string(snapshot.deviceId)
         attrs["user.id"] = snapshot.userId.map { .string($0) }
         return attrs
+    }
+
+    /// The build that saved the sidecar (#250 R14): the replayed
+    /// batch's envelope `app.name` / `version` / `build_number`. A key
+    /// an older SDK never mirrored stays nil — omitted on the wire,
+    /// never borrowed from the current build.
+    internal static func savedApp(_ snapshot: CrashSidecarSnapshot) -> AppContext {
+        AppContext(
+            name: string(snapshot.extras["app.name"]),
+            version: string(snapshot.extras["app.version"]),
+            buildNumber: string(snapshot.extras["app.build_number"])
+        )
     }
 
     // MARK: - Helpers

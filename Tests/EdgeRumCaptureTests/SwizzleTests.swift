@@ -1,7 +1,7 @@
 // Tests/EdgeRumCaptureTests/SwizzleTests.swift
 //
 // F32 / #219 acceptance: a forced swizzle failure surfaces in
-// `sdk.capabilities_failed` on the envelope.
+// `capabilities_failed` on the batch's `sdk.health` event.
 
 import XCTest
 import EdgeRumCore
@@ -26,8 +26,9 @@ final class SwizzleTests: XCTestCase {
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(
             with: JSONEncoder().encode(XCTUnwrap(sink.envelopes.last))) as? [String: Any])
-        XCTAssertEqual(json["sdk.capabilities_failed"] as? String, "http_swizzle")
+        let healthAttrs = (root["events"] as? [[String: Any]])?.last?["attributes"] as? [String: Any]
+        XCTAssertEqual(healthAttrs?["capabilities_failed"] as? String, "http_swizzle")
     }
 }

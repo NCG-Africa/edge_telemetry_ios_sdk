@@ -50,7 +50,7 @@ final class CrashSidecarReaderTests: XCTestCase {
             "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios"),
             "user.id": .string("user_1717100000000_deadbeefcafef00d"),
             "user.name": .string("Marvin"),
-            "sdk.platform": .string("ios-native"),
+            "app.build_number": .string("10"),
             "sdk.version": .string("1.0.0")
         ]
         let snapshot = try XCTUnwrap(CrashSidecarReader.parse(raw))
@@ -61,7 +61,7 @@ final class CrashSidecarReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.deviceId, "device_1717234876123_a1b2c3d4e5f60718_ios")
         XCTAssertEqual(snapshot.userId, "user_1717100000000_deadbeefcafef00d")
         XCTAssertEqual(snapshot.extras["user.name"], .string("Marvin"))
-        XCTAssertEqual(snapshot.extras["sdk.platform"], .string("ios-native"))
+        XCTAssertEqual(snapshot.extras["app.build_number"], .string("10"))
         XCTAssertEqual(snapshot.extras["sdk.version"], .string("1.0.0"))
         XCTAssertNil(snapshot.extras["session.id"],
                      "consumed identity keys must not appear in extras")
@@ -129,7 +129,6 @@ final class CrashSidecarReaderTests: XCTestCase {
         bag.set("device.id", .string("device_1717234876123_a1b2c3d4e5f60718_ios"))
         bag.set("user.id", .string("user_1717100000000_deadbeefcafef00d"))
         bag.set("sdk.version", .string("1.2.3"))
-        bag.set("sdk.platform", .string("ios-native"))
         writer.write(snapshot: bag)
 
         let reader = SessionSidecar(url: tmp)
@@ -137,6 +136,31 @@ final class CrashSidecarReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.sessionId, "session_1717234870002_ff009988aabbccdd_ios")
         XCTAssertEqual(snapshot.sessionSequence, 7)
         XCTAssertEqual(snapshot.extras["sdk.version"], .string("1.2.3"))
+    }
+
+    /// #250 R14: the saved build, nil where an older SDK never mirrored it.
+    func testSavedAppIsTheSidecarBuildWithNilsKept() throws {
+        var raw: [String: AttributeValue] = [
+            "session.id": .string("session_1717234870002_ff009988aabbccdd_ios"),
+            "device.id": .string("device_1717234876123_a1b2c3d4e5f60718_ios"),
+            "app.version": .string("1.0"),
+            "app.build_number": .string("10"),
+            "app.name": .string("Shop")
+        ]
+        XCTAssertEqual(CrashSidecarReader.savedApp(try XCTUnwrap(CrashSidecarReader.parse(raw))),
+                       AppContext(name: "Shop", version: "1.0", buildNumber: "10"))
+        raw["app.build_number"] = nil
+        raw["app.name"] = nil
+        XCTAssertEqual(CrashSidecarReader.savedApp(try XCTUnwrap(CrashSidecarReader.parse(raw))),
+                       AppContext(version: "1.0"))
+    }
+
+    /// A sidecar written by SDK ≤ 2.0.0 still holds `sdk.platform`;
+    /// the read filter drops it.
+    func testLegacySdkPlatformIsDroppedOnRead() throws {
+        let tmp = makeTempSidecarURL()
+        try Data(#"{"session.id":"session_1717234870002_ff009988aabbccdd_ios","sdk.platform":"ios-native"}"#.utf8).write(to: tmp)
+        XCTAssertNil(SessionSidecar(url: tmp).read()?["sdk.platform"])
     }
 
     func testMissingFileReturnsNil() {

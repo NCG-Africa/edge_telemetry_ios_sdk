@@ -89,6 +89,10 @@ public final class ContextProvider: @unchecked Sendable {
         lock.lock(); self.app = app; lock.unlock()
     }
 
+    public func refreshSdk(_ sdk: SdkContext) {
+        lock.lock(); self.sdk = sdk; lock.unlock()
+    }
+
     public func refreshDevice(_ device: DeviceContext) {
         lock.lock(); self.device = device; lock.unlock()
     }
@@ -128,6 +132,11 @@ public final class ContextProvider: @unchecked Sendable {
     }
 
     // MARK: Read
+
+    public func currentApp() -> AppContext {
+        lock.lock(); defer { lock.unlock() }
+        return app
+    }
 
     public func currentSession() -> SessionContextSnapshot {
         lock.lock(); defer { lock.unlock() }

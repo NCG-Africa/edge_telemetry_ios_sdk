@@ -65,7 +65,7 @@ final class PrivacyTests: XCTestCase {
     private func lastEvent(_ recorder: Recorder, _ sink: RecordingTransportSink) -> Event? {
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
-        return sink.envelopes.last?.events.last
+        return sink.envelopes.last?.recordedEvents.last
     }
 
     // MARK: (a) clearUser
@@ -91,15 +91,17 @@ final class PrivacyTests: XCTestCase {
         let (recorder, sink, sidecar) = makeRecorder()
         recorder.setUser(RecorderUser(id: "ext-1", name: "Ann", email: "a@x.io", phone: "+254"))
         let before = try XCTUnwrap(lastEvent(recorder, sink))
+        let deviceIdBefore = try XCTUnwrap(sink.envelopes.last?.deviceId)
 
         recorder.resetIdentity()
 
         let after = try XCTUnwrap(lastEvent(recorder, sink))
-        guard case let .string(deviceId)? = after.attributes["device.id"],
-              case let .string(userId)? = after.attributes["user.id"] else {
+        // #250: device identity rides the envelope root.
+        let deviceId = try XCTUnwrap(sink.envelopes.last?.deviceId)
+        guard case let .string(userId)? = after.attributes["user.id"] else {
             return XCTFail("missing ids after resetIdentity()")
         }
-        XCTAssertNotEqual(after.attributes["device.id"], before.attributes["device.id"])
+        XCTAssertNotEqual(deviceId, deviceIdBefore)
         XCTAssertNotEqual(after.attributes["user.id"], before.attributes["user.id"])
         XCTAssertTrue(IdentityFormat.isValid(deviceId, kind: .device), deviceId)
         XCTAssertTrue(IdentityFormat.isValid(userId, kind: .user), userId)
