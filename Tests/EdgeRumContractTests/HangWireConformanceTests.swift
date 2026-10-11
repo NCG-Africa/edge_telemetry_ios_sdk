@@ -65,7 +65,6 @@ final class HangWireConformanceTests: XCTestCase {
         let envelope = PayloadBuilder().build(
             events: [event],
             context: context,
-            location: "Nairobi/Kenya",
             flushTime: now
         )
 

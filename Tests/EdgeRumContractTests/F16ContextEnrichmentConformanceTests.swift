@@ -27,8 +27,7 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
                 name: "Shop",
                 packageName: "com.example.shop",
                 version: "2.1.0",
-                buildNumber: "412",
-                environment: "production"
+                buildNumber: "412"
             ),
             device: DeviceContext(
                 platformVersion: "17.4.1",

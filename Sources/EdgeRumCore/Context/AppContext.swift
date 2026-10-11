@@ -9,7 +9,9 @@
 //   app.package_name     — CFBundleIdentifier
 //   app.version          — CFBundleShortVersionString
 //   app.build_number     — CFBundleVersion   (omitted when nil)
-//   app.environment      — from config.environment
+//
+// Contract 4.0 (#250): these ride the envelope `app` object, never an
+// event — `PayloadBuilder` lifts them out of the context bag.
 //
 // Refs: PLAN-iOS.md §7.5, §F3/T3.3.
 //
@@ -22,20 +24,17 @@ public struct AppContext: Sendable, Hashable {
     public var packageName: String?
     public var version: String?
     public var buildNumber: String?
-    public var environment: String?
 
     public init(
         name: String? = nil,
         packageName: String? = nil,
         version: String? = nil,
-        buildNumber: String? = nil,
-        environment: String? = nil
+        buildNumber: String? = nil
     ) {
         self.name = name
         self.packageName = packageName
         self.version = version
         self.buildNumber = buildNumber
-        self.environment = environment
     }
 
     /// Read the host app's Info.plist via `Bundle.main`. The
@@ -47,8 +46,7 @@ public struct AppContext: Sendable, Hashable {
         appNameOverride: String? = nil,
         appVersionOverride: String? = nil,
         appPackageOverride: String? = nil,
-        appBuildOverride: String? = nil,
-        environment: String? = nil
+        appBuildOverride: String? = nil
     ) -> AppContext {
         let plist = bundle.infoDictionary ?? [:]
 
@@ -70,8 +68,7 @@ public struct AppContext: Sendable, Hashable {
             name: name,
             packageName: packageName,
             version: version,
-            buildNumber: buildNumber,
-            environment: environment
+            buildNumber: buildNumber
         )
     }
 
@@ -80,6 +77,5 @@ public struct AppContext: Sendable, Hashable {
         bag.setIfPresent("app.package_name", packageName.map { .string($0) })
         bag.setIfPresent("app.version", version.map { .string($0) })
         bag.setIfPresent("app.build_number", buildNumber.map { .string($0) })
-        bag.setIfPresent("app.environment", environment.map { .string($0) })
     }
 }

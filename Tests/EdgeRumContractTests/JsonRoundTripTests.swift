@@ -29,7 +29,9 @@ final class JsonRoundTripTests: XCTestCase {
         let t0 = Date(timeIntervalSince1970: 1_717_234_876.512)
         let envelope = EventEnvelope(
             timestamp: t0,
-            location: "Nairobi/Kenya",
+            deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios",
+            sdkVersion: "1.0.0",
+            app: AppContext(),
             events: [
                 .event(name: "navigation", timestamp: t0, attributes: [
                     "navigation.kind": "uikit",

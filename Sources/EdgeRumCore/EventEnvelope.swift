@@ -1,17 +1,22 @@
 // Sources/EdgeRumCore/EventEnvelope.swift
 //
-// The wire envelope. Matches the JSON shape in PLAN-iOS.md §7.2 and
-// docs/payload-example.jsonc verbatim:
+// The wire envelope, contract 4.0.0 (#250). Closed at exactly eight
+// root keys (R3):
 //
 //     {
 //       "type": "telemetry_batch",
-//       "timestamp": "<ISO 8601 + fractional seconds>",
-//       "location": "City/Country",          // optional, omitted when nil
+//       "contract_version": "4.0.0",
+//       "timestamp": "<ISO 8601 UTC + fractional seconds, Z>",
 //       "batch_size": <events.count>,
-//       "sdk.thread_time_ms": <Int>,         // optional, omitted when nil
-//       "sdk.events_generated": <Int>, …     // F32 health counters, flat
+//       "device_id": "device_<epochMs>_<16 hex>_ios",
+//       "sdk": { "name": "ios", "version": "<sdk version>" },
+//       "app": { "name"?, "package_name", "platform": "ios",
+//                "version"?, "build_number"? },
 //       "events": [ ... ]
 //     }
+//
+// Identity lives here only (R1); `PayloadBuilder` strips it from
+// events. A nil `app` value is omitted, never `""` (R15).
 //
 // Per-item shapes (event vs metric) are encoded inline below so all
 // wire decisions live in one file.
@@ -22,8 +27,7 @@
 // the strategy omits fractional seconds on older runtimes and we
 // must always send `.SSS`.
 //
-// Refs: PLAN-iOS.md §7.2, §7.3, §7.4; CLAUDE.md "Wire contract
-//       pinned facts".
+// Refs: #250; CLAUDE.md "Wire contract pinned facts".
 //
 
 import Foundation
@@ -32,64 +36,86 @@ import Foundation
 /// deserialises envelopes it produced.
 public struct EventEnvelope: Sendable, Encodable {
 
+    /// The batch contract this envelope speaks (R11, S1).
+    public static let contractVersion = "4.0.0"
+    /// `sdk.name` (R2).
+    public static let sdkName = "ios"
+    /// `app.platform` (R2).
+    public static let appPlatform = "ios"
+
     /// Always the literal `"telemetry_batch"`.
     public let type: String
     public let timestamp: Date
-    public let location: String?
     public let batchSize: Int
-    /// Cumulative, session-scoped caller-thread wall-time (ms) spent
-    /// inside the Recorder ingress. SDK self-cost; never a delta.
-    public let sdkThreadTimeMs: Int?
-    /// F32 health counters, flat `sdk.*` keys encoded beside the
-    /// fixed fields. Cumulative per scope; markers already dropped
-    /// when zero by the producer.
-    public let sdkHealth: [String: AttributeValue]
+    public let deviceId: String
+    public let sdkVersion: String
+    public let app: AppContext
     public let events: [Event]
 
     public init(
         timestamp: Date,
-        location: String?,
-        events: [Event],
-        sdkThreadTimeMs: Int? = nil,
-        sdkHealth: [String: AttributeValue] = [:]
+        deviceId: String,
+        sdkVersion: String,
+        app: AppContext,
+        events: [Event]
     ) {
         self.type = "telemetry_batch"
         self.timestamp = timestamp
-        self.location = location
         self.batchSize = events.count
-        self.sdkThreadTimeMs = sdkThreadTimeMs
-        self.sdkHealth = sdkHealth
+        self.deviceId = deviceId
+        self.sdkVersion = sdkVersion
+        self.app = app
         self.events = events
     }
 
+    /// The events the host recorded: `events` minus the `sdk.health`
+    /// event.
+    public var recordedEvents: [Event] {
+        events.filter { $0.name != PayloadBuilder.healthEventName }
+    }
+
+    /// `batch_size` minus the `sdk.health` event, so `events_uploaded`
+    /// keeps its meaning.
+    public var recordedEventCount: Int { recordedEvents.count }
+
     private enum CodingKeys: String, CodingKey {
         case type
+        case contractVersion = "contract_version"
         case timestamp
-        case location
         case batchSize = "batch_size"
-        case sdkThreadTimeMs = "sdk.thread_time_ms"
+        case deviceId = "device_id"
+        case sdk
+        case app
         case events
+    }
+
+    private enum SdkKeys: String, CodingKey { case name, version }
+
+    private enum AppKeys: String, CodingKey {
+        case name
+        case packageName = "package_name"
+        case platform
+        case version
+        case buildNumber = "build_number"
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(type, forKey: .type)
+        try c.encode(Self.contractVersion, forKey: .contractVersion)
         try c.encode(WireDateFormatter.string(from: timestamp), forKey: .timestamp)
-        try c.encodeIfPresent(location, forKey: .location)
         try c.encode(batchSize, forKey: .batchSize)
-        try c.encodeIfPresent(sdkThreadTimeMs, forKey: .sdkThreadTimeMs)
-        var health = encoder.container(keyedBy: HealthKey.self)
-        for (key, value) in sdkHealth {
-            try health.encode(value, forKey: HealthKey(stringValue: key))
-        }
+        try c.encode(deviceId, forKey: .deviceId)
+        var sdk = c.nestedContainer(keyedBy: SdkKeys.self, forKey: .sdk)
+        try sdk.encode(Self.sdkName, forKey: .name)
+        try sdk.encode(sdkVersion, forKey: .version)
+        var a = c.nestedContainer(keyedBy: AppKeys.self, forKey: .app)
+        try a.encodeIfPresent(app.name, forKey: .name)
+        try a.encodeIfPresent(app.packageName, forKey: .packageName)
+        try a.encode(Self.appPlatform, forKey: .platform)
+        try a.encodeIfPresent(app.version, forKey: .version)
+        try a.encodeIfPresent(app.buildNumber, forKey: .buildNumber)
         try c.encode(events, forKey: .events)
-    }
-
-    private struct HealthKey: CodingKey {
-        let stringValue: String
-        init(stringValue: String) { self.stringValue = stringValue }
-        var intValue: Int? { nil }
-        init?(intValue: Int) { nil }
     }
 }
 

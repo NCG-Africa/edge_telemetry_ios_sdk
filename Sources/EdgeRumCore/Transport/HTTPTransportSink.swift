@@ -107,7 +107,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
         do {
             data = try Self.encoder.encode(envelope)
         } catch {
-            health.add(.encodeFailure, envelope.events.count)
+            health.add(.encodeFailure, envelope.recordedEventCount)
             if debug {
                 os_log(
                     "HTTPTransportSink encode failed: %{public}@",
@@ -118,7 +118,7 @@ public final class HTTPTransportSink: TransportSink, @unchecked Sendable {
             }
             return
         }
-        attempt(data: data, eventCount: envelope.events.count, attempt: 1)
+        attempt(data: data, eventCount: envelope.recordedEventCount, attempt: 1)
     }
 
     private func attempt(data: Data, eventCount: Int, attempt: Int) {

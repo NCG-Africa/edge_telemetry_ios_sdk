@@ -41,7 +41,7 @@ final class DocTruthTests: XCTestCase {
         let (recorder, sink) = makeRecorder(flushInterval: 0.1)
         recorder.recordEvent(name: "navigation", attributes: [:])
         XCTAssertTrue(waitFor(2) { sink.sends.contains { $0.reason == .timer } })
-        XCTAssertEqual(sink.envelopes.first?.events.count, 1)
+        XCTAssertEqual(sink.envelopes.first?.recordedEventCount, 1)
     }
 
     func testDisableStopsFlushTimer() {

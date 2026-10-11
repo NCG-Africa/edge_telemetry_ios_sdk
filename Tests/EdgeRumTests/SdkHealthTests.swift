@@ -43,8 +43,13 @@ final class SdkHealthTests: XCTestCase {
         return (recorder, sink)
     }
 
+    /// The batch's `sdk.health` event attributes (#250 R4: the counters
+    /// moved off the envelope).
     private func json(_ envelope: EventEnvelope) throws -> [String: Any] {
-        try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope)) as? [String: Any])
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope)) as? [String: Any])
+        let health = try XCTUnwrap((root["events"] as? [[String: Any]])?.last)
+        XCTAssertEqual(health["eventName"] as? String, "sdk.health")
+        return try XCTUnwrap(health["attributes"] as? [String: Any])
     }
 
     // MARK: Acceptance — nine in ten envelopes dropped
@@ -57,13 +62,13 @@ final class SdkHealthTests: XCTestCase {
         }
         XCTAssertEqual(sink.envelopes.count, 10)
 
-        let generated = try sink.envelopes.map { try XCTUnwrap(json($0)["sdk.events_generated"] as? Int) }
+        let generated = try sink.envelopes.map { try XCTUnwrap(json($0)["events_generated"] as? Int) }
         XCTAssertEqual(generated, generated.sorted(), "cumulative totals never go down")
 
         // Only the tenth envelope lands: it alone tells the whole story.
         let landed = try json(sink.envelopes[9])
-        XCTAssertEqual(landed["sdk.events_generated"] as? Int, 33)
-        XCTAssertEqual(landed["sdk.events_dropped.unknown_name"] as? Int, 3)
+        XCTAssertEqual(landed["events_generated"] as? Int, 33)
+        XCTAssertEqual(landed["events_dropped.unknown_name"] as? Int, 3)
     }
 
     // MARK: F34 — start cost
@@ -72,16 +77,16 @@ final class SdkHealthTests: XCTestCase {
         let (recorder, sink) = makeRecorder(batchSize: 1)
         recorder.recordEvent(name: "navigation", attributes: [:])
         let before = try json(XCTUnwrap(sink.envelopes.last))
-        XCTAssertNil(before["sdk.start_duration_ms"], "crash-replay envelope sent mid-start omits it")
-        XCTAssertNil(before["sdk.start_replayed_crash"])
+        XCTAssertNil(before["start_duration_ms"], "crash-replay envelope sent mid-start omits it")
+        XCTAssertNil(before["start_replayed_crash"])
 
         recorder.setStartStats(durationMs: 42, replayedCrash: true)
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.recordEvent(name: "navigation", attributes: [:])
         for envelope in sink.envelopes.suffix(2) {
             let env = try json(envelope)
-            XCTAssertEqual(env["sdk.start_duration_ms"] as? Int, 42)
-            XCTAssertEqual(env["sdk.start_replayed_crash"] as? Bool, true)
+            XCTAssertEqual(env["start_duration_ms"] as? Int, 42)
+            XCTAssertEqual(env["start_replayed_crash"] as? Bool, true)
         }
     }
 
@@ -90,8 +95,8 @@ final class SdkHealthTests: XCTestCase {
         recorder.setStartStats(durationMs: nil, replayedCrash: false)
         recorder.recordEvent(name: "navigation", attributes: [:])
         let env = try json(XCTUnwrap(sink.envelopes.last))
-        XCTAssertNil(env["sdk.start_duration_ms"])
-        XCTAssertEqual(env["sdk.start_replayed_crash"] as? Bool, false)
+        XCTAssertNil(env["start_duration_ms"])
+        XCTAssertEqual(env["start_replayed_crash"] as? Bool, false)
     }
 
     func testSampledOutSessionCountsDropsAndReportsOnForcedEmit() throws {
@@ -102,8 +107,8 @@ final class SdkHealthTests: XCTestCase {
 
         recorder.recordEvent(name: "app.crash", attributes: [:])  // forced, flushes
         let env = try json(XCTUnwrap(sink.envelopes.last))
-        XCTAssertEqual(env["sdk.events_dropped.sampled"] as? Int, 6)
-        XCTAssertEqual(env["sdk.events_generated"] as? Int, 7)
+        XCTAssertEqual(env["events_dropped.sampled"] as? Int, 6)
+        XCTAssertEqual(env["events_generated"] as? Int, 7)
     }
 
     func testMarkersOmittedWhenZeroRequiredCountersAlwaysPresent() throws {
@@ -112,14 +117,14 @@ final class SdkHealthTests: XCTestCase {
         recorder.flush(reason: .manual)
         let env = try json(XCTUnwrap(sink.envelopes.last))
 
-        for key in ["sdk.events_generated", "sdk.events_uploaded", "sdk.batches_uploaded",
-                    "sdk.queue_depth_max", "sdk.storage_bytes_max"] {
+        for key in ["events_generated", "events_uploaded", "batches_uploaded",
+                    "queue_depth_max", "storage_bytes_max"] {
             XCTAssertNotNil(env[key] as? Int, "\(key) is required")
         }
-        for key in ["sdk.events_dropped.sampled", "sdk.events_dropped.unknown_name",
-                    "sdk.upload_failures", "sdk.events_dropped.queue_overflow",
-                    "sdk.events_dropped.encode_failure", "sdk.events_dropped.non_retryable",
-                    "sdk.events_dropped.enqueue_failure", "sdk.capabilities_failed"] {
+        for key in ["events_dropped.sampled", "events_dropped.unknown_name",
+                    "upload_failures", "events_dropped.queue_overflow",
+                    "events_dropped.encode_failure", "events_dropped.non_retryable",
+                    "events_dropped.enqueue_failure", "capabilities_failed"] {
             XCTAssertNil(env[key], "\(key) is a marker — omitted when zero")
         }
     }
@@ -137,18 +142,18 @@ final class SdkHealthTests: XCTestCase {
         recorder.flush(reason: .manual)
         let env = try json(XCTUnwrap(sink.envelopes.last))
 
-        XCTAssertEqual(env["sdk.events_uploaded"] as? Int, 42)
-        XCTAssertEqual(env["sdk.queue_depth_max"] as? Int, 7, "high-water mark, never lowered")
-        XCTAssertEqual(env["sdk.capabilities_failed"] as? String, "crash_reporter,hang_observer")
+        XCTAssertEqual(env["events_uploaded"] as? Int, 42)
+        XCTAssertEqual(env["queue_depth_max"] as? Int, 7, "high-water mark, never lowered")
+        XCTAssertEqual(env["capabilities_failed"] as? String, "crash_reporter,hang_observer")
     }
 
     func testQueueMarksOmittedWhenOfflineQueueFailed() {
         let health = SdkHealth()
         health.fail(.offlineQueue)
         let snap = health.snapshot()
-        XCTAssertNil(snap["sdk.queue_depth_max"])
-        XCTAssertNil(snap["sdk.storage_bytes_max"])
-        XCTAssertEqual(snap["sdk.events_uploaded"], .int(0))
+        XCTAssertNil(snap["queue_depth_max"])
+        XCTAssertNil(snap["storage_bytes_max"])
+        XCTAssertEqual(snap["events_uploaded"], .int(0))
     }
 
     func testSessionCountersResetOnRotationProcessCountersDoNot() throws {
@@ -163,10 +168,10 @@ final class SdkHealthTests: XCTestCase {
         recorder.flush(reason: .manual)
 
         let finalized = try json(XCTUnwrap(sink.envelopes.first))
-        XCTAssertEqual(finalized["sdk.events_generated"] as? Int, 11, "prior session keeps its own total")
+        XCTAssertEqual(finalized["events_generated"] as? Int, 11, "prior session keeps its own total")
         let next = try json(XCTUnwrap(sink.envelopes.last))
-        XCTAssertEqual(next["sdk.events_generated"] as? Int, 2, "session.started + navigation")
-        XCTAssertEqual(next["sdk.batches_uploaded"] as? Int, 5)
+        XCTAssertEqual(next["events_generated"] as? Int, 2, "session.started + navigation")
+        XCTAssertEqual(next["batches_uploaded"] as? Int, 5)
     }
 
     func testStartRotationFinalizedCarriesEndingSessionTotals() throws {
@@ -179,8 +184,8 @@ final class SdkHealthTests: XCTestCase {
         recorder.flush(reason: .manual)
 
         let finalized = try json(XCTUnwrap(sink.envelopes.first))
-        XCTAssertEqual(finalized["sdk.events_generated"] as? Int, 5, "4 navigation + session.finalized")
-        XCTAssertEqual(try json(XCTUnwrap(sink.envelopes.last))["sdk.events_generated"] as? Int, 1)
+        XCTAssertEqual(finalized["events_generated"] as? Int, 5, "4 navigation + session.finalized")
+        XCTAssertEqual(try json(XCTUnwrap(sink.envelopes.last))["events_generated"] as? Int, 1)
     }
 
     func testNothingCountedWhileDisabled() throws {
@@ -194,8 +199,8 @@ final class SdkHealthTests: XCTestCase {
         recorder.flush(reason: .manual)
 
         let env = try json(XCTUnwrap(sink.envelopes.last))
-        XCTAssertEqual(env["sdk.events_generated"] as? Int, 1)
-        XCTAssertNil(env["sdk.events_dropped.unknown_name"])
+        XCTAssertEqual(env["events_generated"] as? Int, 1)
+        XCTAssertNil(env["events_dropped.unknown_name"])
     }
 
     // MARK: _buffer cap
@@ -205,7 +210,7 @@ final class SdkHealthTests: XCTestCase {
         for _ in 0..<(Recorder.maxBufferedEvents + 1) {
             recorder.recordEvent(name: "navigation", attributes: [:])
         }
-        XCTAssertEqual(sink.envelopes.first?.events.count, Recorder.maxBufferedEvents)
+        XCTAssertEqual(sink.envelopes.first?.recordedEvents.count, Recorder.maxBufferedEvents)
     }
 
     // MARK: keychain capability
@@ -223,6 +228,6 @@ final class SdkHealthTests: XCTestCase {
         )
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
-        XCTAssertEqual(try json(XCTUnwrap(sink.envelopes.last))["sdk.capabilities_failed"] as? String, "keychain")
+        XCTAssertEqual(try json(XCTUnwrap(sink.envelopes.last))["capabilities_failed"] as? String, "keychain")
     }
 }

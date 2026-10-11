@@ -47,7 +47,6 @@ final class GoldenBatchSnapshotTests: XCTestCase {
             "app.version":              "2.1.0",
             "app.package_name":         "com.example.shop",
             "app.build_number":         "412",
-            "app.environment":          "production",
             "device.id":                "device_1717234876123_a1b2c3d4e5f60718_ios",
             "device.platform":          "ios",
             "device.model":             "iPhone15,3",
@@ -66,9 +65,22 @@ final class GoldenBatchSnapshotTests: XCTestCase {
             "session.start_time":       "2026-06-14T10:25:00.002Z",
             "session.sequence":         1,
             "user.id":                  "user_1717100000000_deadbeefcafef00d",
-            "sdk.version":              "1.0.0",
-            "sdk.platform":             "ios-native"
+            "sdk.version":              "1.0.0"
         ])
+    }
+
+    /// Frozen `sdk.health` attributes (#250 R4), as on a first batch.
+    private func frozenHealth() -> [String: AttributeValue] {
+        [
+            "events_generated":   4,
+            "events_uploaded":    0,
+            "batches_uploaded":   0,
+            "queue_depth_max":    0,
+            "storage_bytes_max":  0,
+            "thread_time_ms":     3,
+            "start_duration_ms":  41,
+            "start_replayed_crash": false
+        ]
     }
 
     /// The four frozen events — one per shape mentioned in §13.4 /
@@ -149,8 +161,8 @@ final class GoldenBatchSnapshotTests: XCTestCase {
         let envelope = builder.build(
             events: frozenEvents(),
             context: frozenContext(),
-            location: "Nairobi/Kenya",
-            flushTime: flushTime
+            flushTime: flushTime,
+            health: frozenHealth()
         )
 
         // Run the production wire-conformance harness first — if the
@@ -211,8 +223,8 @@ final class GoldenBatchSnapshotTests: XCTestCase {
         let envelope = builder.build(
             events: frozenEvents(),
             context: frozenContext(),
-            location: "Nairobi/Kenya",
-            flushTime: flushTime
+            flushTime: flushTime,
+            health: frozenHealth()
         )
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])

@@ -48,6 +48,14 @@ final class EdgeRumAPITests: XCTestCase {
         XCTAssertTrue(EdgeRum.isEnabled)
     }
 
+    /// #250 S1: `sdk.version` is the package version, handed to the
+    /// Recorder by `start()` (the shared Recorder is built before it).
+    func testStartHandsThePackageVersionToTheRecorder() {
+        EdgeRum.start(Self.validConfig())
+        XCTAssertEqual(probe.configuredWith?.sdkVersion, EdgeRum.sdkVersion)
+        XCTAssertEqual(EdgeRum.sdkVersion, EdgeRumGeneratedVersion.string)
+    }
+
     func testSecondStartWithSameIdentityIsNoOp() {
         EdgeRum.start(Self.validConfig())
         EdgeRum.start(Self.validConfig())

@@ -160,7 +160,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// `setEnabled(false)` / `stop()` / `shutdown()`.
     private var flushTimer: DispatchSourceTimer?
 
-    /// Session-scoped health: `sdk.thread_time_ms` (caller-thread
+    /// Session-scoped health: `thread_time_ms` (caller-thread
     /// wall-time inside `recordEvent` / `recordPerformance`) and the
     /// F32 counters. Reset at every session boundary.
     // ponytail: thread time measures the two ingress points only;
@@ -174,9 +174,9 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
     private var _session = SessionHealth()
 
-    /// F34 — `sdk.start_duration_ms` + `sdk.start_replayed_crash`, set
-    /// once at the end of `EdgeRum.start()`. Empty until then, so the
-    /// crash-replay envelope sent mid-start omits both (ADR-025).
+    /// F34 — `start_duration_ms` + `start_replayed_crash` (`sdk.health`),
+    /// set once at the end of `EdgeRum.start()`. Empty until then
+    /// (ADR-025).
     private var _startStats: [String: AttributeValue] = [:]
 
     /// Process-scoped health counters, shared with the transport.
@@ -304,10 +304,10 @@ public final class Recorder: Recording, @unchecked Sendable {
     }
 
     /// F34 — the `EdgeRum.start()` call's own cost, for every later
-    /// envelope of the process. A `nil` duration is omitted.
+    /// `sdk.health` of the process. A `nil` duration is omitted.
     public func setStartStats(durationMs: Int?, replayedCrash: Bool) {
-        var stats: [String: AttributeValue] = ["sdk.start_replayed_crash": .bool(replayedCrash)]
-        if let durationMs { stats["sdk.start_duration_ms"] = .int(durationMs) }
+        var stats: [String: AttributeValue] = ["start_replayed_crash": .bool(replayedCrash)]
+        if let durationMs { stats["start_duration_ms"] = .int(durationMs) }
         stateLock.lock(); _startStats = stats; stateLock.unlock()
     }
 
@@ -378,10 +378,12 @@ public final class Recorder: Recording, @unchecked Sendable {
             appNameOverride: config.appName,
             appVersionOverride: config.appVersion,
             appPackageOverride: config.appPackage,
-            appBuildOverride: config.appBuild,
-            environment: config.environmentName
+            appBuildOverride: config.appBuild
         )
         context.refreshApp(appCtx)
+        if let sdkVersion = config.sdkVersion {
+            context.refreshSdk(SdkContext(version: sdkVersion))
+        }
 
         let deviceCtx = DeviceContext.snapshot()
         context.refreshDevice(deviceCtx)
@@ -598,7 +600,6 @@ public final class Recorder: Recording, @unchecked Sendable {
 
     private struct Batch {
         let events: [Event]
-        let location: String?
         let transport: TransportSink
         let session: SessionHealth
         let startStats: [String: AttributeValue]
@@ -607,28 +608,27 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// Empty the buffer. Caller holds `stateLock`, so the session
     /// counters read here match the events taken.
     private func takeBatchLocked() -> Batch {
-        let batch = Batch(events: _buffer, location: _config?.location, transport: transport, session: _session, startStats: _startStats)
+        let batch = Batch(events: _buffer, transport: transport, session: _session, startStats: _startStats)
         _buffer.removeAll(keepingCapacity: true)
         return batch
     }
 
     private func send(_ batch: Batch, reason: FlushReason) {
         guard !batch.events.isEmpty else { return }
-        var sdkHealth = health.snapshot().merging(batch.startStats) { _, new in new }
-        sdkHealth["sdk.events_generated"] = .int(batch.session.generated)
+        var health = self.health.snapshot().merging(batch.startStats) { _, new in new }
+        health["thread_time_ms"] = .int(Int(batch.session.threadTimeNs / 1_000_000))
+        health["events_generated"] = .int(batch.session.generated)
         if batch.session.droppedSampled > 0 {
-            sdkHealth["sdk.events_dropped.sampled"] = .int(batch.session.droppedSampled)
+            health["events_dropped.sampled"] = .int(batch.session.droppedSampled)
         }
         if batch.session.droppedUnknownName > 0 {
-            sdkHealth["sdk.events_dropped.unknown_name"] = .int(batch.session.droppedUnknownName)
+            health["events_dropped.unknown_name"] = .int(batch.session.droppedUnknownName)
         }
         let envelope = payloadBuilder.build(
             events: batch.events,
             context: context.snapshot(),
-            location: batch.location,
             flushTime: clock.now,
-            sdkThreadTimeMs: Int(batch.session.threadTimeNs / 1_000_000),
-            sdkHealth: sdkHealth
+            health: health
         )
         batch.transport.send(envelope, reason: reason)
     }

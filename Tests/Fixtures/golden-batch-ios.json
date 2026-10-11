@@ -1,16 +1,19 @@
 {
-  "batch_size" : 4,
+  "app" : {
+    "build_number" : "412",
+    "name" : "Shop",
+    "package_name" : "com.example.shop",
+    "platform" : "ios",
+    "version" : "2.1.0"
+  },
+  "batch_size" : 5,
+  "contract_version" : "4.0.0",
+  "device_id" : "device_1717234876123_a1b2c3d4e5f60718_ios",
   "events" : [
     {
       "attributes" : {
-        "app.build_number" : "412",
-        "app.environment" : "production",
-        "app.name" : "Shop",
-        "app.package_name" : "com.example.shop",
-        "app.version" : "2.1.0",
         "device.batteryCharging" : false,
         "device.batteryLevel" : 0.82,
-        "device.id" : "device_1717234876123_a1b2c3d4e5f60718_ios",
         "device.isVirtual" : false,
         "device.manufacturer" : "Apple",
         "device.model" : "iPhone15,3",
@@ -26,8 +29,6 @@
         "network.effectiveType" : "4g",
         "network.type" : "wifi",
         "screen.name" : "CartViewController",
-        "sdk.platform" : "ios-native",
-        "sdk.version" : "1.0.0",
         "session.id" : "session_1717234870002_ff009988aabbccdd_ios",
         "session.sequence" : 1,
         "session.start_time" : "2026-06-14T10:25:00.002Z",
@@ -39,14 +40,8 @@
     },
     {
       "attributes" : {
-        "app.build_number" : "412",
-        "app.environment" : "production",
-        "app.name" : "Shop",
-        "app.package_name" : "com.example.shop",
-        "app.version" : "2.1.0",
         "device.batteryCharging" : false,
         "device.batteryLevel" : 0.82,
-        "device.id" : "device_1717234876123_a1b2c3d4e5f60718_ios",
         "device.isVirtual" : false,
         "device.manufacturer" : "Apple",
         "device.model" : "iPhone15,3",
@@ -67,8 +62,6 @@
         "network.effectiveType" : "4g",
         "network.type" : "wifi",
         "screen.name" : "CartViewController",
-        "sdk.platform" : "ios-native",
-        "sdk.version" : "1.0.0",
         "session.id" : "session_1717234870002_ff009988aabbccdd_ios",
         "session.sequence" : 1,
         "session.start_time" : "2026-06-14T10:25:00.002Z",
@@ -80,14 +73,8 @@
     },
     {
       "attributes" : {
-        "app.build_number" : "412",
-        "app.environment" : "production",
-        "app.name" : "Shop",
-        "app.package_name" : "com.example.shop",
-        "app.version" : "2.1.0",
         "device.batteryCharging" : false,
         "device.batteryLevel" : 0.82,
-        "device.id" : "device_1717234876123_a1b2c3d4e5f60718_ios",
         "device.isVirtual" : false,
         "device.manufacturer" : "Apple",
         "device.model" : "iPhone15,3",
@@ -108,8 +95,6 @@
         "resource.tls_ms" : 55,
         "resource.ttfb_ms" : 180,
         "screen.name" : "CartViewController",
-        "sdk.platform" : "ios-native",
-        "sdk.version" : "1.0.0",
         "session.id" : "session_1717234870002_ff009988aabbccdd_ios",
         "session.sequence" : 1,
         "session.start_time" : "2026-06-14T10:25:00.002Z",
@@ -122,14 +107,8 @@
     },
     {
       "attributes" : {
-        "app.build_number" : "412",
-        "app.environment" : "production",
-        "app.name" : "Shop",
-        "app.package_name" : "com.example.shop",
-        "app.version" : "2.1.0",
         "device.batteryCharging" : false,
         "device.batteryLevel" : 0.82,
-        "device.id" : "device_1717234876123_a1b2c3d4e5f60718_ios",
         "device.isVirtual" : false,
         "device.manufacturer" : "Apple",
         "device.model" : "iPhone15,3",
@@ -146,8 +125,6 @@
         "frame.target_hz" : 60,
         "network.effectiveType" : "4g",
         "network.type" : "wifi",
-        "sdk.platform" : "ios-native",
-        "sdk.version" : "1.0.0",
         "session.id" : "session_1717234870002_ff009988aabbccdd_ios",
         "session.sequence" : 1,
         "session.start_time" : "2026-06-14T10:25:00.002Z",
@@ -157,9 +134,44 @@
       "timestamp" : "2026-06-14T10:30:05.000Z",
       "type" : "metric",
       "value" : 18.4
+    },
+    {
+      "attributes" : {
+        "batches_uploaded" : 0,
+        "device.batteryCharging" : false,
+        "device.batteryLevel" : 0.82,
+        "device.isVirtual" : false,
+        "device.manufacturer" : "Apple",
+        "device.model" : "iPhone15,3",
+        "device.os" : "ios",
+        "device.pixelRatio" : 3,
+        "device.platform" : "ios",
+        "device.platform_version" : "17.4.1",
+        "device.screenHeight" : 2796,
+        "device.screenWidth" : 1290,
+        "events_generated" : 4,
+        "events_uploaded" : 0,
+        "network.effectiveType" : "4g",
+        "network.type" : "wifi",
+        "queue_depth_max" : 0,
+        "session.id" : "session_1717234870002_ff009988aabbccdd_ios",
+        "session.sequence" : 1,
+        "session.start_time" : "2026-06-14T10:25:00.002Z",
+        "start_duration_ms" : 41,
+        "start_replayed_crash" : false,
+        "storage_bytes_max" : 0,
+        "thread_time_ms" : 3,
+        "user.id" : "user_1717100000000_deadbeefcafef00d"
+      },
+      "eventName" : "sdk.health",
+      "timestamp" : "2026-06-14T10:30:00.512Z",
+      "type" : "event"
     }
   ],
-  "location" : "Nairobi/Kenya",
+  "sdk" : {
+    "name" : "ios",
+    "version" : "1.0.0"
+  },
   "timestamp" : "2026-06-14T10:30:00.512Z",
   "type" : "telemetry_batch"
 }

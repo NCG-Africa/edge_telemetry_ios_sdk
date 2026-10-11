@@ -7,9 +7,9 @@ import Foundation
 
 /// The deployment environment a host app is running in.
 ///
-/// Set on `EdgeRumConfig.environment`; emitted on every event as the
-/// `app.environment` attribute. Three cases match the values the
-/// backend already accepts from the web and Android SDKs.
+/// Deprecated: `EdgeRumConfig.environment` is ignored and never sent;
+/// the API key selects the environment.
+@available(*, deprecated, message: "Ignored: the API key selects the environment.")
 public enum Environment: String, Sendable, Hashable, CaseIterable {
     /// Production builds. Routes events to the live dashboards.
     case production

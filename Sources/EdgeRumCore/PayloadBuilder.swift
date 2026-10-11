@@ -4,16 +4,34 @@
 // current context bag. Stamps the outer batch `timestamp` at *build
 // time*, not enqueue time (issue #40 acceptance).
 //
-// Per CLAUDE.md "Recorder + transport implementation notes" step 2,
-// context attributes are merged into every event with event-supplied
-// attributes winning on key conflict.
+// Contract 4.0 (#250, R1): the identity (`app.*` identity keys,
+// `sdk.*`, `device.id`) is lifted from the context bag into the
+// envelope and stripped from every event — context-supplied and
+// event-supplied alike, so the envelope always wins. Every other
+// context attribute is merged into each event, event attrs winning.
 //
-// Refs: PLAN-iOS.md §7.2 (envelope), §F3/T3.5.
+// Refs: #250; PLAN-iOS.md §7.2 (envelope), §F3/T3.5.
 //
 
 import Foundation
 
 public struct PayloadBuilder: Sendable {
+
+    /// `app.*` keys that are identity (envelope-only). Other `app.*`
+    /// keys (`app.state`, `app.background_refresh`) are event data.
+    public static let appIdentityKeys: Set<String> = [
+        "app.name", "app.package_name", "app.version", "app.build_number",
+        "app.platform", "app.environment"
+    ]
+
+    /// `true` for a key that must never ride an event (R1).
+    public static func isIdentityKey(_ key: String) -> Bool {
+        key == "device.id" || key.hasPrefix("sdk.") || appIdentityKeys.contains(key)
+    }
+
+    /// The SDK's own health event: built here, never through
+    /// `recordEvent`, so it bypasses the allowlist and the sampler.
+    public static let healthEventName = "sdk.health"
 
     public init() {}
 
@@ -22,33 +40,45 @@ public struct PayloadBuilder: Sendable {
     /// - Parameters:
     ///   - events: events buffered by the `Recorder`.
     ///   - context: attribute bag from `ContextProvider.snapshot()`
-    ///     captured at flush time. Merged into every event;
-    ///     event-supplied attrs win on conflict.
-    ///   - location: optional `City/Country` string from
-    ///     `EdgeRumConfig.location`. Omitted from the envelope when
-    ///     `nil`.
-    ///   - flushTime: stamped as the envelope `timestamp`.
-    ///   - sdkThreadTimeMs: envelope `sdk.thread_time_ms`; omitted when `nil`.
-    ///   - sdkHealth: F32 envelope health counters.
+    ///     captured at flush time. Its identity keys fill the envelope;
+    ///     the rest is merged into every event (event attrs win).
+    ///   - flushTime: stamped as the envelope `timestamp` and the
+    ///     `sdk.health` event's.
+    ///   - health: SDK health counters (no `sdk.` prefix). Non-nil
+    ///     appends one `sdk.health` event, last (R4); it carries the
+    ///     same non-identity context as every other event.
     public func build(
         events: [Event],
         context: AttributeBag,
-        location: String?,
         flushTime: Date,
-        sdkThreadTimeMs: Int? = nil,
-        sdkHealth: [String: AttributeValue] = [:]
+        health: [String: AttributeValue]? = nil
     ) -> EventEnvelope {
+        var events = events
+        if let health {
+            events.append(.event(name: Self.healthEventName, timestamp: flushTime, attributes: AttributeBag(health)))
+        }
+        let shared = context.values.filter { !Self.isIdentityKey($0.key) }
         let enriched = events.map { event -> Event in
-            // Context first, event attrs overlaid second → event wins.
-            let merged = context.merging(event.attributes)
-            return event.withAttributes(merged)
+            var merged = shared.merging(event.attributes.values) { _, own in own }
+            merged = merged.filter { !Self.isIdentityKey($0.key) }
+            return event.withAttributes(AttributeBag(merged))
         }
         return EventEnvelope(
             timestamp: flushTime,
-            location: location,
-            events: enriched,
-            sdkThreadTimeMs: sdkThreadTimeMs,
-            sdkHealth: sdkHealth
+            deviceId: Self.string(context["device.id"]) ?? "",
+            sdkVersion: Self.string(context["sdk.version"]) ?? "",
+            app: AppContext(
+                name: Self.string(context["app.name"]),
+                packageName: Self.string(context["app.package_name"]),
+                version: Self.string(context["app.version"]),
+                buildNumber: Self.string(context["app.build_number"])
+            ),
+            events: enriched
         )
+    }
+
+    private static func string(_ value: AttributeValue?) -> String? {
+        guard case let .string(s)? = value else { return nil }
+        return s
     }
 }

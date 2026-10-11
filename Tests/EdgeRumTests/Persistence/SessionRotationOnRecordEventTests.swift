@@ -44,8 +44,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
             debug: false,
             sampleRate: 1.0,
             batchSize: 100,
-            flushInterval: 5.0,
-            location: nil
+            flushInterval: 5.0
         ))
         return (recorder, sink, manager)
     }
@@ -89,7 +88,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         // Capture the original session id from the first emitted event.
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
-        let originalSession = sink.envelopes.last?.events.first?.attributes["session.id"]
+        let originalSession = sink.envelopes.last?.recordedEvents.first?.attributes["session.id"]
         XCTAssertNotNil(originalSession)
 
         sink.reset()
@@ -138,7 +137,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
             recorder.recordEvent(name: "navigation", attributes: [:])
         }
         recorder.flush(reason: .manual)
-        let events = sink.envelopes.flatMap(\.events)
+        let events = sink.envelopes.flatMap(\.recordedEvents)
         let finalized = events.filter { $0.name == "session.finalized" }
         XCTAssertEqual(finalized.count, 1)
         XCTAssertEqual(finalized.first?.attributes["session.rotation"], .string("max_duration"))
@@ -151,7 +150,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         let (recorder, sink, _) = makeRecorder(clock: clock)
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.stop()
-        let names = sink.envelopes.flatMap(\.events).map(\.name)
+        let names = sink.envelopes.flatMap(\.recordedEvents).map(\.name)
         XCTAssertEqual(names, ["navigation"])
         XCTAssertEqual(sink.sends.last?.reason, .shutdown)
     }
@@ -172,7 +171,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         recorder.start(apiKey: "edge_test_abc", endpoint: URL(string: "https://collect.example.com")!, debug: false)
         recorder.flush(reason: .manual)
 
-        let events = sink.envelopes.flatMap(\.events)
+        let events = sink.envelopes.flatMap(\.recordedEvents)
         XCTAssertEqual(events.map(\.name).prefix(2), ["session.finalized", "session.started"])
         XCTAssertEqual(events.first?.attributes["session.id"], .string(first.id))
         XCTAssertEqual(events.first?.attributes["session.end_time"], .string(WireDateFormatter.string(from: first.lastActiveAt)))
@@ -193,7 +192,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let event = sink.envelopes.last?.events.first
+        let event = sink.envelopes.last?.recordedEvents.first
         XCTAssertEqual(event?.attributes["session.sequence"], .int(3))
     }
 
@@ -255,8 +254,8 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let event = sink.envelopes.last?.events.first
-        XCTAssertEqual(event?.attributes["device.id"], .string("device_1717100000000_aaaaaaaaaaaaaaaa_ios"))
+        let event = sink.envelopes.last?.recordedEvents.first
+        XCTAssertEqual(sink.envelopes.last?.deviceId, "device_1717100000000_aaaaaaaaaaaaaaaa_ios")
         XCTAssertEqual(event?.attributes["user.id"], .string("user_1717100000000_bbbbbbbbbbbbbbbb"))
     }
 
@@ -286,7 +285,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         recorder.recordEvent(name: "navigation", attributes: [:])
         recorder.flush(reason: .manual)
 
-        let event = sink.envelopes.last?.events.first
+        let event = sink.envelopes.last?.recordedEvents.first
         XCTAssertEqual(
             event?.attributes["session.id"],
             .string("session_1717234870000_cccccccccccccccc_ios"),

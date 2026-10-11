@@ -89,6 +89,10 @@ public final class ContextProvider: @unchecked Sendable {
         lock.lock(); self.app = app; lock.unlock()
     }
 
+    public func refreshSdk(_ sdk: SdkContext) {
+        lock.lock(); self.sdk = sdk; lock.unlock()
+    }
+
     public func refreshDevice(_ device: DeviceContext) {
         lock.lock(); self.device = device; lock.unlock()
     }

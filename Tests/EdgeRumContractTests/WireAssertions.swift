@@ -7,14 +7,19 @@
 //
 // Checked items (CLAUDE.md "Testing conventions"):
 //
-//   - Outer envelope: `type == "telemetry_batch"`, ISO 8601
-//     `timestamp` (round-trips through ISO formatter, includes
-//     fractional seconds), `batch_size == events.count`.
+//   - Outer envelope (contract 4.0.0, #250): exactly the eight root
+//     keys, `type == "telemetry_batch"`, `contract_version == "4.0.0"`,
+//     ISO 8601 UTC `timestamp` with fractional seconds and `Z`,
+//     `batch_size == events.count`, `device_id` shaped
+//     `device_…_ios`, `sdk == {name: "ios", version}`, `app.platform
+//     == "ios"` + `app.package_name`, no `""` in `app`.
 //   - Per-event: `type ∈ {"event","metric"}`, `timestamp` present,
-//     `eventName` in the 13-name allowlist, `metricName` in the
-//     8-name allowlist (F37), no `cause` attribute (F29).
-//   - Identity attrs present and well-formed: `session.id` /
-//     `device.id` prefixes, `sdk.platform == "ios-native"`.
+//     `eventName` allowlisted (or the SDK's own `sdk.health`, last),
+//     `metricName` in the 8-name allowlist (F37), no `cause` attribute
+//     (F29), no identity attribute (`app.*` identity keys, `sdk.*`,
+//     `device.id`) — R1.
+//   - `assertIdentityAttributes`: `session.id` well-formed on the
+//     event; identity absent from it.
 //   - No forbidden tokens anywhere in raw bytes: `traceId`,
 //     `spanId`, `resourceSpans`, `opentelemetry`.
 //   - Every attribute value is a JSON primitive — String, Int,
@@ -35,9 +40,16 @@ internal enum WireAssertions {
         "traceId", "spanId", "resourceSpans"
     ]
 
+    static let rootKeys: Set<String> = [
+        "type", "contract_version", "timestamp", "batch_size", "device_id", "sdk", "app", "events"
+    ]
+
     /// Encode the envelope, run every wire-conformance check, and
     /// return the encoded bytes so the caller can perform additional
-    /// specific assertions.
+    /// specific assertions. The returned `json["events"]` holds the
+    /// recorded events only: the trailing `sdk.health` event is
+    /// validated here and set aside, so callers assert on what they
+    /// recorded (`Contract4EnvelopeTests` pins `sdk.health` itself).
     @discardableResult
     internal static func assertValidEnvelope(
         _ envelope: EventEnvelope,
@@ -52,8 +64,21 @@ internal enum WireAssertions {
         )
 
         // Outer envelope shape
+        XCTAssertEqual(Set(json.keys), rootKeys, "R3: closed 8-key envelope", file: file, line: line)
         XCTAssertEqual(json["type"] as? String, "telemetry_batch",
                        "envelope.type must be 'telemetry_batch'", file: file, line: line)
+        XCTAssertEqual(json["contract_version"] as? String, "4.0.0", file: file, line: line)
+        let deviceId = try XCTUnwrap(json["device_id"] as? String, "device_id at the root", file: file, line: line)
+        XCTAssertTrue(deviceId.hasPrefix("device_") && deviceId.hasSuffix("_ios"),
+                      "device_id must match the prefix shape, got \(deviceId)", file: file, line: line)
+        let sdk = try XCTUnwrap(json["sdk"] as? [String: Any], file: file, line: line)
+        XCTAssertEqual(sdk["name"] as? String, "ios", file: file, line: line)
+        XCTAssertNotNil(sdk["version"] as? String, file: file, line: line)
+        let app = try XCTUnwrap(json["app"] as? [String: Any], file: file, line: line)
+        XCTAssertEqual(app["platform"] as? String, "ios", file: file, line: line)
+        for (key, value) in app {
+            XCTAssertNotEqual(value as? String, "", "R15: app.\(key) is never \"\"", file: file, line: line)
+        }
         let stamp = try XCTUnwrap(json["timestamp"] as? String,
                                   "envelope.timestamp must be present and a string",
                                   file: file, line: line)
@@ -63,6 +88,7 @@ internal enum WireAssertions {
         XCTAssertTrue(stamp.contains("."),
                       "envelope.timestamp must carry fractional seconds",
                       file: file, line: line)
+        XCTAssertTrue(stamp.hasSuffix("Z"), "R13: UTC with Z", file: file, line: line)
 
         let batchSize = try XCTUnwrap(json["batch_size"] as? Int,
                                       "envelope.batch_size must be an int",
@@ -91,8 +117,12 @@ internal enum WireAssertions {
                 let name = try XCTUnwrap(event["eventName"] as? String,
                                          "event events must carry an `eventName`",
                                          file: file, line: line)
-                XCTAssertTrue(Recorder.allowedEventNames.contains(name),
-                              "eventName '\(name)' is not allowlisted", file: file, line: line)
+                if name == PayloadBuilder.healthEventName {
+                    XCTAssertEqual(idx, events.count - 1, "sdk.health is last", file: file, line: line)
+                } else {
+                    XCTAssertTrue(Recorder.allowedEventNames.contains(name),
+                                  "eventName '\(name)' is not allowlisted", file: file, line: line)
+                }
             } else if type == "metric" {
                 let name = try XCTUnwrap(event["metricName"] as? String,
                                          "metric events must carry a `metricName`",
@@ -109,6 +139,8 @@ internal enum WireAssertions {
                          file: file, line: line)
             for (key, value) in attrs {
                 try assertAttributeIsPrimitive(value, key: key, eventIdx: idx, file: file, line: line)
+                XCTAssertFalse(PayloadBuilder.isIdentityKey(key),
+                               "R1: events[\(idx)] carries identity key \(key)", file: file, line: line)
             }
         }
 
@@ -126,11 +158,13 @@ internal enum WireAssertions {
                        "Forbidden token 'opentelemetry' must not appear in the wire bytes",
                        file: file, line: line)
 
-        return (data, json)
+        var recorded = json
+        recorded["events"] = events.filter { $0["eventName"] as? String != PayloadBuilder.healthEventName }
+        return (data, recorded)
     }
 
-    /// Assert identity attributes are present and well-formed on a
-    /// single event's attribute object.
+    /// Assert a single event's attributes carry a well-formed
+    /// `session.id` and none of the envelope-only identity (R1).
     internal static func assertIdentityAttributes(
         _ attrs: [String: Any],
         file: StaticString = #filePath,
@@ -141,17 +175,9 @@ internal enum WireAssertions {
         XCTAssertTrue(sessionId.hasPrefix("session_") && sessionId.hasSuffix("_ios"),
                       "session.id must match the prefix shape, got \(sessionId)",
                       file: file, line: line)
-
-        let deviceId = try XCTUnwrap(attrs["device.id"] as? String,
-                                     "device.id must be present", file: file, line: line)
-        XCTAssertTrue(deviceId.hasPrefix("device_") && deviceId.hasSuffix("_ios"),
-                      "device.id must match the prefix shape, got \(deviceId)",
-                      file: file, line: line)
-
-        XCTAssertEqual(attrs["sdk.platform"] as? String, "ios-native",
-                       "sdk.platform must be 'ios-native'", file: file, line: line)
-        XCTAssertNotNil(attrs["sdk.version"] as? String,
-                        "sdk.version must be present", file: file, line: line)
+        for key in attrs.keys where PayloadBuilder.isIdentityKey(key) {
+            XCTFail("R1: identity key \(key) on an event", file: file, line: line)
+        }
 
         // Misnaming guard — wire spec uses snake_case for some keys.
         XCTAssertNil(attrs["app.package"], "Wire field is `app.package_name`, not `app.package`",

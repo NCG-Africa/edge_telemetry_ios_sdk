@@ -1,14 +1,13 @@
 // Sources/EdgeRumCore/Context/SdkContext.swift
 //
-// The two SDK-identity attributes every event carries.
+// The SDK version, sourced from the build-plugin-generated string in
+// the public umbrella module and handed down via
+// `RecorderConfig.sdkVersion` so EdgeRumCore stays free of an upward
+// dependency on EdgeRum.
 //
-// `sdk.version` is sourced from the build-plugin-generated string in
-// the public umbrella module. F3 mirrors it via an init-time argument
-// so EdgeRumCore stays free of an upward dependency on EdgeRum.
-//
-// `sdk.platform = "ios-native"` is a NEW value not previously seen by
-// the backend. Confirmation that the dispatcher accepts it is the
-// first item in PLAN-iOS.md § "Backend asks".
+// Contract 4.0 (#250): `sdk.version` and `device.id` ride the envelope
+// (`sdk.version`, `device_id`), never an event; `sdk.platform` is gone
+// (`sdk.name = "ios"` is a literal in `EventEnvelope`).
 //
 // Refs: PLAN-iOS.md §7.5; CLAUDE.md "Required identity attributes".
 //
@@ -18,16 +17,13 @@ import Foundation
 public struct SdkContext: Sendable, Hashable {
 
     public let version: String
-    public let platform: String
 
-    public init(version: String, platform: String = "ios-native") {
+    public init(version: String) {
         self.version = version
-        self.platform = platform
     }
 
     public func write(into bag: inout AttributeBag) {
         bag.set("sdk.version", .string(version))
-        bag.set("sdk.platform", .string(platform))
     }
 }
 

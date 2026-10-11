@@ -11,7 +11,7 @@ final class ContextProviderTests: XCTestCase {
 
     private func makeProvider() -> ContextProvider {
         ContextProvider(
-            app: AppContext(name: "Shop", packageName: "com.example.shop", version: "2.1.0", buildNumber: "412", environment: "production"),
+            app: AppContext(name: "Shop", packageName: "com.example.shop", version: "2.1.0", buildNumber: "412"),
             device: DeviceContext(platformVersion: "17.4.1", model: "iPhone15,3", isVirtual: false, screenWidth: 1290, screenHeight: 2796, pixelRatio: 3.0),
             deviceIdentity: DeviceIdentitySnapshot(id: "device_1_aaaaaaaaaaaaaaaa_ios"),
             network: NetworkContext(type: .wifi, effectiveType: "wifi"),
@@ -31,7 +31,7 @@ final class ContextProviderTests: XCTestCase {
         XCTAssertEqual(bag["app.package_name"], .string("com.example.shop"))
         XCTAssertEqual(bag["app.version"], .string("2.1.0"))
         XCTAssertEqual(bag["app.build_number"], .string("412"))
-        XCTAssertEqual(bag["app.environment"], .string("production"))
+        XCTAssertNil(bag["app.environment"], "#250 R8: never sent")
         // device.*
         XCTAssertEqual(bag["device.platform"], .string("ios"))
         XCTAssertEqual(bag["device.manufacturer"], .string("Apple"))
@@ -54,7 +54,7 @@ final class ContextProviderTests: XCTestCase {
         XCTAssertEqual(bag["user.id"], .string("user_1_cccccccccccccccc"))
         // sdk.*
         XCTAssertEqual(bag["sdk.version"], .string("1.0.0"))
-        XCTAssertEqual(bag["sdk.platform"], .string("ios-native"))
+        XCTAssertNil(bag["sdk.platform"], "#250 R2: dropped")
     }
 
     func testUnsetOptionalAttributesAreOmitted() {
@@ -111,7 +111,7 @@ final class ContextProviderTests: XCTestCase {
 
     func testSnapshotIncludesPowerAccessibilityAndStorageWhenPresent() {
         let p = ContextProvider(
-            app: AppContext(name: "Shop", packageName: "com.example.shop", version: "2.1.0", buildNumber: "412", environment: "production"),
+            app: AppContext(name: "Shop", packageName: "com.example.shop", version: "2.1.0", buildNumber: "412"),
             device: DeviceContext(),
             deviceIdentity: DeviceIdentitySnapshot(id: "device_1_aaaaaaaaaaaaaaaa_ios"),
             network: NetworkContext(),

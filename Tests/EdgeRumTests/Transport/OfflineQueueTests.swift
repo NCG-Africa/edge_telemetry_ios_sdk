@@ -135,9 +135,9 @@ final class OfflineQueueTests: XCTestCase {
         queue.enqueue(Data(repeating: 0x62, count: 100), eventCount: 30)  // trims the first
 
         let snap = health.snapshot()
-        XCTAssertEqual(snap["sdk.events_dropped.queue_overflow"], .int(30), "one file overflow = its events")
-        XCTAssertEqual(snap["sdk.queue_depth_max"], .int(30))
-        XCTAssertEqual(snap["sdk.storage_bytes_max"], .int(100))
+        XCTAssertEqual(snap["events_dropped.queue_overflow"], .int(30), "one file overflow = its events")
+        XCTAssertEqual(snap["queue_depth_max"], .int(30))
+        XCTAssertEqual(snap["storage_bytes_max"], .int(100))
     }
 
     func testDrainHandsEachFilesEventCountAndRecordsHighWater() {
@@ -149,6 +149,6 @@ final class OfflineQueueTests: XCTestCase {
         queue.drain { _, n in counts.append(n); return true }
 
         XCTAssertEqual(counts, [7])
-        XCTAssertEqual(health.snapshot()["sdk.queue_depth_max"], .int(7))
+        XCTAssertEqual(health.snapshot()["queue_depth_max"], .int(7))
     }
 }
