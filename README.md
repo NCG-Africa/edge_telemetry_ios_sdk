@@ -107,7 +107,7 @@ host project.
 
 ```swift-skip
 .package(url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git",
-         from: "2.0.0")
+         from: "4.0.0")
 ```
 
 Then add the `EdgeRum` product to your app target's dependencies:
@@ -126,7 +126,7 @@ Then add the `EdgeRum` product to your app target's dependencies:
 ### CocoaPods
 
 ```ruby
-pod 'EdgeRum', '~> 2.0'
+pod 'EdgeRum', '~> 4.0'
 ```
 
 ### XCFramework
