@@ -1481,8 +1481,9 @@ top-level `value` (no `cpu.percent` key), the memory key is
 `memory.pressure` (not `memory.pressure_level`), and
 `sdk.start_duration_ms` is process-scoped (ADR-025).
 
-1. **Accept `sdk.platform = "ios-native"` as a valid value.** Only
-   new identity-attribute value in the iOS payload.
+1. ~~**Accept `sdk.platform = "ios-native"` as a valid value.**~~
+   Superseded by contract 4.0.0 (#250): the envelope carries
+   `sdk.name = "ios"` / `app.platform = "ios"`; `sdk.platform` is gone.
 
 2. **Accept iOS dSYM symbolication** for `app.crash` events with
    `runtime = "native"`. Confirm the backend's symbolication pipeline

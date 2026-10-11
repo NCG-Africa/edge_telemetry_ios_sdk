@@ -76,7 +76,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         )
         config.appName = "Shop"
         config.appVersion = "2.1.0"
-        config.environment = .production
         EdgeRum.start(config)
         return true
     }

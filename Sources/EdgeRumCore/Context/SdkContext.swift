@@ -6,8 +6,8 @@
 // dependency on EdgeRum.
 //
 // Contract 4.0 (#250): `sdk.version` and `device.id` ride the envelope
-// (`sdk.version`, `device_id`), never an event; `sdk.platform` is gone
-// (`sdk.name = "ios"` is a literal in `EventEnvelope`).
+// (`sdk.version`, `device_id`), never an event; `sdk.name = "ios"` is
+// a literal in `EventEnvelope`.
 //
 // Refs: PLAN-iOS.md §7.5; CLAUDE.md "Required identity attributes".
 //

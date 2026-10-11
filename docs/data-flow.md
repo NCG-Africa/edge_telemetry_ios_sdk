@@ -249,8 +249,10 @@ attributes — it does **not** change `user.id`.
 | `sdk.version`  | string | yes      | v1.0   | SDK constant                 |
 | `sdk.platform` | string | yes      | v1.0   | Constant `"ios-native"` (new value vs. web / Android) |
 
-`sdk.platform = "ios-native"` is a **new value** the backend has not
-seen before — see § 11 backend asks.
+**Superseded by contract 4.0.0 (#250):** `sdk.platform` is gone; the
+envelope carries `sdk: {name: "ios", version}` and `app.platform = "ios"`,
+and no event carries `sdk.*`, the `app.*` identity keys or `device.id`.
+See `CLAUDE.md` § "Envelope structure" and ADR-029.
 
 ---
 
@@ -1166,8 +1168,8 @@ lands.
 
 ### v1.0 (blocking ship)
 
-1. **`sdk.platform = "ios-native"`** is a new value. Confirm the
-   dispatcher accepts it on every event / metric.
+1. ~~**`sdk.platform = "ios-native"`** is a new value.~~ Superseded by
+   contract 4.0.0 (#250): `sdk.name = "ios"` in the envelope.
 2. **Web Vital metrics absent.** Confirm iOS batches missing `LCP`,
    `FCP`, `CLS`, `INP`, `TTFB` are ingested without error.
 3. **Tier 1 / Tier 3 attribute keys** (every `v1.0+` row in § 3 and § 10).

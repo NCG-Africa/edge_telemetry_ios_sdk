@@ -1,152 +1,188 @@
 // Reference: complete payload example — what edge-rum-ios sends.
-// Authoritative attribute list lives in payload-schema.json.
+// Contract 4.0.0 (#250): identity (app, SDK, device) lives in the
+// envelope only; every event carries the session, user, device and
+// network context. The last event is the SDK's own `sdk.health`.
+// Generated from Tests/Fixtures/golden-batch-ios.json.
 //
 // POST /collector/telemetry
 // Content-Type: application/json
 // X-API-Key: edge_your_api_key_here
-// User-Agent: EdgeRum-iOS/1.0.0 (iPhone15,3; iOS 17.4.1)
+// User-Agent: EdgeRum-iOS/4.0.0 (iPhone15,3; iOS 17.4.1)
 
 {
   "type": "telemetry_batch",
+  "contract_version": "4.0.0",
   "timestamp": "2026-06-14T10:30:00.512Z",
-  "location": "Nairobi/Kenya",
-  "batch_size": 4,
+  "batch_size": 5,
+  "device_id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+  "sdk": {
+    "name": "ios",
+    "version": "1.0.0"
+  },
+  "app": {
+    "name": "Shop",
+    "package_name": "com.example.shop",
+    "platform": "ios",
+    "version": "2.1.0",
+    "build_number": "412"
+  },
   "events": [
-
-    // ── navigation (UIKit screen entry) ─────────────────────────────────
     {
       "type": "event",
       "eventName": "navigation",
       "timestamp": "2026-06-14T10:30:00.123Z",
       "attributes": {
-        "app.name": "Shop",
-        "app.version": "2.1.0",
-        "app.package_name": "com.example.shop",
-        "app.build_number": "412",
-        "app.environment": "production",
-        "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
-        "device.platform": "ios",
-        "device.model": "iPhone15,3",
-        "device.manufacturer": "Apple",
-        "device.os": "ios",
-        "device.platform_version": "17.4.1",
-        "device.isVirtual": false,
-        "device.screenWidth": 1290,
-        "device.screenHeight": 2796,
-        "device.pixelRatio": 3.0,
-        "device.batteryLevel": 0.82,
         "device.batteryCharging": false,
-        "network.type": "wifi",
-        "network.effectiveType": "4g",
-        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "session.start_time": "2026-06-14T10:25:00.002Z",
-        "session.sequence": 1,
-        "user.id": "user_1717100000000_deadbeefcafef00d",
-        "sdk.version": "1.0.0",
-        "sdk.platform": "ios-native",
-        "navigation.screen": "CartViewController",
+        "device.batteryLevel": 0.82,
+        "device.isVirtual": false,
+        "device.manufacturer": "Apple",
+        "device.model": "iPhone15,3",
+        "device.os": "ios",
+        "device.pixelRatio": 3,
+        "device.platform": "ios",
+        "device.platform_version": "17.4.1",
+        "device.screenHeight": 2796,
+        "device.screenWidth": 1290,
+        "navigation.kind": "uikit",
         "navigation.previous_screen": "ProductListViewController",
-        "navigation.kind": "uikit"
+        "navigation.screen": "CartViewController",
+        "network.effectiveType": "4g",
+        "network.type": "wifi",
+        "screen.name": "CartViewController",
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "session.sequence": 1,
+        "session.start_time": "2026-06-14T10:25:00.002Z",
+        "user.id": "user_1717100000000_deadbeefcafef00d"
       }
     },
-
-    // NOTE: iOS does NOT emit a screen.duration event. The Processor
-    // synthesizes screen_duration from every `navigation` event
-    // (event_processor.py:155) — emitting one from iOS would double-count.
-    // See map #140 / decision #144.
-
-    // ── http.request (URLSession capture) ───────────────────────────────
     {
       "type": "event",
       "eventName": "http.request",
       "timestamp": "2026-06-14T10:30:00.456Z",
       "attributes": {
-        "app.name": "Shop",
-        "app.package_name": "com.example.shop",
-        "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+        "device.batteryCharging": false,
+        "device.batteryLevel": 0.82,
+        "device.isVirtual": false,
+        "device.manufacturer": "Apple",
+        "device.model": "iPhone15,3",
+        "device.os": "ios",
+        "device.pixelRatio": 3,
         "device.platform": "ios",
-        "network.type": "wifi",
-        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "session.start_time": "2026-06-14T10:25:00.002Z",
-        "user.id": "user_1717100000000_deadbeefcafef00d",
-        "sdk.version": "1.0.0",
-        "sdk.platform": "ios-native",
-        "http.method": "GET",
-        "http.host": "api.example.com",
-        "http.path": "/products",
-        "http.status_code": 200,
+        "device.platform_version": "17.4.1",
+        "device.screenHeight": 2796,
+        "device.screenWidth": 1290,
         "http.duration_ms": 342,
+        "http.from_cache": false,
+        "http.host": "api.example.com",
+        "http.method": "GET",
+        "http.path": "/products",
         "http.request_size": 0,
         "http.response_size": 18244,
-        "http.from_cache": false
-        // No full URL is sent (query strings carry PII). On failure the
-        // event adds "http.error_domain" (string) + "http.error_code" (int).
+        "http.status_code": 200,
+        "network.effectiveType": "4g",
+        "network.type": "wifi",
+        "screen.name": "CartViewController",
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "session.sequence": 1,
+        "session.start_time": "2026-06-14T10:25:00.002Z",
+        "user.id": "user_1717100000000_deadbeefcafef00d"
       }
     },
-
-    // ── metric: resource_timing (companion of http.request above) ──────
-    // Emitted immediately after the http.request event for the same
-    // URLSession task. The resource.*_ms fields are derived from
-    // URLSessionTaskMetrics' last transactionMetrics entry. The `value`
-    // lives on the item only — it is not copied into `attributes`.
     {
       "type": "metric",
       "metricName": "resource_timing",
-      "value": 342.0,
-      "timestamp": "2026-06-14T10:30:00.457Z",
+      "value": 342,
+      "timestamp": "2026-06-14T10:30:04.456Z",
       "attributes": {
-        "app.name": "Shop",
-        "app.package_name": "com.example.shop",
-        "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+        "device.batteryCharging": false,
+        "device.batteryLevel": 0.82,
+        "device.isVirtual": false,
+        "device.manufacturer": "Apple",
+        "device.model": "iPhone15,3",
+        "device.os": "ios",
+        "device.pixelRatio": 3,
         "device.platform": "ios",
+        "device.platform_version": "17.4.1",
+        "device.screenHeight": 2796,
+        "device.screenWidth": 1290,
+        "network.effectiveType": "4g",
         "network.type": "wifi",
-        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "session.start_time": "2026-06-14T10:25:00.002Z",
-        "user.id": "user_1717100000000_deadbeefcafef00d",
-        "sdk.version": "1.0.0",
-        "sdk.platform": "ios-native",
-        "resource.host": "api.example.com",
+        "resource.connect_ms": 40,
         "resource.dns_ms": 12,
-        "resource.connect_ms": 31,
-        "resource.tls_ms": 45,
-        "resource.ttfb_ms": 240,
-        "resource.download_ms": 14
+        "resource.download_ms": 55,
+        "resource.host": "api.example.com",
+        "resource.protocol": "h2",
+        "resource.redirect_count": 0,
+        "resource.tls_ms": 55,
+        "resource.ttfb_ms": 180,
+        "screen.name": "CartViewController",
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "session.sequence": 1,
+        "session.start_time": "2026-06-14T10:25:00.002Z",
+        "user.id": "user_1717100000000_deadbeefcafef00d"
       }
     },
-
-    // ── metric: frame_render_time ───────────────────────────────────────
     {
       "type": "metric",
       "metricName": "frame_render_time",
       "value": 18.4,
       "timestamp": "2026-06-14T10:30:05.000Z",
       "attributes": {
-        "app.name": "Shop",
-        "app.package_name": "com.example.shop",
-        "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+        "device.batteryCharging": false,
+        "device.batteryLevel": 0.82,
+        "device.isVirtual": false,
+        "device.manufacturer": "Apple",
+        "device.model": "iPhone15,3",
+        "device.os": "ios",
+        "device.pixelRatio": 3,
         "device.platform": "ios",
-        "network.type": "wifi",
-        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "session.start_time": "2026-06-14T10:25:00.002Z",
-        "user.id": "user_1717100000000_deadbeefcafef00d",
-        "sdk.version": "1.0.0",
-        "sdk.platform": "ios-native",
+        "device.platform_version": "17.4.1",
+        "device.screenHeight": 2796,
+        "device.screenWidth": 1290,
+        "frame.dropped_count": 1,
         "frame.max_ms": 33,
         "frame.p95_ms": 28,
-        "frame.dropped_count": 2,
+        "frame.source": "displaylink",
         "frame.target_hz": 60,
-        "frame.sample_count": 148,
-        "frame.window_ms": 2500,
-        "frame.source": "displaylink"
+        "network.effectiveType": "4g",
+        "network.type": "wifi",
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "session.sequence": 1,
+        "session.start_time": "2026-06-14T10:25:00.002Z",
+        "user.id": "user_1717100000000_deadbeefcafef00d"
+      }
+    },
+    {
+      "type": "event",
+      "eventName": "sdk.health",
+      "timestamp": "2026-06-14T10:30:00.512Z",
+      "attributes": {
+        "batches_uploaded": 0,
+        "device.batteryCharging": false,
+        "device.batteryLevel": 0.82,
+        "device.isVirtual": false,
+        "device.manufacturer": "Apple",
+        "device.model": "iPhone15,3",
+        "device.os": "ios",
+        "device.pixelRatio": 3,
+        "device.platform": "ios",
+        "device.platform_version": "17.4.1",
+        "device.screenHeight": 2796,
+        "device.screenWidth": 1290,
+        "events_generated": 4,
+        "events_uploaded": 0,
+        "network.effectiveType": "4g",
+        "network.type": "wifi",
+        "queue_depth_max": 0,
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "session.sequence": 1,
+        "session.start_time": "2026-06-14T10:25:00.002Z",
+        "start_duration_ms": 41,
+        "start_replayed_crash": false,
+        "storage_bytes_max": 0,
+        "thread_time_ms": 3,
+        "user.id": "user_1717100000000_deadbeefcafef00d"
       }
     }
   ]
 }
-
-// Other event shapes (app.error, app.hang, app.crash, user.profile.update,
-// custom_event, app_lifecycle, page_load, network_change, session.started,
-// session.finalized, plus metric items memory_usage, cpu_usage, long_task
-// and custom_timer from EdgeRum.time()) follow the same envelope and
-// identity-attribute rules. metricName is one of exactly six allowlisted
-// values: resource_timing, long_task, frame_render_time, memory_usage,
-// cpu_usage, custom_timer.

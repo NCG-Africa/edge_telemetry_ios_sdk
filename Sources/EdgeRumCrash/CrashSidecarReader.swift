@@ -41,7 +41,7 @@ internal struct CrashSidecarSnapshot: Equatable {
     internal let userId: String?
 
     /// All other mirrored attributes passed through verbatim (e.g.
-    /// `sdk.version`, `sdk.platform`; host identity is never mirrored
+    /// `sdk.version`, `app.version`; host identity is never mirrored
     /// since F27). Stashed so the caller can merge them into the
     /// emitted event without re-walking the sidecar's key list.
     internal let extras: [String: AttributeValue]

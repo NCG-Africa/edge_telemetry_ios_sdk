@@ -17,7 +17,6 @@ var config = EdgeRumConfig(
 )
 config.appName = "Shop"
 config.appVersion = "2.1.0"
-config.environment = .production
 config.sampleRate = 0.5
 config.flushInterval = 10.0
 EdgeRum.start(config)
@@ -32,10 +31,11 @@ path automatically. `https://` is required unless
 ``EdgeRumConfig/debug`` is `true`.
 
 ``EdgeRumConfig/appName``, ``EdgeRumConfig/appVersion``,
-``EdgeRumConfig/appPackage``, ``EdgeRumConfig/appBuild``, and
-``EdgeRumConfig/environment`` populate the `app.*` attributes on every
-event. Setting them explicitly lets the SDK report a stable identity
-even before the bundle's `Info.plist` is fully consulted.
+``EdgeRumConfig/appPackage``, and ``EdgeRumConfig/appBuild`` override
+the `Info.plist` values sent once per batch in the envelope's `app`
+object. A version or build number that is unknown is left out, never
+sent empty. ``EdgeRumConfig/environment`` is deprecated and ignored:
+the API key selects the environment.
 
 ## Sampling and buffering
 
@@ -66,9 +66,8 @@ URL is reflected on both the `http.request` event and the companion
 
 ## Location
 
-``EdgeRumConfig/location`` sets the batch envelope's `location` field
-to a literal `"City/Country"` string.
-The SDK never resolves a location itself.
+``EdgeRumConfig/location`` is deprecated and ignored. The SDK sends no
+location; the backend derives one from the request's IP address.
 
 ## Capture toggles
 

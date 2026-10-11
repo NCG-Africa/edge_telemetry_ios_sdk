@@ -159,7 +159,6 @@ final class QuickstartAppDelegate: UIResponder, UIApplicationDelegate {
         )
         config.appName = "Shop"
         config.appVersion = "2.1.0"
-        config.environment = .production
         EdgeRum.start(config)
         return true
     }
@@ -222,12 +221,12 @@ Every other field has a documented default tuned for production use.
 |--------------------------------|-------------------------------------|--------------------------------------|---------|
 | `apiKey`                       | `String`                            | —                                    | Sent as `X-API-Key`. Must start with `"edge_"`. |
 | `endpoint`                     | `URL`                               | —                                    | Collector base URL. SDK appends `/collector/telemetry`. `https://` unless `debug == true`. |
-| `appName`                      | `String?`                           | `nil`                                | Emitted as `app.name`. |
-| `appVersion`                   | `String?`                           | `nil`                                | Emitted as `app.version`. |
-| `appPackage`                   | `String?`                           | `nil`                                | Emitted as `app.package_name`. |
-| `appBuild`                     | `String?`                           | `nil`                                | Emitted as `app.build_number`. |
-| `environment`                  | `Environment?`                      | `nil`                                | `.production` / `.staging` / `.development`. |
-| `location`                     | `String?`                           | `nil`                                | Batch envelope `location`, e.g. `"Nairobi/Kenya"`. |
+| `appName`                      | `String?`                           | `nil`                                | Envelope `app.name`; overrides `CFBundleDisplayName`. |
+| `appVersion`                   | `String?`                           | `nil`                                | Envelope `app.version`; overrides `CFBundleShortVersionString`. Omitted when unknown. |
+| `appPackage`                   | `String?`                           | `nil`                                | Envelope `app.package_name`; overrides the bundle identifier. |
+| `appBuild`                     | `String?`                           | `nil`                                | Envelope `app.build_number`; overrides `CFBundleVersion`. Omitted when unknown. |
+| `environment`                  | `Environment?`                      | `nil`                                | **Deprecated, ignored.** The API key selects the environment. |
+| `location`                     | `String?`                           | `nil`                                | **Deprecated, ignored.** Location is derived server-side. |
 | `sampleRate`                   | `Double`                            | `1.0`                                | Per-session sample rate. `0.0`–`1.0`. |
 | `ignoreUrls`                   | `[NSRegularExpression]`             | `[]`                                 | HTTP captures matching any regex are dropped. |
 | `maxQueueSize`                 | `Int`                               | `200`                                | Offline-queue cap (events). |
@@ -485,34 +484,60 @@ final class RecipeBackgroundFlushAppDelegate: UIResponder, UIApplicationDelegate
 
 ## What gets sent
 
-Every batch is a JSON `telemetry_batch` envelope. A complete reference
-batch — `navigation`, `http.request`, and two metrics
-(`resource_timing`, `frame_render_time`) — lives at [`docs/payload-example.jsonc`](docs/payload-example.jsonc).
+Every batch is a JSON `telemetry_batch` envelope, contract `4.0.0`. The
+app, SDK and device identity is sent once per batch in the envelope;
+events carry the session, user, device and network context. The last
+event of each batch is the SDK's own `sdk.health` report. A complete
+reference batch — `navigation`, `http.request`, two measurements
+(`resource_timing`, `frame_render_time`) and `sdk.health` — lives at
+[`docs/payload-example.jsonc`](docs/payload-example.jsonc).
 
 Excerpt:
 
 ```json
 {
   "type": "telemetry_batch",
+  "contract_version": "4.0.0",
   "timestamp": "2026-06-14T10:30:00.512Z",
-  "location": "Nairobi/Kenya",
-  "batch_size": 1,
+  "batch_size": 2,
+  "device_id": "device_1717234876123_a1b2c3d4e5f60718_ios",
+  "sdk": { "name": "ios", "version": "4.0.0" },
+  "app": {
+    "name": "Shop",
+    "package_name": "com.example.shop",
+    "platform": "ios",
+    "version": "2.1.0",
+    "build_number": "412"
+  },
   "events": [
     {
       "type": "event",
       "eventName": "navigation",
       "timestamp": "2026-06-14T10:30:00.123Z",
       "attributes": {
-        "app.name": "Shop",
         "device.platform": "ios",
         "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "sdk.platform": "ios-native",
         "navigation.screen": "CartViewController"
+      }
+    },
+    {
+      "type": "event",
+      "eventName": "sdk.health",
+      "timestamp": "2026-06-14T10:30:00.512Z",
+      "attributes": {
+        "session.id": "session_1717234870002_ff009988aabbccdd_ios",
+        "events_generated": 1,
+        "events_uploaded": 0
       }
     }
   ]
 }
 ```
+
+The envelope `timestamp` is the send time in UTC; a batch sent again
+from the offline queue is re-stamped. A crash or hang replayed after
+the app was updated is sent in its own batch, under the version and
+build that recorded it.
 
 Every value in `attributes` is a JSON primitive — `string`, `int`,
 `double`, or `bool`. The `AttributeValue` sealed enum enforces this
