@@ -47,11 +47,14 @@ public struct PayloadBuilder: Sendable {
     ///   - health: SDK health counters (no `sdk.` prefix). Non-nil
     ///     appends one `sdk.health` event, last (R4); it carries the
     ///     same non-identity context as every other event.
+    ///   - app: overrides the context's `app.*` identity — the saved
+    ///     build of a replayed crash or hang (R14).
     public func build(
         events: [Event],
         context: AttributeBag,
         flushTime: Date,
-        health: [String: AttributeValue]? = nil
+        health: [String: AttributeValue]? = nil,
+        app: AppContext? = nil
     ) -> EventEnvelope {
         var events = events
         if let health {
@@ -67,7 +70,7 @@ public struct PayloadBuilder: Sendable {
             timestamp: flushTime,
             deviceId: Self.string(context["device.id"]) ?? "",
             sdkVersion: Self.string(context["sdk.version"]) ?? "",
-            app: AppContext(
+            app: app ?? AppContext(
                 name: Self.string(context["app.name"]),
                 packageName: Self.string(context["app.package_name"]),
                 version: Self.string(context["app.version"]),

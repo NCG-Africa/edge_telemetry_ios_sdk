@@ -73,6 +73,49 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         XCTAssertTrue(probe.calls.isEmpty, "no pending report → no event")
     }
 
+    // MARK: #250 R14 — own batch on the saved build
+
+    private func replayCrash(into recorder: Recorder, prior: [String: AttributeValue]?) throws {
+        guard let fixtureBytes = CrashFixtureGenerator.makeLiveReport() else {
+            throw XCTSkip("PLCrashReporter unavailable on this slice")
+        }
+        let baseDir = makeTempBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+        let plcrBase = baseDir.appendingPathComponent("plcr", isDirectory: true)
+        try seedPendingCrashReport(fixtureBytes: fixtureBytes, basePath: plcrBase)
+        XCTAssertTrue(PLCrashIntegration.replayIfNeeded(
+            recorder: recorder,
+            sidecarContents: prior,
+            config: PLCrashIntegrationConfig(basePath: plcrBase),
+            debug: false
+        ))
+    }
+
+    func testCrashFromAnOlderBuildIsSentAloneOnTheSavedBuild() throws {
+        let (recorder, sink) = ReplayBatch.liveRecorder()
+        try replayCrash(into: recorder, prior: ReplayBatch.priorSidecar())
+        try ReplayBatch.assertReplayBatch(sink, recorder, eventName: "app.crash", app: ReplayBatch.savedApp)
+    }
+
+    /// A sidecar from SDK ≤ 2.0.0 never mirrored build or name: omitted,
+    /// never filled from the current build.
+    func testOldSidecarWithoutBuildOrNameOmitsThem() throws {
+        let (recorder, sink) = ReplayBatch.liveRecorder()
+        try replayCrash(into: recorder, prior: ReplayBatch.priorSidecar(build: false, name: false))
+        try ReplayBatch.assertReplayBatch(sink, recorder, eventName: "app.crash", app: [
+            "package_name": "com.example.shop", "platform": "ios", "version": "1.0"
+        ])
+    }
+
+    func testCrashWithoutSidecarIsSentAloneOnTheCurrentBuild() throws {
+        let (recorder, sink) = ReplayBatch.liveRecorder()
+        try replayCrash(into: recorder, prior: nil)
+        let replay = try ReplayBatch.json(XCTUnwrap(sink.envelopes.first))
+        XCTAssertEqual((replay["events"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual((replay["app"] as? [String: String])?["version"], "2.0")
+        XCTAssertEqual((replay["app"] as? [String: String])?["build_number"], "20")
+    }
+
     func testReplayEmitsAppCrashWithSidecarIdentity() throws {
         guard let fixtureBytes = CrashFixtureGenerator.makeLiveReport() else {
             throw XCTSkip("PLCrashReporter unavailable on this slice")
@@ -99,7 +142,6 @@ final class PLCrashIntegrationReplayTests: XCTestCase {
         bag.set("device.id", .string("device_1717234876123_a1b2c3d4e5f60718_ios"))
         bag.set("user.id", .string("user_1717100000000_deadbeefcafef00d"))
         bag.set("sdk.version", .string("1.0.0"))
-        bag.set("sdk.platform", .string("ios-native"))
         sidecar.write(snapshot: bag)
 
         // 3) Drive the replay path.

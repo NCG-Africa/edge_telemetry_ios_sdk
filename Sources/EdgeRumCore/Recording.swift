@@ -59,6 +59,13 @@ public protocol Recording: AnyObject, Sendable {
     func setEnabled(_ enabled: Bool)
 
     func recordEvent(name: String, attributes: [String: AttributeValue])
+
+    /// Send an event replayed from the previous process (`app.crash`,
+    /// terminated `app.hang`) in a batch of its own, with no
+    /// `sdk.health`. `savedApp` is the build that saved it: its
+    /// `name` / `version` / `buildNumber` fill the envelope `app`
+    /// (nil ones omitted); `nil` keeps the current build (#250 R14).
+    func recordReplayed(name: String, attributes: [String: AttributeValue], savedApp: AppContext?)
     func recordPerformance(name: String, attributes: [String: AttributeValue])
 
     func setUser(_ user: RecorderUser)
@@ -108,6 +115,11 @@ public extension Recording {
     func drainOfflineQueue() { }
 
     func flush(reason: FlushReason) { _ = reason }
+
+    /// Default: an ordinary event, so test probes see one call.
+    func recordReplayed(name: String, attributes: [String: AttributeValue], savedApp: AppContext?) {
+        recordEvent(name: name, attributes: attributes)
+    }
 
     /// Default no-op; the real `Recorder` overrides this.
     func clearUser() { }

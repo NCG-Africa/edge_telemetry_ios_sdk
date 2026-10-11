@@ -69,10 +69,14 @@ final class SessionSidecarTests: XCTestCase {
         bag.set("sdk.version", .string("1.0.0"))
         bag.set("sdk.platform", .string("ios-native"))
 
+        bag.set("app.version", .string("1.0"))
+        bag.set("app.build_number", .string("10"))
+        bag.set("app.name", .string("Shop"))
+
         // Transient keys that must NOT be mirrored.
         bag.set("device.batteryLevel", .double(0.82))
         bag.set("network.type", .string("wifi"))
-        bag.set("app.name", .string("Shop"))
+        bag.set("app.state", .string("active"))
 
         sidecar.write(snapshot: bag)
 
@@ -84,9 +88,14 @@ final class SessionSidecarTests: XCTestCase {
         XCTAssertEqual(read?["user.id"], .string("user_1_bbbbbbbbbbbbbbbb"))
         XCTAssertEqual(read?["device.id"], .string("device_1_cccccccccccccccc_ios"))
 
+        // #250 R14: the saved build rides a replayed crash / hang.
+        XCTAssertEqual(read?["app.version"], .string("1.0"))
+        XCTAssertEqual(read?["app.build_number"], .string("10"))
+        XCTAssertEqual(read?["app.name"], .string("Shop"))
+
         XCTAssertNil(read?["device.batteryLevel"])
         XCTAssertNil(read?["network.type"])
-        XCTAssertNil(read?["app.name"])
+        XCTAssertNil(read?["sdk.platform"], "#250 R2: no longer mirrored")
     }
 
     func testNeverWritesHostIdentityFields() {

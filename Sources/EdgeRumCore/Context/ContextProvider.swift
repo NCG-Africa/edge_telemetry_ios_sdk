@@ -133,6 +133,11 @@ public final class ContextProvider: @unchecked Sendable {
 
     // MARK: Read
 
+    public func currentApp() -> AppContext {
+        lock.lock(); defer { lock.unlock() }
+        return app
+    }
+
     public func currentSession() -> SessionContextSnapshot {
         lock.lock(); defer { lock.unlock() }
         return session

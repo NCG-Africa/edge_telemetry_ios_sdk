@@ -107,6 +107,18 @@ internal enum CrashSidecarReader {
         return attrs
     }
 
+    /// The build that saved the sidecar (#250 R14): the replayed
+    /// batch's envelope `app.name` / `version` / `build_number`. A key
+    /// an older SDK never mirrored stays nil — omitted on the wire,
+    /// never borrowed from the current build.
+    internal static func savedApp(_ snapshot: CrashSidecarSnapshot) -> AppContext {
+        AppContext(
+            name: string(snapshot.extras["app.name"]),
+            version: string(snapshot.extras["app.version"]),
+            buildNumber: string(snapshot.extras["app.build_number"])
+        )
+    }
+
     // MARK: - Helpers
 
     private static func string(_ value: AttributeValue?) -> String? {

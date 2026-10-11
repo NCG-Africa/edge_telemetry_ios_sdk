@@ -468,6 +468,41 @@ public final class Recorder: Recording, @unchecked Sendable {
     public func recordEvent(name: String, attributes: [String: AttributeValue]) {
         let t0 = DispatchTime.now().uptimeNanoseconds
         defer { addThreadTime(since: t0) }
+        guard let event = admit(name: name, attributes: attributes) else { return }
+        enqueue(event)
+
+        // `session.finalized` and `app.crash` (native crash replay —
+        // the process died) flush immediately. `app.error` and
+        // `app.hang` are sampled and ride the normal flush (F29).
+        if name == "session.finalized" || name == "app.crash" {
+            flush(reason: .immediate)
+        }
+    }
+
+    public func recordReplayed(name: String, attributes: [String: AttributeValue], savedApp: AppContext?) {
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        defer { addThreadTime(since: t0) }
+        guard let event = admit(name: name, attributes: attributes) else { return }
+        stateLock.lock()
+        guard _enabled else { stateLock.unlock(); return }
+        _session.generated += 1
+        let transport = self.transport
+        stateLock.unlock()
+        var app = context.currentApp()
+        if let savedApp {
+            app.name = savedApp.name
+            app.version = savedApp.version
+            app.buildNumber = savedApp.buildNumber
+        }
+        // R14: alone, never beside live events, and no `sdk.health` —
+        // its counters ride the next live batch.
+        let envelope = payloadBuilder.build(events: [event], context: context.snapshot(), flushTime: clock.now, app: app)
+        transport.send(envelope, reason: .immediate)
+    }
+
+    /// The ingress gate shared by `recordEvent` and `recordReplayed`:
+    /// allowlist, session touch, breadcrumbs, sampler. `nil` = dropped.
+    private func admit(name: String, attributes: [String: AttributeValue]) -> Event? {
         guard Self.allowedEventNames.contains(name) else {
             countDrop(\.droppedUnknownName)
             if debug {
@@ -478,7 +513,7 @@ public final class Recorder: Recording, @unchecked Sendable {
                     name
                 )
             }
-            return
+            return nil
         }
 
         bumpLastActiveAndEmitRotationIfNeeded()
@@ -493,21 +528,13 @@ public final class Recorder: Recording, @unchecked Sendable {
         if enabled, !Sampler.forcedEmitAllowlist.contains(name) {
             breadcrumbs.record(name: name, attributes: attributes, at: now, sessionId: currentSessionId)
         }
-        guard currentSampler.shouldEmit(eventName: name) else { countDrop(\.droppedSampled); return }
+        guard currentSampler.shouldEmit(eventName: name) else { countDrop(\.droppedSampled); return nil }
 
         var attributes = attributes
         if name == "app.error" || (name == "app.hang" && !Self.isReplayed(name, attributes)) {
             attributes.merge(breadcrumbs.attachOnce()) { own, _ in own }
         }
-        let event = Event.event(name: name, timestamp: now, attributes: AttributeBag(attributes))
-        enqueue(event)
-
-        // `session.finalized` and `app.crash` (native crash replay —
-        // the process died) flush immediately. `app.error` and
-        // `app.hang` are sampled and ride the normal flush (F29).
-        if name == "session.finalized" || name == "app.crash" {
-            flush(reason: .immediate)
-        }
+        return Event.event(name: name, timestamp: now, attributes: AttributeBag(attributes))
     }
 
     public func recordPerformance(name: String, attributes: [String: AttributeValue]) {
