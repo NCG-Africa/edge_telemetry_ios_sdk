@@ -217,7 +217,7 @@ during implementation were load-bearing enough to record.
 4. **In-memory `TransportSink` (`NoopTransportSink`) + in-memory
    `SessionStore` (`InMemorySessionStore`) as F3 defaults.** Both are
    protocols so F4 can layer `HTTPTransportSink` (POST to
-   `<endpoint>/collector/telemetry`) and `UserDefaultsSessionStore`
+   `<endpoint>/collector/telemetry`; since #252 the endpoint is used as given) and `UserDefaultsSessionStore`
    (suite `com.edge.rum.session`) on top without touching the
    Recorder.
 5. **`SecRandomCopyBytes(8)` everywhere for ID entropy.** Not

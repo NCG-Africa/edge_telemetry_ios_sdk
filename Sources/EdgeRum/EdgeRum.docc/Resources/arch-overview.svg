@@ -72,5 +72,5 @@
     <polygon points="356,410 364,410 360,420" fill="#1d1d1f"/>
 
     <rect x="200" y="420" width="320" height="32" rx="6" class="module"/>
-    <text x="220" y="442" class="label-bold">POST /collector/telemetry</text>
+    <text x="220" y="442" class="label-bold">POST &lt;endpoint&gt;</text>
 </svg>

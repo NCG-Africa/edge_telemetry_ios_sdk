@@ -8,8 +8,9 @@
 //             files. `<n>` is the file's event count, so trimming never
 //             reads a payload.
 //   Overflow: oldest files deleted first until the total is ≤ cap.
-//   Drain:    sequential — success deletes the file, failure leaves it
-//             and aborts the drain.
+//   Drain:    sequential — sent or dropped deletes the file and moves
+//             on; a retryable failure leaves it and ends the drain
+//             (#252 R12: a rejected batch never wedges the queue).
 //
 // Filename layout is deliberate: the epoch-ms prefix makes
 // lexicographic ordering match chronological ordering, so no separate
@@ -28,6 +29,16 @@
 import Foundation
 import os.log
 
+/// What the drain closure did with one queued payload.
+public enum DrainStep: Sendable, Equatable {
+    /// Accepted (2xx): delete the file, continue.
+    case sent
+    /// Rejected for good (non-429 4xx): delete the file, continue.
+    case dropped
+    /// Retryable failure: keep the file, end the drain.
+    case stop
+}
+
 public protocol OfflineQueueing: Sendable {
     /// Atomically append a payload holding `eventCount` events, then
     /// trim older files oldest-first to ≤ `maxQueueSize` events (the
@@ -36,14 +47,14 @@ public protocol OfflineQueueing: Sendable {
     @discardableResult
     func enqueue(_ payload: Data, eventCount: Int) -> URL?
 
-    /// Drain the queue sequentially via the supplied closure, which
-    /// receives each payload and its event count. The closure returns
-    /// `true` to delete the file (success) or `false` to leave it on
-    /// disk and abort the drain (failure).
+    /// Drain the queue oldest-first via the supplied closure, which
+    /// receives each payload and its event count. `.sent` and
+    /// `.dropped` delete the file and continue; `.stop` keeps it on
+    /// disk and ends the drain.
     ///
-    /// Returns the count of files successfully drained.
+    /// Returns the count of files removed (sent or dropped).
     @discardableResult
-    func drain(via: (Data, Int) -> Bool) -> Int
+    func drain(via: (Data, Int) -> DrainStep) -> Int
 
     /// Number of payload files currently on disk.
     var count: Int { get }
@@ -147,7 +158,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
     }
 
     @discardableResult
-    public func drain(via: (Data, Int) -> Bool) -> Int {
+    public func drain(via: (Data, Int) -> DrainStep) -> Int {
         let files = orderedFiles()
         // A queue left by a previous process counts toward this one's
         // high-water marks.
@@ -160,8 +171,7 @@ public final class OfflineQueue: OfflineQueueing, @unchecked Sendable {
                 try? fileManager.removeItem(at: url)
                 continue
             }
-            let ok = via(data, Self.eventCount(of: url))
-            if !ok {
+            if via(data, Self.eventCount(of: url)) == .stop {
                 break
             }
             try? fileManager.removeItem(at: url)

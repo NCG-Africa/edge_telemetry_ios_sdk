@@ -3,7 +3,7 @@
 **Audience.** EdgeTelemetryProcessor / ingest team and SDK contributors.
 
 **Purpose.** Single source of truth for what the iOS SDK will send to
-`POST /collector/telemetry`, ordered both chronologically (when each
+`POST <endpoint>` (as given), ordered both chronologically (when each
 datapoint fires at runtime) and as a flat schema catalog (for storage
 planning). Covers signal we capture today, signal we propose to add,
 and signal we have deliberately deferred.
@@ -58,7 +58,7 @@ Cross-references:
 │  ─ accumulate up to batchSize (30) or flushInterval (5 s)          │
 │  ─ wrap in {"type":"telemetry_batch", timestamp, location,         │
 │    batch_size, events:[…]}                                         │
-│  ─ POST <endpoint>/collector/telemetry  (X-API-Key: edge_…)        │
+│  ─ POST <endpoint>, as given             (X-API-Key: edge_…)        │
 │  ─ retry 0/429/503 with backoff 0 s · 2 s · 8 s · 30 s             │
 │  ─ on attempt 4 failure → OfflineQueue (Library/Caches)            │
 └──────────────────────────┬─────────────────────────────────────────┘
@@ -109,7 +109,7 @@ Three invariants hold for every event that reaches the wire:
 | `Content-Type` | `application/json`                                     |
 | `User-Agent`   | `EdgeRum-iOS/<sdk.version> (<device.model>; iOS <os>)` |
 
-Path: `POST <endpoint>/collector/telemetry`.
+Path: `POST <endpoint>` — the configured URL, nothing appended (#252 R10).
 
 ### 2.3 Per-item structure
 

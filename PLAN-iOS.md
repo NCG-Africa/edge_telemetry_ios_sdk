@@ -834,7 +834,7 @@ shape are all fixed by the existing SDKs.
 ### 7.1 HTTP request
 
 ```
-POST <config.endpoint>/collector/telemetry
+POST <config.endpoint>   (as given — nothing appended, #252 R10)
 X-API-Key: <config.apiKey>
 Content-Type: application/json
 User-Agent: EdgeRum-iOS/<sdk.version> (<device.model>; iOS <os>)

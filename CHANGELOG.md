@@ -11,12 +11,28 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
-## [Unreleased]
+## 4.0.0 (unreleased)
+
+**Install the EdgeTelemetry backend release before shipping any app built
+with EdgeRum 4.0.** The backend release covers deployment, analytics,
+processor and collector; a 4.0 build sends no per-event app identity, so
+an older backend would lose it. Request an app-bound API key per
+environment: the SDK no longer sends one. Upgrade steps and the
+compatibility matrix: [`docs/migration/2.x-to-4.0.0.md`](docs/migration/2.x-to-4.0.0.md).
+There is no 3.x release.
 
 ### ⚠ BREAKING CHANGES
 
+* **`EdgeRumConfig.endpoint` is used as given**
+  ([#252](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/252)).
+  The SDK no longer appends `/collector/telemetry`; set the full collector
+  URL, e.g. `https://<host>/collector-go/telemetry`. Live sends and
+  offline replay both post to it.
+* **A non-429 4xx is dropped, never queued**
+  ([#252](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/252)),
+  on live sends and on offline-queue replay. 429, 5xx and network errors
+  are still retried, then queued.
 * **Wire contract 4.0.0** ([#250](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/250)).
-  Install a backend that accepts contract 4.0.0 before shipping this.
   * The batch envelope has exactly eight keys: `type`, `contract_version`
     (`"4.0.0"`), `timestamp`, `batch_size`, `device_id`, `sdk`
     (`{name: "ios", version}`), `app` (`{name?, package_name, platform:
@@ -44,8 +60,17 @@ minimum-iOS bump is a major version — are documented in the
 
 ### Fixed
 
+* A queued batch the server rejected with a 4xx stayed at the head of the
+  offline queue and blocked every later batch; it is now dropped and
+  counted in `events_dropped.non_retryable`.
+* Behind the standard proxy layout the appended `/collector/telemetry`
+  path 404ed and every batch was dropped; see the endpoint change above.
 * `sdk.version` now reports the package version; the shared recorder
   previously sent its `0.0.0` placeholder.
+
+### Changed
+
+* Install snippets in the README and DocC `GettingStarted` now pin `4.0.0`.
 
 ## [2.0.0](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.3.0-alpha.2...v2.0.0) (2026-10-06)
 

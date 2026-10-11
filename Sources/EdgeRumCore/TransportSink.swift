@@ -4,7 +4,7 @@
 // F3 ships `NoopTransportSink` (drops envelopes silently) so the
 // Recorder is testable end-to-end via a `RecordingTransportSink` in
 // the contract tests. F4 replaces the default with `HTTPTransportSink`
-// that POSTs the encoded JSON to `<endpoint>/collector/telemetry`.
+// that POSTs the encoded JSON to the configured endpoint, as given.
 //
 // Refs: PLAN-iOS.md §F3 (pipeline), §F4 (transport).
 //

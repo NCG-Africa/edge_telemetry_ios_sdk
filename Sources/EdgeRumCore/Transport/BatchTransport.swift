@@ -7,7 +7,7 @@
 // to `RetryPolicy`.
 //
 // The wire contract is checked here at the point each request is
-// built — endpoint path, headers, encoding — so the F4 contract test
+// built — headers, encoding — so the F4 contract test
 // can exercise it without spinning up a full Recorder.
 //
 // Refs: PLAN-iOS.md §7.1, §9.2, §F5/T5.1; CLAUDE.md "Transport rules".
@@ -32,19 +32,14 @@ public protocol BatchSending: AnyObject, Sendable {
     /// `URLSession`.
     func post(_ payload: Data, completion: @escaping @Sendable (BatchSendOutcome) -> Void)
 
-    /// Endpoint composed at construction time, exposed for tests +
-    /// for the offline replay path so a queued payload reaches the
-    /// same URL.
+    /// The configured endpoint, exactly as given. Exposed for tests;
+    /// live sends and offline replay both POST here.
     var url: URL { get }
 }
 
 public final class BatchTransport: BatchSending, @unchecked Sendable {
 
     // MARK: Constants
-
-    /// `POST <endpoint>/collector/telemetry` — pinned by §7.1 and
-    /// matched across web/Android/iOS SDKs.
-    public static let collectorPath = "collector/telemetry"
 
     /// Header marking our own requests so HTTPCapture (F8) can filter
     /// them out and prevent self-instrumentation.
@@ -74,7 +69,7 @@ public final class BatchTransport: BatchSending, @unchecked Sendable {
         debug: Bool = false,
         log: OSLog = OSLog(subsystem: "com.edge.rum", category: "BatchTransport")
     ) {
-        self.url = BatchTransport.makeCollectorURL(endpoint: endpoint)
+        self.url = endpoint  // #252 R10: sent as given, nothing appended
         self.apiKey = apiKey
         self.userAgent = BatchTransport.makeUserAgent(
             sdkVersion: sdkVersion,
@@ -137,12 +132,6 @@ public final class BatchTransport: BatchSending, @unchecked Sendable {
     }
 
     // MARK: Helpers
-
-    /// Append the `collector/telemetry` path to the host-supplied
-    /// endpoint, honoring trailing slashes.
-    public static func makeCollectorURL(endpoint: URL) -> URL {
-        endpoint.appendingPathComponent(collectorPath)
-    }
 
     public static func makeUserAgent(
         sdkVersion: String,

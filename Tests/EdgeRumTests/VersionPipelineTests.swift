@@ -28,6 +28,19 @@ final class VersionPipelineTests: XCTestCase {
                         "sdkVersion '\(EdgeRum.sdkVersion)' is not valid SemVer 2.0.")
     }
 
+    /// The README and DocC install snippets pin the release in `VERSION`
+    /// (SwiftPM `from:` exact, CocoaPods `~> MAJOR.MINOR`).
+    func testInstallSnippetsPinTheVersionFile() throws {
+        let version = try Self.readRepoVersionFile()
+        let minor = version.split(separator: ".").prefix(2).joined(separator: ".")
+        let root = try Self.locateRepoRoot()
+        for doc in ["README.md", "Sources/EdgeRum/EdgeRum.docc/GettingStarted.md"] {
+            let text = try String(contentsOf: root.appendingPathComponent(doc), encoding: .utf8)
+            XCTAssertTrue(text.contains(#"from: "\#(version)")"#), "\(doc) SwiftPM snippet")
+            XCTAssertTrue(text.contains("pod 'EdgeRum', '~> \(minor)'"), "\(doc) CocoaPods snippet")
+        }
+    }
+
     // MARK: - Helpers
 
     private static func readRepoVersionFile() throws -> String {

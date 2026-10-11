@@ -107,7 +107,7 @@ host project.
 
 ```swift-skip
 .package(url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git",
-         from: "2.0.0")
+         from: "4.0.0")
 ```
 
 Then add the `EdgeRum` product to your app target's dependencies:
@@ -126,7 +126,7 @@ Then add the `EdgeRum` product to your app target's dependencies:
 ### CocoaPods
 
 ```ruby
-pod 'EdgeRum', '~> 2.0'
+pod 'EdgeRum', '~> 4.0'
 ```
 
 ### XCFramework
@@ -155,7 +155,7 @@ final class QuickstartAppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         var config = EdgeRumConfig(
             apiKey: "edge_live_abc123",
-            endpoint: URL(string: "https://collect.example.com")!
+            endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
         )
         config.appName = "Shop"
         config.appVersion = "2.1.0"
@@ -180,7 +180,7 @@ final class QuickstartSceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         var config = EdgeRumConfig(
             apiKey: "edge_live_abc123",
-            endpoint: URL(string: "https://collect.example.com")!
+            endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
         )
         config.appName = "Shop"
         EdgeRum.start(config)
@@ -198,7 +198,7 @@ struct QuickstartShopApp: App {
     init() {
         var config = EdgeRumConfig(
             apiKey: "edge_live_abc123",
-            endpoint: URL(string: "https://collect.example.com")!
+            endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
         )
         config.appName = "Shop"
         EdgeRum.start(config)
@@ -220,7 +220,7 @@ Every other field has a documented default tuned for production use.
 | Field                          | Type                                | Default                              | Purpose |
 |--------------------------------|-------------------------------------|--------------------------------------|---------|
 | `apiKey`                       | `String`                            | —                                    | Sent as `X-API-Key`. Must start with `"edge_"`. |
-| `endpoint`                     | `URL`                               | —                                    | Collector base URL. SDK appends `/collector/telemetry`. `https://` unless `debug == true`. |
+| `endpoint`                     | `URL`                               | —                                    | Full collector URL, used as given (the SDK appends nothing). `https://` unless `debug == true`. |
 | `appName`                      | `String?`                           | `nil`                                | Envelope `app.name`; overrides `CFBundleDisplayName`. |
 | `appVersion`                   | `String?`                           | `nil`                                | Envelope `app.version`; overrides `CFBundleShortVersionString`. Omitted when unknown. |
 | `appPackage`                   | `String?`                           | `nil`                                | Envelope `app.package_name`; overrides the bundle identifier. |
@@ -399,7 +399,7 @@ import EdgeRum
 func recipeSanitize() {
     var config = EdgeRumConfig(
         apiKey: "edge_live_abc123",
-        endpoint: URL(string: "https://collect.example.com")!
+        endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
     )
     config.sanitizeUrl = { url in
         guard var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
@@ -428,7 +428,7 @@ func recipeIgnoreUrls() throws {
     )
     var config = EdgeRumConfig(
         apiKey: "edge_live_abc123",
-        endpoint: URL(string: "https://collect.example.com")!
+        endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
     )
     config.ignoreUrls = [noisy]
     EdgeRum.start(config)
@@ -443,7 +443,7 @@ import EdgeRum
 func recipeDisableHTTPCapture() {
     var config = EdgeRumConfig(
         apiKey: "edge_live_abc123",
-        endpoint: URL(string: "https://collect.example.com")!
+        endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
     )
     config.captureHTTP = false
     EdgeRum.start(config)

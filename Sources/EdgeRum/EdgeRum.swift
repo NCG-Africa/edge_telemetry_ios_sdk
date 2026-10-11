@@ -37,7 +37,7 @@ import EdgeRumCrash
 /// ```swift
 /// EdgeRum.start(EdgeRumConfig(
 ///     apiKey: "edge_live_abc123",
-///     endpoint: URL(string: "https://collect.example.com")!
+///     endpoint: URL(string: "https://collect.example.com/collector-go/telemetry")!
 /// ))
 /// EdgeRum.track("checkout_started")
 /// ```

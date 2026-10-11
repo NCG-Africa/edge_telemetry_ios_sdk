@@ -22,7 +22,7 @@ struct EdgeRumSwiftUISampleApp: App {
     init() {
         var config = EdgeRumConfig(
             apiKey: "edge_sample_replace_me",
-            endpoint: URL(string: "https://localhost/collector")!
+            endpoint: URL(string: "https://localhost/collector-go/telemetry")!
         )
         config.appName = "EdgeRumSwiftUISample"
         config.appVersion = "1.0.0"

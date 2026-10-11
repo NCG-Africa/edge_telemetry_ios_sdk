@@ -13,7 +13,7 @@ import XCTest
 final class HTTPTransportSinkTests: XCTestCase {
 
     func testSuccessfulSendCallsBackTransportAndDrainsQueue() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         let sink = HTTPTransportSink(
             transport: transport,
@@ -32,7 +32,7 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 
     func testFourFailuresPushPayloadToOfflineQueue() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         // Drive the schedule fast — replace the 2/8/30 schedule with
         // sub-millisecond delays so the test runs in ~ms not 40s.
@@ -59,7 +59,7 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 
     func testDrainReplaysQueuedPayloadsViaTransport() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         queue.enqueue(Data("queued".utf8), eventCount: 1)
         queue.enqueue(Data("queued2".utf8), eventCount: 1)
@@ -84,7 +84,7 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 
     func testDrainStopsOnFirstFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let queue = InMemoryQueue()
         queue.enqueue(Data("first".utf8), eventCount: 1)
         queue.enqueue(Data("second".utf8), eventCount: 1)
@@ -110,6 +110,32 @@ final class HTTPTransportSinkTests: XCTestCase {
     }
 }
 
+extension HTTPTransportSinkTests {
+
+    /// #252 R12: a queued 400 is dropped (counted) instead of wedging
+    /// the queue; the next file still goes; a 503 keeps its file.
+    func testReplayDropsNonRetryableAndStopsOnRetryable() {
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
+        let queue = InMemoryQueue()
+        for p in ["a", "b", "c"] { queue.enqueue(Data(p.utf8), eventCount: 1) }
+        let health = SdkHealth()
+        let sink = HTTPTransportSink(
+            transport: transport, offlineQueue: queue, apiKey: "edge_t",
+            userAgent: "EdgeRum-iOS/4.0.0", pathObserver: nil, health: health
+        )
+        transport.scriptedOutcomes = [
+            .failure(status: 400, retryAfter: nil), .success(status: 200), .failure(status: 503, retryAfter: nil),
+        ]
+        sink.drainOfflineQueue()
+
+        XCTAssertTrue(transport.waitForPosts(count: 3, timeout: 2))
+        waitUntil { queue.payloads.count == 1 }
+        XCTAssertEqual(queue.payloads, [Data("c".utf8)])
+        XCTAssertEqual(health.snapshot()["events_dropped.non_retryable"], .int(1))
+        XCTAssertEqual(health.snapshot()["batches_uploaded"], .int(1))
+    }
+}
+
 // MARK: - F32 health counters
 
 extension HTTPTransportSinkTests {
@@ -125,7 +151,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testSuccessCountsEventsAndBatchesUploaded() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -139,7 +165,7 @@ extension HTTPTransportSinkTests {
 
     /// #250 R4: `batch_size` counts `sdk.health`; `events_uploaded` does not.
     func testEventsUploadedExcludesTheHealthEvent() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -158,7 +184,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testProcessCountersCorrectWhenNineInTenUploadsFail() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -176,7 +202,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testNonRetryableCountsEventsAndFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         transport.alwaysOutcome = .failure(status: 400, retryAfter: nil)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
@@ -189,7 +215,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testMissingOfflineQueueCountsEnqueueFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.001, 0.001, 0.001]),
@@ -209,7 +235,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testQueuedBatchIsRestampedWhenSentNotReplayedWithItsStoredTime() throws {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         transport.alwaysOutcome = .failure(status: 503, retryAfter: nil)
         let queue = InMemoryQueue()
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
@@ -234,7 +260,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testRetryAttemptsAreRestamped() throws {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.512))
         transport.nextOutcome = .failure(status: 503, retryAfter: nil)
         let sink = HTTPTransportSink(transport: transport, retryPolicy: RetryPolicy(schedule: [0, 0.2, 0.2, 0.2]),
@@ -268,7 +294,7 @@ extension HTTPTransportSinkTests {
     }
 
     func testUnencodableEnvelopeCountsEncodeFailure() {
-        let transport = ProbeTransport(url: URL(string: "https://x/collector/telemetry")!)
+        let transport = ProbeTransport(url: URL(string: "https://x/collector-go/telemetry")!)
         let health = SdkHealth()
         let sink = HTTPTransportSink(transport: transport, offlineQueue: InMemoryQueue(),
                                      apiKey: "edge_t", userAgent: "ua", pathObserver: nil, health: health)
@@ -291,6 +317,7 @@ private final class ProbeTransport: BatchSending, @unchecked Sendable {
     var posts: [Data] { lock.lock(); defer { lock.unlock() }; return _posts }
     var nextOutcome: BatchSendOutcome?
     var alwaysOutcome: BatchSendOutcome?
+    var scriptedOutcomes: [BatchSendOutcome] = []
 
     init(url: URL) { self.url = url }
 
@@ -300,6 +327,8 @@ private final class ProbeTransport: BatchSending, @unchecked Sendable {
         let outcome: BatchSendOutcome
         if let always = alwaysOutcome {
             outcome = always
+        } else if !scriptedOutcomes.isEmpty {
+            outcome = scriptedOutcomes.removeFirst()
         } else if let next = nextOutcome {
             outcome = next
             nextOutcome = nil
@@ -342,7 +371,7 @@ private final class InMemoryQueue: OfflineQueueing, @unchecked Sendable {
     }
 
     @discardableResult
-    func drain(via: (Data, Int) -> Bool) -> Int {
+    func drain(via: (Data, Int) -> DrainStep) -> Int {
         var drained = 0
         while true {
             lock.lock()
@@ -351,8 +380,7 @@ private final class InMemoryQueue: OfflineQueueing, @unchecked Sendable {
                 return drained
             }
             lock.unlock()
-            let ok = via(next, 1)
-            if !ok { return drained }
+            if via(next, 1) == .stop { return drained }
             lock.lock()
             if !_payloads.isEmpty { _payloads.removeFirst() }
             lock.unlock()

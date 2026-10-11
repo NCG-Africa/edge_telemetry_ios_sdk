@@ -49,13 +49,18 @@ BANNED_TOKENS=(
     "telemetry"
 )
 
-# Wire-mandated literals whose token text overlaps the banned list. The
-# backend's outer envelope discriminator is the literal string
-# `telemetry_batch` and the collector path is `/collector/telemetry`.
-# Both names are part of the cross-platform wire contract (CLAUDE.md
-# "EdgeTelemetryProcessor contract") and intentionally appear verbatim
-# in consumer-facing docs that describe what the SDK sends.
-WIRE_LITERAL_ALLOWLIST='telemetry_batch|/collector/telemetry'
+# Wire-mandated literals whose token text overlaps the banned list,
+# stripped (with the repo slug) before every banned-term sweep. The
+# backend's outer envelope discriminator is `telemetry_batch`; the
+# documented collector URL path is `/collector-go/telemetry` (#252 R10:
+# the host configures the full URL); `/collector/telemetry` is the legacy
+# path older builds appended, named only in the CHANGELOG / migration
+# guide. All are part of the cross-platform wire contract (CLAUDE.md
+# "EdgeTelemetryProcessor contract").
+WIRE_LITERAL_ALLOWLIST='edge_telemetry_ios_sdk|telemetry_batch|/collector-go/telemetry|/collector/telemetry'
+strip_wire_literals() {
+    sed -E "s#${WIRE_LITERAL_ALLOWLIST}##g"
+}
 
 # Markdown files under docs/ that intentionally discuss SDK internals
 # and are allowed to use banned terms. Paths relative to REPO_ROOT.
@@ -124,8 +129,9 @@ else
         sed -E 's/"uri":"[^"]*"//g' "${SYMBOL_JSON}" > "${STRIPPED}"
         while IFS= read -r hit; do
             [[ -z "${hit}" ]] && continue
+            cleaned="$(echo "${hit}" | sed 's#\\/#/#g' | strip_wire_literals)"
             for token in "${BANNED_TOKENS[@]}"; do
-                if echo "${hit}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
+                if echo "${cleaned}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
                     report "${token}" "symbol-graph EdgeRum.symbols.json" \
                         "$(echo "${hit}" | tr -d '\t' | cut -c1-160)"
                     break
@@ -146,8 +152,9 @@ if [[ -d "${PUBLIC_SWIFT_DIR}" ]]; then
         rest="${match#*:}"
         lineno="${rest%%:*}"
         content="${rest#*:}"
+        cleaned="$(echo "${content}" | strip_wire_literals)"
         for token in "${BANNED_TOKENS[@]}"; do
-            if echo "${content}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
+            if echo "${cleaned}" | grep -iqE "(^|[^A-Za-z])${token}([^A-Za-z]|$)"; then
                 report "${token}" "${file#${REPO_ROOT}/}:${lineno}" "$(echo "${content}" | tr -d '\t' | cut -c1-160)"
                 break
             fi
@@ -159,16 +166,13 @@ fi
 #
 # Before per-token matching we strip the canonical GitHub URL slug
 # `edge_telemetry_ios_sdk` (consumers copy-paste it verbatim) and the
-# wire-mandated literals (`telemetry_batch`, `/collector/telemetry`)
-# from the line. Whatever remains is checked against the banned list.
+# wire-mandated literals (`WIRE_LITERAL_ALLOWLIST`) from the line. Whatever remains is checked against the banned list.
 if [[ -f "${REPO_ROOT}/README.md" ]]; then
     while IFS= read -r match; do
         [[ -z "${match}" ]] && continue
         lineno="${match%%:*}"
         content="${match#*:}"
-        cleaned="${content//edge_telemetry_ios_sdk/}"
-        cleaned="${cleaned//telemetry_batch/}"
-        cleaned="${cleaned//\/collector\/telemetry/}"
+        cleaned="$(echo "${content}" | strip_wire_literals)"
         if ! echo "${cleaned}" | grep -iqE "(${PATTERN})"; then
             continue
         fi
@@ -206,9 +210,7 @@ if [[ -d "${REPO_ROOT}/docs" ]]; then
             # the per-token sweep — the rest of the line still gets
             # checked. A line containing only those is reduced to noise
             # and falls through cleanly.
-            cleaned="${content//edge_telemetry_ios_sdk/}"
-        cleaned="${cleaned//telemetry_batch/}"
-        cleaned="${cleaned//\/collector\/telemetry/}"
+            cleaned="$(echo "${content}" | strip_wire_literals)"
             if ! echo "${cleaned}" | grep -iqE "(${PATTERN})"; then
                 continue
             fi
@@ -240,9 +242,7 @@ if [[ -d "${DOCC_DIR}" ]]; then
             # the per-token sweep — the rest of the line still gets
             # checked. A line containing only those is reduced to noise
             # and falls through cleanly.
-            cleaned="${content//edge_telemetry_ios_sdk/}"
-        cleaned="${cleaned//telemetry_batch/}"
-        cleaned="${cleaned//\/collector\/telemetry/}"
+            cleaned="$(echo "${content}" | strip_wire_literals)"
             if ! echo "${cleaned}" | grep -iqE "(${PATTERN})"; then
                 continue
             fi
