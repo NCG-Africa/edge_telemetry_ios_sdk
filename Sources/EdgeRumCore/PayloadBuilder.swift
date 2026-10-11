@@ -60,11 +60,9 @@ public struct PayloadBuilder: Sendable {
         if let health {
             events.append(.event(name: Self.healthEventName, timestamp: flushTime, attributes: AttributeBag(health)))
         }
-        let shared = context.values.filter { !Self.isIdentityKey($0.key) }
         let enriched = events.map { event -> Event in
-            var merged = shared.merging(event.attributes.values) { _, own in own }
-            merged = merged.filter { !Self.isIdentityKey($0.key) }
-            return event.withAttributes(AttributeBag(merged))
+            let merged = context.values.merging(event.attributes.values) { _, own in own }
+            return event.withAttributes(AttributeBag(merged.filter { !Self.isIdentityKey($0.key) }))
         }
         return EventEnvelope(
             timestamp: flushTime,

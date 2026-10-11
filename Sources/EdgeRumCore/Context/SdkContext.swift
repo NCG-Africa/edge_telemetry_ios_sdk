@@ -9,7 +9,7 @@
 // (`sdk.version`, `device_id`), never an event; `sdk.name = "ios"` is
 // a literal in `EventEnvelope`.
 //
-// Refs: PLAN-iOS.md §7.5; CLAUDE.md "Required identity attributes".
+// Refs: PLAN-iOS.md §7.5; CLAUDE.md "Envelope structure" (#250).
 //
 
 import Foundation

@@ -289,6 +289,7 @@ and logged when `debug == true`.
 | `RumAction.complete()` / `fail()` / abandon  | `action.ended` (`action.outcome`)                | same; abandon on rotation, next launch (`process_death`), 600 s `timeout`     |
 | `EdgeRum.markScreenReady()` / abandon        | (`metric`, `metricName` = `"screen_ready"`, `screen.ready_outcome`) | `Sources/EdgeRum/EdgeRum.swift` (token: `EdgeRumCore/Riders.swift`) |
 | `EdgeRum.markInteractive()` (once/process)   | (`metric`, `metricName` = `"launch_interactive"`) | `Sources/EdgeRum/EdgeRum.swift` (ms from `launchStart`)                      |
+| SDK health counters (one per live batch, last) | `sdk.health`                                   | `EdgeRumCore/PayloadBuilder.swift` (#250 R4; never via `recordEvent`)         |
 
 > **Not emitted on iOS:** `LCP`, `FCP`, `CLS`, `INP`, `TTFB`. iOS has
 > no native analogue to Web Vitals. Confirmation that the backend
@@ -296,7 +297,9 @@ and logged when `debug == true`.
 > `PLAN-iOS.md` § "Backend asks" item 3.
 >
 > **Not emitted on iOS:** any `eventName` outside this table. The
-> backend silently drops unknowns. The allowlist is exactly 15 names;
+> backend silently drops unknowns. The allowlist is exactly 15 names
+> (`sdk.health` is outside it: the SDK builds it in `PayloadBuilder`,
+> never through `recordEvent`, contract 4.0.0 R4);
 > `metricName` has its own 8-name allowlist (`Recorder.allowedMetricNames`:
 > `resource_timing`, `long_task`, `frame_render_time`, `memory_usage`,
 > `cpu_usage`, `custom_timer`, `screen_ready`, `launch_interactive`).

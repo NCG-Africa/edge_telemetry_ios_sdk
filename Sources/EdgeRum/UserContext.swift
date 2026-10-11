@@ -1,7 +1,7 @@
 // Sources/EdgeRum/UserContext.swift
 //
-// Refs: PLAN-iOS.md §3.2, §F2/T2.4; CLAUDE.md "Required identity
-//       attributes" (`user.id`, `user.name`, `user.email`, `user.phone`).
+// Refs: PLAN-iOS.md §3.2, §F2/T2.4; CLAUDE.md "Identity lives in the
+//       envelope only" (`user.id`, `user.name`, `user.email`, `user.phone`).
 //
 
 import Foundation

@@ -247,6 +247,21 @@ extension HTTPTransportSinkTests {
         XCTAssertEqual(transport.posts.map { Self.rootTimestamp($0) }, ["2024-06-01T09:41:16.512Z", "2024-06-01T09:41:18.512Z"])
     }
 
+    /// A `"timestamp":"` inside an attribute string is escaped, so only
+    /// the root stamp changes.
+    func testRestampIgnoresTimestampTextInsideStringValues() throws {
+        let t0 = Date(timeIntervalSince1970: 1_717_234_876.512)
+        let trap = #"{"timestamp":"1999-01-01T00:00:00.000Z"}"#
+        let event = Event.event(name: "custom_event", timestamp: t0, attributes: AttributeBag(["note": .string(trap)]))
+        let envelope = PayloadBuilder().build(events: [event], context: AttributeBag(), flushTime: t0)
+        let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys]
+        let restamped = EventEnvelope.restamp(try enc.encode(envelope), at: t0.addingTimeInterval(60))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: restamped) as? [String: Any])
+        XCTAssertEqual(root["timestamp"] as? String, "2024-06-01T09:42:16.512Z")
+        let attrs = (root["events"] as? [[String: Any]])?.first?["attributes"] as? [String: Any]
+        XCTAssertEqual(attrs?["note"] as? String, trap)
+    }
+
     func testRestampLeavesLegacyPayloadsUntouched() {
         let legacy = Data(#"{"type":"telemetry_batch","timestamp":"2024-06-01T09:41:16.512Z","events":[]}"#.utf8)
         XCTAssertEqual(EventEnvelope.restamp(legacy, at: Date()), legacy)

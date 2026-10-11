@@ -56,6 +56,22 @@ final class EdgeRumAPITests: XCTestCase {
         XCTAssertEqual(EdgeRum.sdkVersion, EdgeRumGeneratedVersion.string)
     }
 
+    /// #250 R7/R8: the deprecated `location` / `environment` are
+    /// ignored — set or not, the Recorder receives the same settings,
+    /// and `RecorderConfig` has no field to carry them to the wire.
+    @available(*, deprecated)
+    func testDeprecatedLocationAndEnvironmentNeverReachTheRecorder() {
+        EdgeRum.start(Self.validConfig())
+        let plain = probe.configuredWith
+        EdgeRum._resetStartedConfigForTesting()
+        var config = Self.validConfig()
+        config.location = "Nairobi/Kenya"
+        config.environment = .production
+        EdgeRum.start(config)
+        XCTAssertNotNil(plain)
+        XCTAssertEqual(probe.configuredWith, plain)
+    }
+
     func testSecondStartWithSameIdentityIsNoOp() {
         EdgeRum.start(Self.validConfig())
         EdgeRum.start(Self.validConfig())
