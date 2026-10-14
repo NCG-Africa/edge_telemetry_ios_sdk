@@ -8,7 +8,6 @@ import EdgeRumCore
 
 final class PreviousSessionTests: XCTestCase {
 
-    private let boot = Date(timeIntervalSince1970: 1_717_000_000)
     private let prior: [String: AttributeValue] = [
         "session.id": .string("session_1717234870002_ff009988aabbccdd_ios"),
         "app.state": .string("active"),
@@ -16,33 +15,32 @@ final class PreviousSessionTests: XCTestCase {
         "device.platform_version": .string("17.4.1")
     ]
 
-    func testFirstLaunchCarriesBootTimeOnly() {
-        let attrs = PreviousSession.attributes(prior: nil, crashed: false, bootTime: boot)
-        XCTAssertEqual(attrs, ["device.boot_time": .string(WireDateFormatter.string(from: boot))])
+    /// #254: no `device.boot_time` (35F9.1 forbids sending it off-device).
+    func testFirstLaunchCarriesNothing() {
+        XCTAssertTrue(PreviousSession.attributes(prior: nil, crashed: false).isEmpty)
     }
 
     func testUnmarkedEndIsUnknownNeverOOM() {
-        let attrs = PreviousSession.attributes(prior: prior, crashed: false, bootTime: nil)
+        let attrs = PreviousSession.attributes(prior: prior, crashed: false)
         XCTAssertEqual(attrs["previous_session.id"], prior["session.id"])
         XCTAssertEqual(attrs["previous_session.end"], .string("unknown"))
         XCTAssertEqual(attrs["previous_session.app_state"], .string("foreground"))
         XCTAssertEqual(attrs["previous_session.app_version"], .string("2.0.0"))
         XCTAssertEqual(attrs["previous_session.os_version"], .string("17.4.1"))
-        XCTAssertNil(attrs["device.boot_time"])
     }
 
     /// Tranche 8 acceptance: after a clean exit, `end = clean`.
     func testCleanExitMarkerReadsClean() {
         var marked = prior
         marked[SessionSidecar.cleanExitKey] = .bool(true)
-        let attrs = PreviousSession.attributes(prior: marked, crashed: false, bootTime: nil)
+        let attrs = PreviousSession.attributes(prior: marked, crashed: false)
         XCTAssertEqual(attrs["previous_session.end"], .string("clean"))
     }
 
     func testCrashWinsOverCleanMarker() {
         var marked = prior
         marked[SessionSidecar.cleanExitKey] = .bool(true)
-        let attrs = PreviousSession.attributes(prior: marked, crashed: true, bootTime: nil)
+        let attrs = PreviousSession.attributes(prior: marked, crashed: true)
         XCTAssertEqual(attrs["previous_session.end"], .string("crash"))
     }
 
@@ -50,24 +48,19 @@ final class PreviousSessionTests: XCTestCase {
         for (state, expected) in [("background", "background"), ("inactive", "foreground"), ("active", "foreground")] {
             var p = prior
             p["app.state"] = .string(state)
-            XCTAssertEqual(PreviousSession.attributes(prior: p, crashed: false, bootTime: nil)["previous_session.app_state"],
+            XCTAssertEqual(PreviousSession.attributes(prior: p, crashed: false)["previous_session.app_state"],
                            .string(expected), state)
         }
         var p = prior
         p["app.state"] = nil
-        XCTAssertNil(PreviousSession.attributes(prior: p, crashed: false, bootTime: nil)["previous_session.app_state"])
+        XCTAssertNil(PreviousSession.attributes(prior: p, crashed: false)["previous_session.app_state"])
     }
 
     func testSidecarWithoutSessionIdCarriesNoPreviousSessionKeys() {
-        let attrs = PreviousSession.attributes(prior: ["app.state": .string("active")], crashed: true, bootTime: nil)
+        let attrs = PreviousSession.attributes(prior: ["app.state": .string("active")], crashed: true)
         XCTAssertTrue(attrs.isEmpty)
     }
 
-    func testBootTimeIsInThePast() throws {
-        let boot = try XCTUnwrap(PreviousSession.bootTime())
-        XCTAssertLessThan(boot, Date())
-        XCTAssertGreaterThan(boot, Date(timeIntervalSince1970: 1_500_000_000))
-    }
 
     /// The staged evidence lands on the launch `session.started` only.
     func testRecorderStampsEvidenceOnLaunchSessionStartedOnce() throws {

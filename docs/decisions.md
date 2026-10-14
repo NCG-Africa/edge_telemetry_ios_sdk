@@ -2107,3 +2107,38 @@ a replayed crash or hang alone under its saved build (R14).
 rides a live batch, so after an app update it is filed under the
 current build. Out of #250's scope (R14 names crash and hang only).
 
+
+---
+
+## ADR-030 — Privacy manifest (#254): declare what stays on the device, drop what can't
+
+**Date:** 2026-10-14
+
+**Status:** Accepted.
+
+**Context.** Security finding SDK-008: `PrivacyInfo.xcprivacy` was the F1
+stub. Writing it against Apple's reason text showed two wire keys no
+reason permits: every disk-space reason (`E174.1`, `85F4.1`, `7D9E.1`)
+and every boot-time reason except a user-submitted bug report forbid
+sending the value, "or any derived information", off-device. ADR-024
+item 8 had left the `device.boot_time` position to this work.
+
+**Decision.**
+
+1. **Drop `device.disk_free_mb`, `device.disk_total_mb` and
+   `device.boot_time`** from the wire. The SDK no longer calls a disk
+   space API; `StorageContext` keeps only `app.background_refresh`,
+   refreshed on its change notification instead of a 5-minute timer.
+2. **Declare `35F9.1` for `mach_absolute_time`** (`long_task`): elapsed
+   time between in-app events is the reason's explicit exception.
+3. **Declare `CA92.1`** for the `com.edge.rum.session` suite (app-only).
+4. **No `C617.1`.** No file timestamp API is called; the offline queue
+   reads file size only and keeps time in the filename.
+5. **Collected types:** Device ID, User ID, Crash Data, Performance Data,
+   Other Diagnostic Data (`app.error`, `app.hang`, `http.request`),
+   Product Interaction, Name, Email Address, Phone Number — linked, not
+   tracking, Analytics + App Functionality. PLCrashReporter ships its own
+   manifest.
+
+**Consequences.** The backend's OOM query loses its reboot exclusion
+(catalogue P15). `PrivacyManifestTests` pins the declarations.

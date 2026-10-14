@@ -202,8 +202,9 @@ required identity attributes.
 | `device.locale`              | string | no       | v1.0+  | `Locale.current.identifier`            |
 | `device.timezone`            | string | no       | v1.0+  | `TimeZone.current.identifier`          |
 | `device.timezone_offset_min` | int    | no       | v1.0+  | `TimeZone.current.secondsFromGMT()/60` |
-| `device.disk_free_mb`        | int    | no       | v1.0+  | `FileManager.attributesOfFileSystem`   |
-| `device.disk_total_mb`       | int    | no       | v1.0+  | `FileManager.attributesOfFileSystem`   |
+
+`device.disk_free_mb` / `device.disk_total_mb` were removed in 4.0.0
+(#254, ADR-030).
 
 `device.thermal_state` values: `nominal` · `fair` · `serious` · `critical`.
 `device.dynamic_type` values: `XS` · `S` · `M` · `L` · `XL` · `XXL` ·

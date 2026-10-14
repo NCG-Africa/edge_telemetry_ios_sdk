@@ -8,8 +8,7 @@ Review.
 EdgeRum is designed to be App-Store-reviewable out of the box. It does
 not use the IDFA, does not trigger the App Tracking Transparency
 prompt, does not import `AdSupport`, and ships a privacy manifest in every
-distribution slice. The manifest is currently the F1 stub; its
-restricted-reason declarations land with F20.
+distribution slice.
 
 ## Identifiers
 
@@ -50,17 +49,24 @@ crash-recovery file, so a crash reported on the next launch carries
 
 ## Restricted-reason APIs
 
-The restricted-reason APIs the SDK calls, and the declarations the
-manifest will carry once F20 lands. The shipped manifest is still the
-F1 stub with an empty `NSPrivacyAccessedAPITypes` array, so host apps
-must declare these reasons themselves in the meantime:
+The restricted-reason APIs the SDK calls, as declared in its manifest:
 
 | API category | Reason code | Why we use it |
 |--------------|-------------|---------------|
-| File timestamp APIs | `C617.1` | Offline queue file housekeeping |
-| System boot time   | `35F9.1` | Uptime for `page_load` |
-| Disk space         | `E174.1` | `device.freeStorage` context |
-| UserDefaults       | `CA92.1` | Session, user, and consented-location persistence |
+| System boot time | `35F9.1` | Elapsed durations between in-app events (`long_task`) |
+| UserDefaults     | `CA92.1` | Session and user id persistence |
+
+The SDK reads no disk space and no file timestamps, and sends no boot
+time: Apple's reasons for those keep the value on the device.
+
+## Collected data
+
+The manifest declares these types, all linked to the user, none used
+for tracking, for Analytics and App Functionality: Device ID, User ID,
+Crash Data, Performance Data, Other Diagnostic Data, Product
+Interaction, and — only when you call ``EdgeRum/identify(_:)`` — Name,
+Email Address and Phone Number. Mirror them in your App Store privacy
+label.
 
 App Store Connect now validates the merged manifest of the host app
 plus every SDK. The SDK ships its own manifest at

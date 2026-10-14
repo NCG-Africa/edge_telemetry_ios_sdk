@@ -126,11 +126,7 @@ final class ContextProviderTests: XCTestCase {
                 voiceOver: true,
                 increaseContrast: false
             ),
-            storage: StorageContext(
-                diskFreeMb: 1_024,
-                diskTotalMb: 65_536,
-                backgroundRefresh: "available"
-            )
+            storage: StorageContext(backgroundRefresh: "available")
         )
         let bag = p.snapshot()
         // power.*
@@ -143,8 +139,6 @@ final class ContextProviderTests: XCTestCase {
         XCTAssertEqual(bag["device.voiceover"], .bool(true))
         XCTAssertEqual(bag["device.increase_contrast"], .bool(false))
         // storage.*
-        XCTAssertEqual(bag["device.disk_free_mb"], .int(1_024))
-        XCTAssertEqual(bag["device.disk_total_mb"], .int(65_536))
         XCTAssertEqual(bag["app.background_refresh"], .string("available"))
     }
 
@@ -174,14 +168,8 @@ final class ContextProviderTests: XCTestCase {
 
     func testRefreshStorageReplacesStorageKeys() {
         let p = makeProvider()
-        p.refreshStorage(StorageContext(
-            diskFreeMb: 4_096,
-            diskTotalMb: 131_072,
-            backgroundRefresh: "denied"
-        ))
+        p.refreshStorage(StorageContext(backgroundRefresh: "denied"))
         let bag = p.snapshot()
-        XCTAssertEqual(bag["device.disk_free_mb"], .int(4_096))
-        XCTAssertEqual(bag["device.disk_total_mb"], .int(131_072))
         XCTAssertEqual(bag["app.background_refresh"], .string("denied"))
     }
 

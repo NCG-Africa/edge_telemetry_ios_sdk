@@ -63,11 +63,7 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
                 voiceOver: true,
                 increaseContrast: false
             ),
-            storage: StorageContext(
-                diskFreeMb: 9_876,
-                diskTotalMb: 131_072,
-                backgroundRefresh: "available"
-            )
+            storage: StorageContext(backgroundRefresh: "available")
         )
 
         let recorder = Recorder(
@@ -134,8 +130,6 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
         XCTAssertEqual(attrs["network.interface"] as? String, "pdp_ip0")
 
         // T16.4 StorageContext
-        XCTAssertEqual(attrs["device.disk_free_mb"] as? Int, 9_876)
-        XCTAssertEqual(attrs["device.disk_total_mb"] as? Int, 131_072)
         XCTAssertEqual(attrs["app.background_refresh"] as? String, "available")
 
         // T16.5 DeviceContext locale / timezone
@@ -169,8 +163,6 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
             "network.expensive",
             "network.constrained",
             "network.interface",
-            "device.disk_free_mb",
-            "device.disk_total_mb",
             "app.background_refresh",
             "device.locale",
             "device.timezone",

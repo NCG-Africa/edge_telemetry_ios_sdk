@@ -15,8 +15,7 @@ collector that already serves the web and Android SDKs. The public
 Swift surface is a small, EdgeRum-native vocabulary; the wire is
 JSON-only — no compression or binary framing — and the SDK is
 ATT-neutral and IDFA-free, and ships a `PrivacyInfo.xcprivacy`
-manifest in every distribution slice. The manifest is currently the
-F1 stub — the restricted-reason declarations land with F20.
+manifest in every distribution slice.
 
 ## Supported iOS
 
@@ -550,12 +549,12 @@ constraint at compile time, so it cannot be violated from Swift.
 - **ATT-neutral.** `ATTrackingManager.requestTrackingAuthorization` is
   never called.
 - **Privacy manifest.** [`PrivacyInfo.xcprivacy`](Sources/EdgeRum/Resources/PrivacyInfo.xcprivacy)
-  ships in every slice. **It is still the F1 stub** (empty
-  `NSPrivacyAccessedAPITypes`). The declarations it will carry —
-  file timestamps (`C617.1`), system boot time (`35F9.1`),
-  disk space (`E174.1`), UserDefaults (`CA92.1`) — land with F20;
-  see [PLAN-iOS.md §10.4](PLAN-iOS.md). Until then, host apps must
-  declare these reasons themselves.
+  ships in every slice. It declares UserDefaults (`CA92.1`) and system
+  boot time (`35F9.1`, elapsed durations only), and the data collected:
+  device ID, user ID, crash data, performance data, other diagnostic
+  data, product interaction, and the name, email and phone you pass to
+  `identify()` — all linked to the user, none used for tracking. The SDK
+  reads no disk space and no file timestamps, and sends no boot time.
 - **Identifiers.** All three identifiers (`device.id`, `session.id`,
   `user.id`) are SDK-owned 8-byte `SecRandomCopyBytes` values stored
   locally only. iCloud Keychain is not used; on modern iOS a Keychain

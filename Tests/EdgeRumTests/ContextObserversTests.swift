@@ -86,27 +86,25 @@ final class ContextObserversTests: XCTestCase {
         XCTAssertFalse(ContextObservers.isInstalled)
         ContextObservers.install(provider: p)
         XCTAssertTrue(ContextObservers.isInstalled)
-        // Second call must be a no-op (would otherwise crash the
-        // dispatch source by resuming an already-running timer).
+        // Second call must be a no-op (would otherwise register every
+        // observer twice).
         ContextObservers.install(provider: p)
         XCTAssertTrue(ContextObservers.isInstalled)
     }
 
-    func testInstallSeedsPowerAccessibilityAndStorage() {
+    func testInstallSeedsPowerWithoutDiskSpace() {
         let p = makeProvider()
         // Pre-install: nothing populated.
         let preBag = p.snapshot()
         XCTAssertNil(preBag["device.thermal_state"])
-        XCTAssertNil(preBag["device.disk_total_mb"])
 
         ContextObservers.install(provider: p)
 
         let bag = p.snapshot()
         // Power should always seed thermal state on iOS/macOS.
         XCTAssertNotNil(bag["device.thermal_state"])
-        // Storage seeded — at least total disk should resolve on the
-        // test host.
-        XCTAssertNotNil(bag["device.disk_total_mb"])
+        // #254: disk space is never read (E174.1).
+        XCTAssertNil(bag["device.disk_total_mb"])
     }
 
     #if DEBUG
@@ -122,9 +120,4 @@ final class ContextObserversTests: XCTestCase {
     }
     #endif
 
-    func testStorageRefreshIntervalIsFiveMinutes() {
-        // The PLAN-iOS.md §16.4 / T16.4 acceptance pins this at 5 min.
-        // Reading the constant directly catches accidental drift.
-        XCTAssertEqual(ContextObservers.storageRefreshInterval, .seconds(300))
-    }
 }

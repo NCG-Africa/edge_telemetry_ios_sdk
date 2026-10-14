@@ -711,7 +711,7 @@ a replayed crash / hang is sent under the build that saved it.
 F33 adds `app.version` / `device.platform_version` to the mirrored identity
 and a `session.clean_exit` marker written at `willTerminate`.
 `PreviousSession` (`Sources/EdgeRumCore/PreviousSession.swift`) turns the
-prior file into `previous_session.*` + `device.boot_time` on the launch
+prior file into `previous_session.*` on the launch
 `session.started`. An open hang lives in `Library/Caches/edge-rum/pending-hang.json`
 (written by the watchdog thread from threshold to stall end); `EdgeRum.start()`
 replays a leftover one as `app.hang` + `hang.terminated` on the sidecar identity.
