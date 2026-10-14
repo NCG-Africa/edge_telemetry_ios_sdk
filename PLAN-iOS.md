@@ -1069,10 +1069,12 @@ Declared restricted-reason APIs (per Apple's required-reason list):
 
 | API category           | Reason code | Use                                              |
 |------------------------|-------------|--------------------------------------------------|
-| File timestamp APIs    | `C617.1`    | Queue file mtime for FIFO ordering               |
-| System boot time APIs  | `35F9.1`    | Uptime in `page_load`                            |
-| Disk space APIs        | `E174.1`    | Skip queue persistence on low disk               |
+| System boot time APIs  | `35F9.1`    | `mach_absolute_time` durations (`long_task`)     |
 | User defaults APIs     | `CA92.1`    | Storing session.id / user.id                     |
+
+No file timestamp or disk space API is called, and no boot time is
+sent: `device.disk_*_mb` and `device.boot_time` were removed (#254,
+ADR-030) because no reason lets those values leave the device.
 
 The `PrivacyInfo.xcprivacy` manifest ships in every framework slice
 and is enforced by Apple at App Store submission; at the iOS 14 floor
@@ -1617,7 +1619,7 @@ top-level `value` (no `cpu.percent` key), the memory key is
     death; present on sampled sessions (plus forced `app.crash`). Gap
     detection: `sdk.events_generated` vs events received. ADR-023. RN: none.
 22. **F33 error evidence + two-phase hang (#220).** `previous_session.*`
-    + `device.boot_time` on `session.started` — evidence, not a verdict;
+    on `session.started` (`device.boot_time` removed, item 25) — evidence, not a verdict;
     `end = unknown` never means `oom`. `error_type` on `app.error`
     (host free string; not the `http.request` vocabulary).
     `crash.mach_exception` on `app.crash`; exception keys win over
@@ -1636,6 +1638,11 @@ top-level `value` (no `cpu.percent` key), the memory key is
     events from opted-out users is correct. RN: bridge docs must not
     promise otherwise. Once F24 tracing ships, `resource_timing` carries
     its request's `span.id` — join on it when present.
+25. **Privacy manifest (#254, SDK-008).** `device.disk_free_mb`,
+    `device.disk_total_mb` and `device.boot_time` are no longer sent
+    (4.0.0): Apple's required reasons keep them on the device. Drop
+    them from `payload-schema.json`; the OOM query (catalogue P15) loses
+    its reboot exclusion. ADR-030. RN: none.
 
 ---
 

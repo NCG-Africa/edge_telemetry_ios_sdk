@@ -1,7 +1,7 @@
 // Sources/EdgeRumCore/Context/ContextObservers.swift
 //
-// F16 — Idempotent installer for the notification observers and the
-// periodic storage refresh timer that keep `PowerContext`,
+// F16 — Idempotent installer for the notification observers that keep
+// `PowerContext`,
 // `AccessibilityContext`, and `StorageContext` (and the locale/timezone
 // fields on `DeviceContext`) up to date.
 //
@@ -26,8 +26,7 @@
 //     - UIAccessibility.darkerSystemColorsStatusDidChangeNotification
 //     - UIContentSizeCategory.didChangeNotification
 //   T16.4 StorageContext:
-//     - 5-minute `DispatchSource.makeTimerSource` on a utility queue
-//     - suspend on willResignActive, resume on didBecomeActive
+//     - UIApplication.backgroundRefreshStatusDidChangeNotification
 //   T16.5 DeviceContext locale/timezone refresh:
 //     - NSLocale.currentLocaleDidChangeNotification
 //   F28 riders (written to `Riders`, not the ContextProvider):
@@ -63,7 +62,7 @@ public enum ContextObservers {
     nonisolated(unsafe) private static var _installed: Bool = false
 
     /// `true` once `install(provider:debug:)` has registered the
-    /// observers and armed the storage timer.
+    /// observers.
     public static var isInstalled: Bool {
         os_unfair_lock_lock(installLock)
         defer { os_unfair_lock_unlock(installLock) }
@@ -73,16 +72,10 @@ public enum ContextObservers {
     // MARK: - State
 
     nonisolated(unsafe) private static var observers: [NSObjectProtocol] = []
-    nonisolated(unsafe) private static var storageTimer: DispatchSourceTimer?
-    nonisolated(unsafe) private static var storageTimerSuspended: Bool = false
-
-    /// Storage refresh interval. 5 minutes per PLAN-iOS.md §16.4 / T16.4
-    /// ("Refresh at session start + every 5 min").
-    internal static let storageRefreshInterval: DispatchTimeInterval = .seconds(300)
 
     // MARK: - Public install
 
-    /// Install all F16 observers and arm the storage refresh timer.
+    /// Install all F16 observers.
     /// Idempotent — second and subsequent calls are no-ops. Safe to
     /// call from any thread; UIKit reads inside the notification
     /// callbacks hop to main as needed.
@@ -174,22 +167,14 @@ public enum ContextObservers {
             object: nil, queue: .main, using: a11yRefresh
         ))
 
-        // T16.4 — pause/resume storage timer on lifecycle transitions
-        // so we don't run statfs while the app is backgrounded.
+        // T16.4 — `app.background_refresh` changes only on this
+        // notification. (No disk polling: #254, E174.1 keeps disk space
+        // on the device.)
         tokens.append(nc.addObserver(
-            forName: UIApplication.willResignActiveNotification,
-            object: nil, queue: .main
-        ) { _ in
-            suspendStorageTimer()
-        })
-        tokens.append(nc.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
+            forName: UIApplication.backgroundRefreshStatusDidChangeNotification,
             object: nil, queue: .main
         ) { [weak provider] _ in
-            // Refresh once on foreground in case disk grew/shrank
-            // while we were backgrounded.
             provider?.refreshStorage(StorageContext.snapshot())
-            resumeStorageTimer()
         })
 
         // F28 — app.state + device.orientation riders.
@@ -235,11 +220,6 @@ public enum ContextObservers {
         observers = tokens
         os_unfair_lock_unlock(installLock)
 
-        // Arm the 5-minute storage refresh timer (utility queue,
-        // mirrors `MemorySampler.swift:240`). Starts in the running
-        // state; lifecycle hooks suspend/resume it.
-        armStorageTimer(provider: provider)
-
         if debug {
             os_log("ContextObservers installed (F16)", log: log, type: .info)
         }
@@ -268,66 +248,16 @@ public enum ContextObservers {
     }
     #endif
 
-    // MARK: - Storage timer
-
-    private static func armStorageTimer(provider: ContextProvider) {
-        let queue = DispatchQueue(label: "com.edge.rum.context.storage", qos: .utility)
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(
-            deadline: .now() + storageRefreshInterval,
-            repeating: storageRefreshInterval,
-            leeway: .seconds(5)
-        )
-        timer.setEventHandler { [weak provider] in
-            provider?.refreshStorage(StorageContext.snapshot())
-        }
-        os_unfair_lock_lock(installLock)
-        storageTimer = timer
-        storageTimerSuspended = false
-        os_unfair_lock_unlock(installLock)
-        timer.resume()
-    }
-
-    private static func suspendStorageTimer() {
-        os_unfair_lock_lock(installLock)
-        let timer = storageTimer
-        let wasSuspended = storageTimerSuspended
-        if let _ = timer, !wasSuspended {
-            storageTimerSuspended = true
-        }
-        os_unfair_lock_unlock(installLock)
-        if let timer = timer, !wasSuspended {
-            timer.suspend()
-        }
-    }
-
-    private static func resumeStorageTimer() {
-        os_unfair_lock_lock(installLock)
-        let timer = storageTimer
-        let wasSuspended = storageTimerSuspended
-        if let _ = timer, wasSuspended {
-            storageTimerSuspended = false
-        }
-        os_unfair_lock_unlock(installLock)
-        if let timer = timer, wasSuspended {
-            timer.resume()
-        }
-    }
-
     // MARK: - Test-only helpers
 
     #if DEBUG
-    /// Tear down the registered observers + storage timer and clear
+    /// Tear down the registered observers and clear
     /// the install flag so subsequent tests can drive `install(...)`
     /// from a clean state.
     public static func _resetInstallFlagForTesting() {
         os_unfair_lock_lock(installLock)
         let removedObservers = observers
-        let removedTimer = storageTimer
-        let wasSuspended = storageTimerSuspended
         observers.removeAll()
-        storageTimer = nil
-        storageTimerSuspended = false
         _installed = false
         os_unfair_lock_unlock(installLock)
 
@@ -335,19 +265,9 @@ public enum ContextObservers {
         for token in removedObservers {
             nc.removeObserver(token)
         }
-        if let timer = removedTimer {
-            // `DispatchSourceTimer` must be resumed before
-            // cancel/release; otherwise a suspended source crashes on
-            // dealloc with EXC_BAD_INSTRUCTION.
-            if wasSuspended {
-                timer.resume()
-            }
-            timer.cancel()
-        }
     }
 
-    /// Force a one-shot storage refresh so tests can assert the timer
-    /// path without waiting 5 minutes.
+    /// Force a one-shot storage refresh.
     public static func _refreshStorageNowForTesting(provider: ContextProvider) {
         provider.refreshStorage(StorageContext.snapshot())
     }

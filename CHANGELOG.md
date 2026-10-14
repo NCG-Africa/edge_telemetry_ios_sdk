@@ -52,6 +52,13 @@ There is no 3.x release.
     batch, under the version, build and name that recorded it, with no
     `sdk.health` event.
 
+* **Privacy manifest populated; disk space and boot time no longer sent**
+  ([#254](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/254)).
+  `PrivacyInfo.xcprivacy` declares UserDefaults (`CA92.1`), system boot
+  time (`35F9.1`) and the collected data types. `device.disk_free_mb`,
+  `device.disk_total_mb` and `device.boot_time` are removed: Apple's
+  required reasons keep those values on the device.
+
 ### Deprecated
 
 * `EdgeRumConfig.location` and `EdgeRumConfig.environment` (and the

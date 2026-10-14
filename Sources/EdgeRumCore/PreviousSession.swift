@@ -5,8 +5,9 @@
 // The launch `session.started` describes how the previous process
 // ended, from the sidecar it left behind: `previous_session.id`,
 // `.end` (`clean | crash | unknown`), `.app_state`
-// (`foreground | background`), `.app_version`, `.os_version`, plus
-// `device.boot_time`. No verdict: `unknown` never means `oom` — the
+// (`foreground | background`), `.app_version`, `.os_version`. No
+// `device.boot_time`: `35F9.1` keeps boot-time-derived values on the
+// device (#254, SDK-008). No verdict: `unknown` never means `oom` — the
 // backend joins it against `memory_usage`.
 //
 // Refs: docs/specs/rum-coverage-roadmap.md § Tranche 8;
@@ -22,16 +23,11 @@ public enum PreviousSession {
     ///   - prior: the previous process's sidecar (`SessionSidecar.read()`
     ///     before this launch's first write); `nil` on first launch.
     ///   - crashed: an `app.crash` was replayed this launch.
-    ///   - bootTime: device boot time; `nil` omits `device.boot_time`.
     public static func attributes(
         prior: [String: AttributeValue]?,
-        crashed: Bool,
-        bootTime: Date? = PreviousSession.bootTime()
+        crashed: Bool
     ) -> [String: AttributeValue] {
         var out: [String: AttributeValue] = [:]
-        if let bootTime {
-            out["device.boot_time"] = .string(WireDateFormatter.string(from: bootTime))
-        }
         guard let prior, let id = prior["session.id"] else { return out }
         out["previous_session.id"] = id
         // Exception wins: a crash report outranks a clean-exit marker.
@@ -46,12 +42,4 @@ public enum PreviousSession {
         return out
     }
 
-    /// One `sysctl KERN_BOOTTIME` read. `nil` if the call fails.
-    public static func bootTime() -> Date? {
-        var mib = [CTL_KERN, KERN_BOOTTIME]
-        var tv = timeval()
-        var size = MemoryLayout<timeval>.size
-        guard sysctl(&mib, 2, &tv, &size, nil, 0) == 0, tv.tv_sec > 0 else { return nil }
-        return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1_000_000)
-    }
 }
