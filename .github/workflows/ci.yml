@@ -139,15 +139,31 @@ jobs:
         run: |
           xcrun simctl boot "${{ steps.pick.outputs.udid }}" || true
       - name: xcodebuild test (EdgeRum-Package)
+        # A test that stalls (FrameSamplerTests hung twice on the iOS 26.0
+        # slot, not reproducible locally) is killed after its allowance
+        # instead of eating the 40 min job budget; Xcode writes a spindump
+        # into the .xcresult. Failed / timed-out tests get one retry.
         run: |
           set -o pipefail
           xcodebuild \
             -scheme EdgeRum-Package \
             -destination "${{ steps.pick.outputs.destination }}" \
             -enableCodeCoverage YES \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 120 \
+            -retry-tests-on-failure \
+            -test-iterations 2 \
             -derivedDataPath build/dd-matrix-${{ matrix.slot }} \
             -resultBundlePath build/results-matrix-${{ matrix.slot }}.xcresult \
             test | xcpretty || exit ${PIPESTATUS[0]}
+      - name: Upload result bundle (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-matrix-${{ matrix.slot }}
+          path: build/results-matrix-${{ matrix.slot }}.xcresult
+          retention-days: 14
 
   crash-ui-test:
     # F19 / T19.5 — drives the EdgeRumCrashSampleApp XCUI replay test.

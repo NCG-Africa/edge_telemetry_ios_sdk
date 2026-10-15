@@ -25,12 +25,21 @@ internal enum CrashFixtureGenerator {
     /// `nil` on platforms where the framework isn't available or if
     /// PLCR refuses the request. Test-only; the production replay
     /// path reads pre-existing on-disk reports instead.
+    ///
+    /// A live snapshot taken while other threads are busy is now and
+    /// then unparseable (~1 in 2,000 under the replay suite), which
+    /// replay rightly purges as poison. Retry until one parses.
     internal static func makeLiveReport() -> Data? {
         #if canImport(CrashReporter)
         guard let reporter = PLCrashReporter(
             configuration: PLCrashReporterConfig.defaultConfiguration()
         ) else { return nil }
-        return reporter.generateLiveReport()
+        for _ in 0..<5 {
+            if let data = reporter.generateLiveReport(), (try? PLCrashReport(data: data)) != nil {
+                return data
+            }
+        }
+        return nil
         #else
         return nil
         #endif
