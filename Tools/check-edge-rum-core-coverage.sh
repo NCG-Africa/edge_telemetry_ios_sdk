@@ -48,7 +48,12 @@ cd "${REPO_ROOT}"
 
 if [[ "$REUSE_BUILD" != true ]]; then
     echo "check-edge-rum-core-coverage: running 'swift test --enable-code-coverage'"
-    swift test --enable-code-coverage >/dev/null
+    # Keep the log quiet on success, but show why on failure.
+    LOG="$(mktemp)"
+    if ! swift test --enable-code-coverage >"$LOG" 2>&1; then
+        grep -E "error:|failed|Fatal|crash" "$LOG" | head -50 >&2 || tail -50 "$LOG" >&2
+        exit 1
+    fi
 fi
 
 BIN_PATH="$(swift build --show-bin-path)"

@@ -17,6 +17,7 @@ Secrets.local.xcconfig
 ## SwiftPM
 Package.resolved
 
+temp_auto_push.bat
 ## CocoaPods
 Pods/
 *.lock
@@ -35,5 +36,6 @@ Sources/EdgeRum/Generated/EdgeRumVersion.swift
 
 ## Editors
 .idea/
-.vscode/
 *.swp
+.gitignore
+branch_structure.json

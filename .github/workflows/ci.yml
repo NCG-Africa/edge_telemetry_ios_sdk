@@ -102,7 +102,7 @@ jobs:
       - name: EdgeRumCore coverage gate (≥80%)
         # F19/T19.1 — fails if EdgeRumCore line coverage drops below
         # the §13.1 acceptance bar.
-        run: ./Tools/check-edge-rum-core-coverage.sh
+        run: ./Tools/check-edge-rum-core-coverage.sh --reuse-build  # previous step already ran the suite with coverage
 
   test-device-matrix:
     # F19 / T19.6 — Run the SwiftPM test bundle across three iOS
