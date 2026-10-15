@@ -1,0 +1,27 @@
+# .github/workflows/privacy-manifest.yml
+#
+# #255 (SDK-008). Runs Tools/verify-privacy-manifest.sh on every PR and
+# push to main: a required-reason API used in Sources/ without a
+# matching NSPrivacyAccessedAPITypes entry (or a declaration with no
+# call site left) fails the job. Grep-only, so it runs on Linux and
+# stays out of the tag-only ci.yml.
+
+name: privacy-manifest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: privacy manifest matches code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run verify-privacy-manifest.sh
+        run: ./Tools/verify-privacy-manifest.sh
