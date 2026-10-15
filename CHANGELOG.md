@@ -58,6 +58,9 @@ There is no 3.x release.
   time (`35F9.1`) and the collected data types. `device.disk_free_mb`,
   `device.disk_total_mb` and `device.boot_time` are removed: Apple's
   required reasons keep those values on the device.
+  `Tools/verify-privacy-manifest.sh` now fails every PR whose code uses a
+  required-reason API the manifest does not declare
+  ([#255](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/255)).
 
 ### Deprecated
 

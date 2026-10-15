@@ -405,6 +405,7 @@ Samples: `Samples/EdgeRum{Sample,SwiftUISample,CrashSample}App/`.
 Tools: `Tools/` — `firewall-check.sh`, `build-xcframework.sh`,
 `gen-version.sh`, `fetch-plcrashreporter.sh`, `check-supported-ios.sh`,
 `check-links.sh`, `check-doc-coverage.sh`, `extract-readme-code.sh`,
+`verify-privacy-manifest.sh`,
 `check-edge-rum-core-coverage.sh`, `pick-simulator-slice.sh`,
 `gen-sample-xcodeproj.sh`.
 Top-level: `Package.swift`, `EdgeRum.podspec`, `VERSION`, `PLAN-iOS.md`,
@@ -805,10 +806,10 @@ Attempt 4: +30s → push to OfflineQueue
    match. Also greps doc comments and the README.
 5. Attribute flatness check: contract tests assert no
    non-primitive value appears in any test payload's `attributes`.
-6. *(planned, F20)* Privacy manifest check:
-   `Tools/verify-privacy-manifest.sh` confirms every restricted-reason
-   API used in code is declared in `PrivacyInfo.xcprivacy`. Neither the
-   script nor the declarations exist yet.
+6. Privacy manifest check (#255): `Tools/verify-privacy-manifest.sh`
+   greps `Sources/` for required-reason APIs and fails when a used
+   category is undeclared in `PrivacyInfo.xcprivacy`, or a declared one
+   has no call site. Runs on every PR (`privacy-manifest.yml`).
 7. *(planned)* SwiftLint clean. No `.swiftlint.yml` is checked in yet.
 8. Snapshot test: `golden-batch-ios.json` matches generated output.
 9. Performance test: `XCTMetric.cpu` / `.memory` /
