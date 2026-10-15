@@ -11,6 +11,21 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## [4.0.1](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v4.0.0...v4.0.1) (2026-10-15)
+
+No SDK behaviour changes. First release published to CocoaPods.
+
+### Fixed
+
+* The podspec pointed at tag `4.0.0` instead of `v4.0.0`, so the
+  CocoaPods trunk push for 4.0.0 (and 2.0.0) failed. It now uses the
+  `v`-prefixed tag.
+* Flaky crash-replay tests: the test-only live-report fixture now
+  retries when PLCrashReporter returns an unparseable snapshot.
+* CI matrix tests time out a stalled test after 60–120 s (with a
+  spindump in the uploaded result bundle) and retry it once, instead of
+  hanging the job for 40 minutes.
+
 ## [4.0.0](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v2.0.0...v4.0.0) (2026-10-15)
 
 **Install the EdgeTelemetry backend release before shipping any app built

@@ -28,7 +28,7 @@ Pod::Spec.new do |s|
   s.license          = { :type => 'Apache-2.0', :text => 'Apache License 2.0 — see LICENSE' }
   s.author           = { 'Edge Telemetry' => 'noreply@edge.local' }
   s.source           = { :git => 'https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git',
-                         :tag => s.version.to_s }
+                         :tag => "v#{s.version}" }
 
   s.ios.deployment_target = '14.0'
   # `Package.swift` uses `swift-tools-version: 6.0` but pins
