@@ -195,6 +195,9 @@ jobs:
       - name: Pick a newest-slot simulator
         id: pick
         run: ./Tools/pick-simulator-slice.sh --slot new --allow-any-device
+      - name: Boot simulator and wait for SpringBoard
+        # UI tests fail "Failed to get launch progress" on a half-booted sim.
+        run: xcrun simctl bootstatus "${{ steps.pick.outputs.udid }}" -b
       - name: xcodebuild test (EdgeRumCrashSampleApp scheme)
         run: |
           set -o pipefail

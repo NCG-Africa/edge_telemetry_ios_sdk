@@ -208,6 +208,9 @@ public enum FrameSampler {
     /// Resolved target Hz for the host display. Returned as `frame.target_hz`.
     /// Exposed `internal` so the test target can assert the resolution path.
     static func resolveTargetHz() -> Int {
+        #if DEBUG
+        if let hz = _targetHzOverrideForTesting { return hz }
+        #endif
         if #available(iOS 15.0, *) {
             // The default range on a ProMotion device reports
             // `maximum = 120`; on a 60 Hz device it reports `60`.
@@ -406,6 +409,10 @@ public enum FrameSampler {
     #if canImport(UIKit) && os(iOS)
     /// `true` while a motion window is open and the display link runs.
     static var _isSamplingForTesting: Bool { sharedDriver?.isSampling ?? false }
+
+    /// Skips `UIScreen.main`: in a hostless test process its first access
+    /// can block forever on a sync XPC to SpringBoard (CI "stalls").
+    nonisolated(unsafe) static var _targetHzOverrideForTesting: Int?
     #endif
 
     /// Tear down the running display link and lifecycle observers and

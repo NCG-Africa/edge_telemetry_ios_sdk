@@ -66,6 +66,8 @@ Pod::Spec.new do |s|
     ss.dependency 'EdgeRum/Internal-Capture'
     ss.dependency 'EdgeRum/Internal-Crash'
     ss.source_files = 'Sources/EdgeRum/**/*.swift', 'CocoaPods/EdgeRumVersion.swift'
+    # A local SwiftPM build may leave its generated copy in the checkout.
+    ss.exclude_files = 'Sources/EdgeRum/Generated/**'
   end
 
   # Internal subspecs — names prefixed with `Internal-` so they are

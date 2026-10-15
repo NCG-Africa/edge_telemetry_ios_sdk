@@ -103,7 +103,17 @@ private final class CaptureProbeRecorder: Recording, @unchecked Sendable {
 
 final class FrameSamplerTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        #if canImport(UIKit) && os(iOS)
+        FrameSampler._targetHzOverrideForTesting = 60
+        #endif
+    }
+
     override func tearDown() {
+        #if canImport(UIKit) && os(iOS)
+        FrameSampler._targetHzOverrideForTesting = nil
+        #endif
         Recorder.resetShared()
         FrameSampler._resetInstallFlagForTesting()
         super.tearDown()
@@ -360,11 +370,8 @@ final class FrameSamplerTests: XCTestCase {
         XCTAssertFalse(FrameSampler._isSamplingForTesting)
     }
 
-    func test_resolveTargetHz_isPositiveOnIOSHost() {
-        // On a 60Hz simulator this is 60. On ProMotion it's 120. Either
-        // way, it must be > 0 and a multiple of a real Hz value.
-        let hz = FrameSampler.resolveTargetHz()
-        XCTAssertGreaterThanOrEqual(hz, 60)
+    func test_resolveTargetHz_honoursTestOverride() {
+        XCTAssertEqual(FrameSampler.resolveTargetHz(), 60)
     }
     #endif
 }
