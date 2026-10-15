@@ -234,7 +234,15 @@ public final class Breadcrumbs: @unchecked Sendable {
     #if DEBUG
     /// Block until any scheduled snapshot has landed.
     public func _drainForTesting() {
-        Thread.sleep(forTimeInterval: persistDelay + 0.05)
+        // A fixed sleep raced late-firing `asyncAfter` timers on loaded CI
+        // runners; poll the pending flag, then let the write block finish.
+        let deadline = Date().addingTimeInterval(persistDelay + 5)
+        Thread.sleep(forTimeInterval: persistDelay)
+        while Date() < deadline {
+            lock.lock(); let pending = persistPending; lock.unlock()
+            if !pending { break }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
         queue.sync {}
     }
 
