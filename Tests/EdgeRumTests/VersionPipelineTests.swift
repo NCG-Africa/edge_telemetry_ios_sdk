@@ -41,6 +41,16 @@ final class VersionPipelineTests: XCTestCase {
         }
     }
 
+    /// The pod compiles `CocoaPods/EdgeRumVersion.swift` (trunk forbids
+    /// `prepare_command`), so it must match `VERSION`. Regenerate with
+    /// `Tools/gen-version.sh CocoaPods/EdgeRumVersion.swift`.
+    func testCocoaPodsVersionFileMatchesVersionFile() throws {
+        let version = try Self.readRepoVersionFile()
+        let url = try Self.locateRepoRoot().appendingPathComponent("CocoaPods/EdgeRumVersion.swift")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains(#"let string: String = "\#(version)""#))
+    }
+
     // MARK: - Helpers
 
     private static func readRepoVersionFile() throws -> String {

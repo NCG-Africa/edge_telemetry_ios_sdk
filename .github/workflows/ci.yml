@@ -137,7 +137,10 @@ jobs:
         run: ./Tools/pick-simulator-slice.sh --slot ${{ matrix.slot }} --allow-any-device
       - name: Boot ${{ steps.pick.outputs.device_name }} (${{ steps.pick.outputs.runtime }})
         run: |
-          xcrun simctl boot "${{ steps.pick.outputs.udid }}" || true
+          # Wait for a full boot: hostless package tests touch UIScreen,
+          # whose +initialize makes a sync XPC call to SpringBoard. Before
+          # SpringBoard is up it blocks forever (FrameSamplerTests "stall").
+          xcrun simctl bootstatus "${{ steps.pick.outputs.udid }}" -b
       - name: xcodebuild test (EdgeRum-Package)
         # A test that stalls (FrameSamplerTests hung twice on the iOS 26.0
         # slot, not reproducible locally) is killed after its allowance

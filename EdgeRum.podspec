@@ -55,18 +55,17 @@ Pod::Spec.new do |s|
 
   s.default_subspec = 'Default'
 
-  # EdgeRumVersion.swift is produced by the SwiftPM build plugin at build
-  # time; CocoaPods doesn't run SwiftPM plugins, so regenerate it from the
-  # VERSION file at install time. Runs on the downloaded pod copy only —
-  # never touches the git checkout, so it can't collide with the plugin's
-  # SwiftPM output.
-  s.prepare_command = 'bash Tools/gen-version.sh Sources/EdgeRum/Generated/EdgeRumVersion.swift'
+  # EdgeRumVersion.swift is produced by the SwiftPM build plugin, which
+  # CocoaPods doesn't run. Trunk rejects `prepare_command` on new pods
+  # (HTTP 500 on push), so the pod compiles a checked-in copy instead,
+  # written by Tools/gen-version.sh and pinned to VERSION by
+  # VersionPipelineTests.
 
   s.subspec 'Default' do |ss|
     ss.dependency 'EdgeRum/Internal-Core'
     ss.dependency 'EdgeRum/Internal-Capture'
     ss.dependency 'EdgeRum/Internal-Crash'
-    ss.source_files = 'Sources/EdgeRum/**/*.swift'
+    ss.source_files = 'Sources/EdgeRum/**/*.swift', 'CocoaPods/EdgeRumVersion.swift'
   end
 
   # Internal subspecs — names prefixed with `Internal-` so they are

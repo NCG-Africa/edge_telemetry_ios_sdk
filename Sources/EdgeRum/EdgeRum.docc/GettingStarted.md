@@ -23,7 +23,7 @@ Add the package to your `Package.swift`:
 ```swift-skip
 dependencies: [
     .package(url: "https://github.com/NCG-Africa/edge_telemetry_ios_sdk.git",
-             from: "4.0.1")
+             from: "4.0.2")
 ]
 ```
 

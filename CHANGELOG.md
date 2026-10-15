@@ -11,9 +11,26 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
-## [4.0.1](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v4.0.0...v4.0.1) (2026-10-15)
+## [4.0.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v4.0.1...v4.0.2) (2026-10-15)
 
 No SDK behaviour changes. First release published to CocoaPods.
+
+### Fixed
+
+* CocoaPods trunk refuses `prepare_command` on a new pod and answers
+  the push with HTTP 500. The podspec no longer has one: the pod
+  compiles a checked-in `CocoaPods/EdgeRumVersion.swift`, kept equal to
+  `VERSION` by a test.
+* CI matrix tests "stalled" in `FrameSamplerTests`: the simulator was
+  booted without waiting, and the first `UIScreen` access blocks on
+  SpringBoard until boot completes. CI now waits for a full boot.
+* Flaky Breadcrumbs test helper and a coverage gate that hid its test
+  output; both failed the 4.0.1 tag build.
+
+## [4.0.1](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v4.0.0...v4.0.1) (2026-10-15)
+
+No SDK behaviour changes. Published to GitHub Releases only: the
+CocoaPods trunk push failed (see 4.0.2).
 
 ### Fixed
 
