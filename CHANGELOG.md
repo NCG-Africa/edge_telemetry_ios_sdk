@@ -92,7 +92,7 @@ since `1.4.0-alpha.2`.
 
 * Install snippets in the README and DocC `GettingStarted` now pin `2.0.0`.
 
-## [1.4.0-alpha.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v1.3.0-alpha.2...v1.4.0-alpha.2) (2026-10-05)
+## 1.4.0-alpha.2 (2026-10-05, never tagged)
 
 
 ### Features

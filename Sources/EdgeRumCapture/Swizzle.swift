@@ -5,7 +5,9 @@
 // the process, surfaced as `sdk.capabilities_failed` on the envelope.
 
 import Foundation
+#if canImport(EdgeRumCore)
 import EdgeRumCore
+#endif
 
 enum Swizzle {
 

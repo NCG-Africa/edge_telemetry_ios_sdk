@@ -55,6 +55,7 @@ LYCHEE_FLAGS=(
     --exclude "^https?://your\.endpoint"
     --exclude "^https?://noisy\.analytics\.example\.com"
     --exclude "^https?://noisy\.example\.com"
+    --exclude "^https://github\.com/NCG-Africa/EDGETELEMETRYPROCESSORGO/"  # private repo: 404 to anonymous checks
 )
 
 # Pass globs through `find` — lychee's own glob expansion is shell-
