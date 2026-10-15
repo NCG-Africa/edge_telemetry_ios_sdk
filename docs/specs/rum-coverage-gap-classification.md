@@ -9,7 +9,7 @@ under map [iOS RUM coverage](https://github.com/NCG-Africa/edge_telemetry_ios_sd
 
 **Input:** the as-is inventory from
 [[W2] Wire inventory](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/issues/190) —
-[`docs/catalogue/as-is-wire-inventory.md`](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/blob/wayfinder/w2-wire-inventory/docs/catalogue/as-is-wire-inventory.md).
+[`docs/catalogue/as-is-wire-inventory.md`](../catalogue/as-is-wire-inventory.md).
 Its divergences are cited as **D1–D13**; findings first recorded here are **C1–C16**. Where this
 document contradicts the inventory it says so explicitly (see [§0.3](#03-correction-to-d9)).
 
