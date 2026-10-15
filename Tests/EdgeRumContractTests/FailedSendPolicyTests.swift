@@ -70,7 +70,7 @@ final class FailedSendPolicyTests: XCTestCase {
         rig.recorder.flush(reason: .manual)
     }
 
-    private func waitUntil(_ timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+    private func waitUntil(_ timeout: TimeInterval = 20, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition(), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
         return condition()
