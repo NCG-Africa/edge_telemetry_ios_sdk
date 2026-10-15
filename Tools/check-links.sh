@@ -49,6 +49,7 @@ LYCHEE_FLAGS=(
     --timeout 30
     --max-redirects 5
     --exclude "^https://github\.com/NCG-Africa/edge_telemetry_ios_sdk/actions/"
+    --exclude "^https://github\.com/NCG-Africa/edge_telemetry_ios_sdk/compare/"  # release-PR CHANGELOG links 404 until the tag is pushed
     --exclude "^https?://localhost(:|/|$)"
     --exclude "^https?://collect\.example\.com"
     --exclude "^https?://api\.example\.com"
