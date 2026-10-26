@@ -227,7 +227,7 @@ what it declines to collect (§7), not what it scrubs after collecting.
 | `none` | no personal data possible by construction — numbers, enums, and strings whose **value is fixed at compile time** | `http.duration_ms`, `lifecycle.state`, `interaction.target` (a reflected type name), `interaction.name_source`, `*.binary_images` |
 | `pseudonymous` | SDK-minted random value, linkable across events within its scope, not to a person without a host-side join | `device.id`, `session.id`, `user.id`, `action.id`, trace ids |
 | `identity` | names a person directly; only ever arrives via a host call | `user.name`, `user.email`, `user.phone`, `user.external_id` — **exactly these four; that is an invariant** (asserted by `PrivacyContractTests`, T2) |
-| `content` | free text whose **value is chosen at runtime**, captured implicitly from the running app — may contain anything | `error.message`, `error.stack`, `crash.report_json`, `crash.exception_reason`, `long_task.stack`, `screen.name`, `navigation.screen`, `event.name`, `timer.name`, host `track` attributes, `interaction.name` (button-title branch), `http.path`, `breadcrumbs` |
+| `content` | free text whose **value is chosen at runtime**, captured implicitly from the running app — may contain anything | `error.message`, `error.stack`, `crash.report_json`, `crash.exception_reason`, `long_task.stack`, `screen.name`, `navigation.screen`, `event.name`, `timer.name`, host `track` attributes, `interaction.name` (button-title branch), `breadcrumbs` |
 
 **Boundary rule: compile-time vs runtime value, not SDK-vs-host origin.** It is the only version
 that is mechanically checkable — point at the code that produces the value and answer it — and it
@@ -443,8 +443,8 @@ the value at death. A crash inside the coalescing window lands without it.
 |---|---|---|---|---|---|---|---|---|
 | `http.method` | string | `http.request` | event | required | bounded enum (HTTP verbs) | none | iOS-only | Defaults to `GET` when nil |
 | `http.url` | string | `http.request` | event | required | unbounded string | content | iOS-only | **−T4 breaking batch.** Full `absoluteString` including query and userinfo (tokens, emails, reset links), redundant with `http.host` + `http.path` computed three lines apart (`HTTPCapture.swift:334-338`). The query drops structurally |
-| `http.host` | string | `http.request` | event | required | unbounded string | none | iOS-only | `""` when unresolvable. Hosts are endpoint configuration; a host encoding user data in subdomains must use `sanitizeUrl` |
-| `http.path` | string | `http.request` | event | required | unbounded string | content | iOS-only | Post-`sanitizeUrl`. Query-free by construction, but path segments carry ids |
+| `http.host` | string | `http.request` | event | required | unbounded string | none | iOS-only | `host[:port]`, default port dropped (#262). `""` when unresolvable. Hosts are endpoint configuration; a host encoding user data in subdomains must use `sanitizeUrl` |
+| `http.path` | string | `http.request` | event | required | route template | none | iOS-only | Post-`sanitizeUrl`, then templated per RN contract §4.4.1 (#262): id-like segments → `{id}`, ≤ 6 segments |
 | `http.status_code` | number (int) | `http.request` | event | required | numeric | none | iOS-only | **`0` when the response was not an `HTTPURLResponse`** (transport error) |
 | `http.duration_ms` | number (int) | `http.request` | event | required | numeric | none | iOS-only | Wall clock, clamped ≥ 0. O3 caveat applies |
 | `http.request_size` | number (int) | `http.request` | event | required | numeric | none | iOS-only | `httpBody` is read for `.count` only (`HTTPCapture.swift:504`) |

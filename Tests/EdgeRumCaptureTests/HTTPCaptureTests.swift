@@ -430,6 +430,78 @@ final class HTTPCaptureTests: XCTestCase {
         XCTAssertEqual(attrs["http.path"], .string("/redacted"))
     }
 
+    // MARK: templatedPath — #262, RN contract §4.4.1
+
+    func test_templatedPath_followsContract441() {
+        let long = String(repeating: "a", count: 32)
+        let cases: [(String, String)] = [
+            ("", "/"),
+            ("/", "/"),
+            ("/v1/users", "/v1/users"),
+            ("/V2/users", "/V2/users"),
+            ("/v1beta/users", "/{id}/users"),
+            ("/users/123", "/users/{id}"),
+            ("/orders/3f2a-9c/items", "/orders/{id}/items"),
+            ("/files/\(long)", "/files/{id}"),
+            ("/files/\(long.dropLast())", "/files/\(long.dropLast())"),
+            ("/Users/Me/", "/Users/Me"),
+            ("//users//123/", "/users/{id}"),
+            ("/a/b/c/d/e/f", "/a/b/c/d/e/f"),
+            ("/a/b/c/d/e/f/g/h", "/a/b/c/d/e/f/…"),
+            ("/files/" + String(repeating: "é", count: 16), "/files/" + String(repeating: "é", count: 16)),
+            ("/files/" + String(repeating: "😀", count: 16), "/files/{id}"),  // utf16: 32 units
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(HTTPCapture.templatedPath(input), expected, input)
+        }
+    }
+
+    func test_recordOutcome_templatesPathAndKeepsPort() {
+        let request = URLRequest(url: URL(string: "https://api.example.com:8443/users/42/orders?x=1")!)
+
+        HTTPCapture.recordOutcome(
+            request: request,
+            response: nil,
+            data: nil,
+            metrics: nil,
+            error: nil,
+            startedAt: Date(),
+            finishedAt: Date(),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        guard case .event(_, let attrs) = probe.calls.first else {
+            XCTFail("Expected an event call"); return
+        }
+        XCTAssertEqual(attrs["http.host"], .string("api.example.com:8443"))
+        XCTAssertEqual(attrs["http.path"], .string("/users/{id}/orders"))
+    }
+
+    func test_recordOutcome_dropsDefaultPortAndTemplatesPercentEncoding() {
+        let request = URLRequest(url: URL(string: "https://api.example.com:443/q/hello%20world/items")!)
+
+        HTTPCapture.recordOutcome(
+            request: request,
+            response: nil,
+            data: nil,
+            metrics: nil,
+            error: nil,
+            startedAt: Date(),
+            finishedAt: Date(),
+            taskDescription: nil,
+            recorder: probe,
+            config: HTTPCaptureConfig()
+        )
+
+        guard case .event(_, let attrs) = probe.calls.first else {
+            XCTFail("Expected an event call"); return
+        }
+        XCTAssertEqual(attrs["http.host"], .string("api.example.com"))
+        XCTAssertEqual(attrs["http.path"], .string("/q/{id}/items"))
+    }
+
     // MARK: recordOutcome — disabled recorder
 
     func test_recordOutcome_isNoOpWhenRecorderDisabled() {

@@ -11,6 +11,16 @@ minimum-iOS bump is a major version — are documented in the
 
 ---
 
+## Unreleased
+
+### Changed
+
+* `http.request`: `http.path` is templated on device per RN contract
+  §4.4.1 — a segment holding a digit, or ≥ 32 chars, becomes `{id}`
+  (`vN` kept); trailing slash dropped, capped at 6 segments then `/…`,
+  empty → `/`. `http.host` and `resource.host` now carry a
+  non-default port (`host[:port]`). Raw ids no longer leave the device (#262).
+
 ## [4.0.2](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/compare/v4.0.1...v4.0.2) (2026-10-15)
 
 No SDK behaviour changes. First release published to CocoaPods.
