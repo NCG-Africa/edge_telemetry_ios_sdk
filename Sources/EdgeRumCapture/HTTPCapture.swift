@@ -316,8 +316,14 @@ public enum HTTPCapture {
 
         let durationMs = Int((finishedAt.timeIntervalSince(startedAt) * 1000.0).rounded())
         let method = request.httpMethod ?? "GET"
-        let host = sanitisedUrl.host ?? ""
-        let path = sanitisedUrl.path
+        // `host[:port]` + templated path, RN contract §4.4.1 (#262): raw ids never leave the device.
+        // Default port dropped, as JS `URL.host` does. Shared by `resource.host`.
+        let components = URLComponents(url: sanitisedUrl, resolvingAgainstBaseURL: false)
+        let defaultPort = ["https": 443, "http": 80][sanitisedUrl.scheme?.lowercased() ?? ""]
+        let port = sanitisedUrl.port.flatMap { $0 == defaultPort ? nil : ":\($0)" } ?? ""
+        let host = (sanitisedUrl.host ?? "") + port
+        // percent-encoded, as the reference sees it: `%20` holds a digit
+        let path = templatedPath(components?.percentEncodedPath ?? sanitisedUrl.path)
 
         var statusCode: Int = 0
         var fromCache = false
@@ -372,6 +378,25 @@ public enum HTTPCapture {
             metricAttrs["value"] = .double(Double(durationMs))
             liveRecorder.recordPerformance(name: "resource_timing", attributes: metricAttrs)
         }
+    }
+
+    // MARK: #262 — path templating
+
+    /// RN contract §4.4.1, verbatim — the processor re-applies it at ingest, so do not "improve" it.
+    /// A segment becomes `{id}` unless it is `vN`, and does if it holds a digit or is ≥ 32 chars.
+    /// No case folding, trailing slash dropped, capped at 6 segments then `/…`, empty → `/`.
+    internal static func templatedPath(_ path: String) -> String {
+        let segments = path.split(separator: "/")
+        if segments.isEmpty { return "/" }
+        let isDigit: (Character) -> Bool = { ("0"..."9").contains($0) }
+        let kept = segments.prefix(6).map { s -> String in
+            let isVersion = s.count > 1 && (s.first == "v" || s.first == "V") && s.dropFirst().allSatisfy(isDigit)
+            if isVersion { return String(s) }
+            // utf16 to match the JS reference's `length`
+            return s.contains(where: isDigit) || s.utf16.count >= 32 ? "{id}" : String(s)
+        }
+        let route = "/" + kept.joined(separator: "/")
+        return segments.count > 6 ? route + "/…" : route
     }
 
     // MARK: F17 enrichment — http.request
