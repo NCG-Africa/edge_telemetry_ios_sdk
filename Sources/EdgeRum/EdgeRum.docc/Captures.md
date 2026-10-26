@@ -46,7 +46,8 @@ What's captured: `http.method`, `http.host`, `http.path`,
 `http.status_code`, `http.duration_ms`, `http.request_size`,
 `http.response_size`, `http.from_cache`, and — only on failure —
 `http.error_domain` (string) plus `http.error_code` (int). No full URL
-or query string is sent. The companion `resource_timing` metric carries
+or query string is sent; `http.path` is templated on device — a
+segment holding a digit, or 32+ characters long, becomes `{id}`. The companion `resource_timing` metric carries
 `resource.host`, `resource.dns_ms`, `resource.connect_ms`,
 `resource.tls_ms`, `resource.ttfb_ms`, and `resource.download_ms`
 derived from `URLSessionTaskMetrics`.
