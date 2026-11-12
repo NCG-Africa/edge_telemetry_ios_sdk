@@ -10,8 +10,7 @@ name: privacy-manifest
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:

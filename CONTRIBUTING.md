@@ -10,8 +10,14 @@ firewall, read `CLAUDE.md`; for the "why" behind these choices, see
 
 1. Branch off `main`.
 2. Make your change; keep the diff focused.
-3. Open a PR into `main`. CI (`ci.yml`) must be green — build, tests,
-   the terminology firewall, `pod lib lint`, docs, and the sample apps.
+3. Run the local checks on a Mac, then open a PR into `main`:
+   ```sh
+   ./Tools/fetch-plcrashreporter.sh
+   swift build -c release
+   swift test --enable-code-coverage
+   ./Tools/check-edge-rum-core-coverage.sh --reuse-build
+   ./Tools/firewall-check.sh
+   ```
 4. Squash-merge. **The squash commit message must follow Conventional
    Commits** (below), because release automation reads it.
 
@@ -80,8 +86,15 @@ Releases are cut by hand:
    it) and add the `CHANGELOG.md` section from the commits since the
    last tag. Merge via PR.
 2. Tag the merged commit `vX.Y.Z` (must equal `VERSION`) and push the tag.
-3. The tag fires `release.yml`, which builds + attaches the XCFramework,
-   creates the GitHub Release, and pushes the CocoaPods trunk spec.
+3. Build and publish from a Mac (no hosted macOS runners):
+   ```sh
+   ./Tools/fetch-plcrashreporter.sh
+   ./Tools/firewall-check.sh && swift test
+   ./Tools/build-xcframework.sh
+   (cd build && shasum -a 256 EdgeRum.xcframework.zip > EdgeRum.xcframework.zip.sha256)
+   gh release create vX.Y.Z build/EdgeRum.xcframework.zip build/EdgeRum.xcframework.zip.sha256 --generate-notes
+   pod trunk push EdgeRum.podspec --allow-warnings --synchronous
+   ```
    SwiftPM consumers get the new version the moment the tag exists.
 
 ## Terminology firewall
@@ -89,5 +102,5 @@ Releases are cut by hand:
 Anything public-facing (the `EdgeRum` module's symbols, their doc
 comments, the README, CHANGELOG, sample strings) must avoid the banned
 vocabulary in `CLAUDE.md` §"Rule 1". `Tools/firewall-check.sh` enforces
-this in CI — run it locally before pushing if you touched public API or
+this — run it locally before pushing if you touched public API or
 docs.
