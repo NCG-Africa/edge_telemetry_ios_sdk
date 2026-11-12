@@ -4,7 +4,6 @@
 [![CocoaPods](https://img.shields.io/badge/CocoaPods-1.0.0--alpha.2-blue.svg)](https://cocoapods.org)
 [![Supported iOS](https://img.shields.io/badge/iOS-14.0%2B-blue.svg)](#supported-ios)
 [![License](https://img.shields.io/badge/license-TBD-lightgrey.svg)](#contributing-and-license)
-[![CI](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/NCG-Africa/edge_telemetry_ios_sdk/actions/workflows/ci.yml)
 [![Swift](https://img.shields.io/badge/Swift-5.10%20%7C%206-orange.svg)](https://swift.org)
 [![Coverage](https://img.shields.io/badge/EdgeRumCore%20coverage-%E2%89%A580%25%20gated-brightgreen.svg)](Tools/check-edge-rum-core-coverage.sh)
 
@@ -29,10 +28,8 @@ and this README on every PR.
 
 ## Testing, coverage & CI
 
-Every change is gated by the CI pipeline in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). The badge at the top of
-this README reflects the current build status of `main`; click it for the live
-run history, per-job logs, and downloadable artifacts.
+There is no hosted macOS CI. Build and test locally on a Mac before every PR
+and every release (see `CONTRIBUTING.md`).
 
 ### Running the tests
 

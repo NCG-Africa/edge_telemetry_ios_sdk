@@ -794,7 +794,7 @@ Attempt 4: +30s → push to OfflineQueue
 
 ---
 
-## CI checks (all must pass before merge)
+## Local checks (all must pass before merge; no hosted macOS CI)
 
 1. `swift build -c release` for `iphoneos` and `iphonesimulator`.
 2. `swift test --enable-code-coverage`.
@@ -809,7 +809,7 @@ Attempt 4: +30s → push to OfflineQueue
 6. Privacy manifest check (#255): `Tools/verify-privacy-manifest.sh`
    greps `Sources/` for required-reason APIs and fails when a used
    category is undeclared in `PrivacyInfo.xcprivacy`, or a declared one
-   has no call site. Runs on every PR (`privacy-manifest.yml`).
+   has no call site. Runs on tag push (`privacy-manifest.yml`).
 7. *(planned)* SwiftLint clean. No `.swiftlint.yml` is checked in yet.
 8. Snapshot test: `golden-batch-ios.json` matches generated output.
 9. Performance test: `XCTMetric.cpu` / `.memory` /

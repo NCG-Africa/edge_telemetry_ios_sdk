@@ -12,8 +12,7 @@ name: gitleaks
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
