@@ -189,10 +189,10 @@ public final class Breadcrumbs: @unchecked Sendable {
             return nil
         }
         switch name {
-        case "app_lifecycle": return (str("lifecycle.state"), nil)
-        case "navigation": return (str("navigation.screen"), nil)
-        case "user.interaction": return (str("interaction.name") ?? str("interaction.target"), nil)
-        case "custom_event": return (str("event.name"), nil)
+        case "app.lifecycle": return (str("lifecycle.state"), nil)
+        case "navigation": return (str("navigation.to_screen"), nil)
+        case "ui.interaction": return (str("ui.target") ?? str("ui.view_class"), nil)
+        case "custom.event": return (str("event.name"), nil)
         case "http.request":
             var status: Int?
             if case let .int(code)? = a["http.status_code"] { status = code }

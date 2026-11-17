@@ -77,7 +77,7 @@ final class HangDetectorDetectionTests: XCTestCase {
         XCTAssertEqual(call.attributes["hang.timestamp"],
                        .string(WireDateFormatter.string(from: Date(timeIntervalSince1970: 1_717_000_005))),
                        "hang.timestamp is the threshold crossing")
-        guard case let .string(stack) = call.attributes["hang.stack"] else {
+        guard case let .string(stack) = call.attributes["error.stacktrace"] else {
             return XCTFail("hang.stack missing")
         }
         XCTAssertTrue(stack.contains("mainThreadFrame"))

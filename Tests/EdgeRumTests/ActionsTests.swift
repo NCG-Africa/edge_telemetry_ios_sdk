@@ -95,12 +95,12 @@ final class ActionsTests: XCTestCase {
         rig.actions.noteAppState("active")
         checkout.complete()
 
-        let ended = rig.events("action.ended")
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.count, 1)
-        XCTAssertEqual(ended[0]["action.outcome"], .string("completed"))
+        XCTAssertEqual(ended[0]["task.outcome"], .string("completed"))
         XCTAssertEqual(ended[0]["action.background_count"], .int(1))
         XCTAssertEqual(ended[0]["action.background_duration_ms"], .int(12_000))
-        XCTAssertNil(ended[0]["action.abandon_reason"])
+        XCTAssertNil(ended[0]["task.abandon_source"])
     }
 
     func testOutOfOrderCompletionRemovesByIdentityAndRiderFallsBack() {
@@ -121,10 +121,10 @@ final class ActionsTests: XCTestCase {
 
         inner.complete()
         XCTAssertNil(rig.riders.values()["action.id"])
-        rig.recorder.recordEvent(name: "custom_event", attributes: [:])
-        XCTAssertNil(rig.events("custom_event").last?["action.id"])
+        rig.recorder.recordEvent(name: "custom.event", attributes: [:])
+        XCTAssertNil(rig.events("custom.event").last?["action.id"])
 
-        let ended = rig.events("action.ended")
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.map { $0["action.id"] }, [outerId, innerId], "own id wins over the rider")
     }
 
@@ -138,9 +138,9 @@ final class ActionsTests: XCTestCase {
         let prior = Actions.takePrior(url: fileURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "read and deleted")
         XCTAssertEqual(prior.count, 1)
-        XCTAssertEqual(prior[0]["action.name"], .string("checkout"))
-        XCTAssertEqual(prior[0]["action.outcome"], .string("abandoned"))
-        XCTAssertEqual(prior[0]["action.abandon_reason"], .string("process_death"))
+        XCTAssertEqual(prior[0]["task.name"], .string("checkout"))
+        XCTAssertEqual(prior[0]["task.outcome"], .string("abandoned"))
+        XCTAssertEqual(prior[0]["task.abandon_source"], .string("launch_recovery"))
         XCTAssertEqual(prior[0]["action.background_count"], .int(1))
         XCTAssertEqual(prior[0]["action.id"], rig.events("action.started")[0]["action.id"])
         XCTAssertTrue(Actions.takePrior(url: fileURL).isEmpty)
@@ -170,7 +170,7 @@ final class ActionsTests: XCTestCase {
         XCTAssertEqual(tail.map { $0["action.name"] },
                        [.string("_other"), .string("_other"), .string("_other"), .string("name-0")])
         XCTAssertEqual(tail.map { $0["action.name.dropped"] }, [.int(1), .int(1), .int(2), .int(2)])
-        XCTAssertEqual(rig.events("action.ended").last?["action.name.dropped"], .int(2))
+        XCTAssertEqual(rig.events("task.complete").last?["action.name.dropped"], .int(2))
     }
 
     // MARK: Abandonment
@@ -183,16 +183,16 @@ final class ActionsTests: XCTestCase {
         rig.recorder.recordEvent(name: "navigation", attributes: [:])  // rotates
 
         let names = rig.sink.envelopes.flatMap(\.events).map(\.name)
-        XCTAssertEqual(Array(names.prefix(3)), ["action.started", "action.ended", "session.finalized"])
-        let ended = rig.events("action.ended")
+        XCTAssertEqual(Array(names.prefix(3)), ["action.started", "task.complete", "session.finalized"])
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.count, 1)
-        XCTAssertEqual(ended[0]["action.outcome"], .string("abandoned"))
-        XCTAssertEqual(ended[0]["action.abandon_reason"], .string("rotation"))
+        XCTAssertEqual(ended[0]["task.outcome"], .string("abandoned"))
+        XCTAssertEqual(ended[0]["task.abandon_source"], .string("session_end"))
         XCTAssertEqual(ended[0]["session.id"], .string(endingSession))
         XCTAssertNil(rig.events("navigation").last?["action.id"])
 
         checkout.complete()
-        XCTAssertEqual(rig.events("action.ended").count, 1, "already closed by rotation")
+        XCTAssertEqual(rig.events("task.complete").count, 1, "already closed by rotation")
     }
 
     func testRotationDueAtCompletionWinsOverTheCompletion() {
@@ -201,9 +201,9 @@ final class ActionsTests: XCTestCase {
         rig.clock.advance(by: 31 * 60)  // resumed after a long suspend
         checkout.complete()
 
-        let ended = rig.events("action.ended")
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.count, 1)
-        XCTAssertEqual(ended[0]["action.abandon_reason"], .string("rotation"),
+        XCTAssertEqual(ended[0]["task.abandon_source"], .string("session_end"),
                        "an action whose session ended cannot complete in the next one")
     }
 
@@ -213,7 +213,7 @@ final class ActionsTests: XCTestCase {
         let done = expectation(description: "timeout fired")
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { done.fulfill() }
         wait(for: [done], timeout: 2)
-        XCTAssertEqual(rig.events("action.ended").first?["action.abandon_reason"], .string("timeout"))
+        XCTAssertEqual(rig.events("task.complete").first?["task.abandon_source"], .string("timeout"))
     }
 
     func testProcessDeathReplayCarriesSidecarIdentityNotLiveRiders() {
@@ -221,8 +221,8 @@ final class ActionsTests: XCTestCase {
         rig.riders.enterScreen("LiveScreen")
         let prior: [[String: AttributeValue]] = [[
             "action.id": .string("action_1717234876000_0123456789abcdef"),
-            "action.outcome": .string("abandoned"),
-            "action.abandon_reason": .string("process_death")
+            "task.outcome": .string("abandoned"),
+            "task.abandon_source": .string("launch_recovery")
         ]]
         EdgeRum.replayPriorActions(prior, sidecarContents: [
             "session.id": .string("session_1717234870002_ff009988aabbccdd_ios"),
@@ -231,7 +231,7 @@ final class ActionsTests: XCTestCase {
             "screen.name": .string("CrashTimeScreen")
         ], recorder: rig.recorder)
 
-        let ended = rig.events("action.ended")
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.count, 1)
         XCTAssertEqual(ended[0]["session.id"], .string("session_1717234870002_ff009988aabbccdd_ios"))
         XCTAssertEqual(ended[0]["action.id"], .string("action_1717234876000_0123456789abcdef"), "event keys win")
@@ -243,9 +243,9 @@ final class ActionsTests: XCTestCase {
         let a = rig.start("checkout")
         a.expire()
         a.complete()
-        let ended = rig.events("action.ended")
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.count, 1)
-        XCTAssertEqual(ended[0]["action.abandon_reason"], .string("timeout"))
+        XCTAssertEqual(ended[0]["task.abandon_source"], .string("timeout"))
     }
 
     // MARK: Handle contract
@@ -256,10 +256,10 @@ final class ActionsTests: XCTestCase {
         a.fail(reason: "card declined")
         a.complete()
         a.fail(reason: "again")
-        let ended = rig.events("action.ended")
+        let ended = rig.events("task.complete")
         XCTAssertEqual(ended.count, 1)
-        XCTAssertEqual(ended[0]["action.outcome"], .string("failed"))
-        XCTAssertEqual(ended[0]["action.error_message"], .string("card declined"))
+        XCTAssertEqual(ended[0]["task.outcome"], .string("failed"))
+        XCTAssertEqual(ended[0]["task.failure_reason"], .string("card declined"))
         XCTAssertEqual(ended[0]["action.background_count"], .int(0))
     }
 
@@ -268,14 +268,14 @@ final class ActionsTests: XCTestCase {
         let a = RumAction(name: "checkout", recorder: rig.recorder, actions: rig.actions, live: false)
         a.complete()
         XCTAssertTrue(rig.events("action.started").isEmpty)
-        XCTAssertTrue(rig.events("action.ended").isEmpty)
+        XCTAssertTrue(rig.events("task.complete").isEmpty)
     }
 
     func testActionsFollowSessionSampling() {
         let rig = makeRig(sampleRate: 0.0)
         rig.start("checkout").complete()
         XCTAssertTrue(rig.events("action.started").isEmpty)
-        XCTAssertTrue(rig.events("action.ended").isEmpty)
+        XCTAssertTrue(rig.events("task.complete").isEmpty)
     }
 
     func testActionIdShape() {

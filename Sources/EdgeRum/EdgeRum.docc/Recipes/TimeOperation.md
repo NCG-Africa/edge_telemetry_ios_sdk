@@ -6,7 +6,7 @@ Measure the wall-clock duration of a chunk of host-app code.
 
 Call ``EdgeRum/time(_:)`` at the start of the work and `end()` on the
 returned ``RumTimer`` when it finishes. The SDK records one
-`custom_timer` performance data point with the original argument as
+`perf.custom_timer` performance data point with the original argument as
 `timer.name` and `duration_ms` merged in automatically. Attribute keys
 under a reserved SDK prefix (such as `device.` or `error.`) are
 dropped.

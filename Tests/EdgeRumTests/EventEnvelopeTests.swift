@@ -21,7 +21,7 @@ final class EventEnvelopeTests: XCTestCase {
         let events: [Event] = [
             .event(name: "navigation", timestamp: t0, attributes: AttributeBag()),
             .event(name: "http.request", timestamp: t0, attributes: AttributeBag()),
-            .metric(name: "frame_render_time", value: 18.4, timestamp: t0, attributes: AttributeBag())
+            .metric(name: "perf.cpu_usage", value: 18.4, timestamp: t0, attributes: AttributeBag())
         ]
         let env = EventEnvelope(timestamp: t0, deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios", sdkVersion: "1.0.0", app: AppContext(), events: events)
         let json = try jsonObject(env)
@@ -77,8 +77,8 @@ final class EventEnvelopeTests: XCTestCase {
             sdkVersion: "1.0.0",
             app: AppContext(),
             events: [.event(name: "navigation", timestamp: t0, attributes: [
-                "navigation.kind": "uikit",
-                "navigation.screen": "Cart"
+                "navigation.route_type": "uikit",
+                "navigation.to_screen": "Cart"
             ])]
         )
         let json = try jsonObject(env)
@@ -86,8 +86,8 @@ final class EventEnvelopeTests: XCTestCase {
         XCTAssertEqual(events.first?["type"] as? String, "event")
         XCTAssertEqual(events.first?["eventName"] as? String, "navigation")
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
-        XCTAssertEqual(attrs["navigation.kind"] as? String, "uikit")
-        XCTAssertEqual(attrs["navigation.screen"] as? String, "Cart")
+        XCTAssertEqual(attrs["navigation.route_type"] as? String, "uikit")
+        XCTAssertEqual(attrs["navigation.to_screen"] as? String, "Cart")
     }
 
     func testMetricCarriesMetricNameAndTypeMetric() throws {
@@ -96,14 +96,14 @@ final class EventEnvelopeTests: XCTestCase {
             deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios",
             sdkVersion: "1.0.0",
             app: AppContext(),
-            events: [.metric(name: "frame_render_time", value: 18.4, timestamp: t0, attributes: [
+            events: [.metric(name: "perf.cpu_usage", value: 18.4, timestamp: t0, attributes: [
                 "frame.target_hz": 60
             ])]
         )
         let json = try jsonObject(env)
         let metrics = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(metrics.first?["type"] as? String, "metric")
-        XCTAssertEqual(metrics.first?["metricName"] as? String, "frame_render_time")
+        XCTAssertEqual(metrics.first?["metricName"] as? String, "perf.cpu_usage")
         XCTAssertEqual(metrics.first?["value"] as? Double, 18.4)
     }
 
@@ -113,7 +113,7 @@ final class EventEnvelopeTests: XCTestCase {
             deviceId: "device_1717234876123_a1b2c3d4e5f60718_ios",
             sdkVersion: "1.0.0",
             app: AppContext(),
-            events: [.metric(name: "long_task", value: nil, timestamp: t0, attributes: AttributeBag())]
+            events: [.metric(name: "perf.long_task", value: nil, timestamp: t0, attributes: AttributeBag())]
         )
         let json = try jsonObject(env)
         let metrics = try XCTUnwrap(json["events"] as? [[String: Any]])

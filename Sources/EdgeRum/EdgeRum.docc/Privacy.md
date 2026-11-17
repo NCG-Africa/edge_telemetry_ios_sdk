@@ -53,7 +53,7 @@ The restricted-reason APIs the SDK calls, as declared in its manifest:
 
 | API category | Reason code | Why we use it |
 |--------------|-------------|---------------|
-| System boot time | `35F9.1` | Elapsed durations between in-app events (`long_task`) |
+| System boot time | `35F9.1` | Elapsed durations between in-app events (`perf.long_task`) |
 | UserDefaults     | `CA92.1` | Session and user id persistence |
 
 The SDK reads no disk space and no file timestamps, and sends no boot

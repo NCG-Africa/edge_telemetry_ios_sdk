@@ -239,7 +239,7 @@ Every other field has a documented default tuned for production use.
 | `captureRenderingPerformance`  | `Bool`                              | `true`                               | Frame / memory / long-task samplers. |
 | `captureLifecycle`             | `Bool`                              | `true`                               | Foreground / background transitions. |
 | `captureNetworkChanges`        | `Bool`                              | `true`                               | `NWPathMonitor` events. |
-| `capturePageLoad`              | `Bool`                              | `true`                               | Single `page_load` per process. |
+| `capturePageLoad`              | `Bool`                              | `true`                               | Single `app.start` per process. |
 | `debug`                        | `Bool`                              | `false`                              | Verbose `os_log` diagnostics; relaxes URL validation. |
 
 See [`Sources/EdgeRum/EdgeRumConfig.swift`](Sources/EdgeRum/EdgeRumConfig.swift)
@@ -255,19 +255,19 @@ any per-call code. Each one is independently togglable on the config.
   controllers are skipped. SwiftUI screens emit the same shape via
   `.edgeRumScreen(_:)` and via `UIHostingController` auto-detection.
 - **HTTP.** Every `URLSession` request emits `http.request` and a
-  companion `resource_timing` metric. The SDK's own POSTs are filtered
+  companion `perf.resource_timing` metric. The SDK's own POSTs are filtered
   out three ways. Background URLSession traffic is not instrumented.
-- **Taps.** `UIWindow.sendEvent` swizzle emits `user.interaction` once
+- **Taps.** `UIWindow.sendEvent` swizzle emits `ui.interaction` once
   per `.ended` touch. Secure text fields are never recorded.
 - **Performance samplers.** Per-second frame render times, ten-second
-  memory polls plus pressure transitions, and `long_task` for any
+  memory polls plus pressure transitions, and `perf.long_task` for any
   main-thread segment ≥ 50 ms.
-- **Lifecycle.** `app_lifecycle` events on every state transition;
+- **Lifecycle.** `app.lifecycle` events on every state transition;
   background transitions force an immediate flush.
-- **Connectivity.** `network_change` events fed by `NWPathMonitor`.
-- **Page load.** One `page_load` per process, from `start()` to first
-  frame after `.active`, plus `launch.pre_sdk_duration_ms` (process
-  start → `start()`, omitted when prewarmed).
+- **Connectivity.** `network.change` events fed by `NWPathMonitor`.
+- **App start.** One `app.start` per process, process start to first
+  frame after `.active`, with `app.start.sdk_init_ms` (process start →
+  `start()`, omitted when prewarmed).
 - **Native crashes.** PLCrashReporter with replay on next launch — the
   emitted `app.crash` carries the **previous** session's identity.
 - **Hangs.** Runloop watchdog emits one `app.hang` when a main-thread
@@ -484,8 +484,8 @@ Every batch is a JSON `telemetry_batch` envelope, contract `4.0.0`. The
 app, SDK and device identity is sent once per batch in the envelope;
 events carry the session, user, device and network context. The last
 event of each batch is the SDK's own `sdk.health` report. A complete
-reference batch — `navigation`, `http.request`, two measurements
-(`resource_timing`, `frame_render_time`) and `sdk.health` — lives at
+reference batch — `navigation`, `http.request`, `perf.resource_timing`,
+`frame.summary` and `sdk.health` — lives at
 [`docs/payload-example.jsonc`](docs/payload-example.jsonc).
 
 Excerpt:
@@ -513,7 +513,7 @@ Excerpt:
       "attributes": {
         "device.platform": "ios",
         "session.id": "session_1717234870002_ff009988aabbccdd_ios",
-        "navigation.screen": "CartViewController"
+        "navigation.to_screen": "CartViewController"
       }
     },
     {
@@ -585,7 +585,7 @@ The DocC `Stability` article goes into the policy in more depth.
 
 **Why no Web Vitals (LCP / FCP / CLS / INP / TTFB)?**
 iOS has no native analogue. The SDK ships the equivalent native
-signals — `page_load`, `frame_render_time`, `long_task` — that the
+signals — `app.start`, `frame.summary`, `perf.long_task` — that the
 EdgeRum dashboards understand.
 
 **Can I use this in an extension?**

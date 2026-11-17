@@ -42,8 +42,8 @@ final class SwiftUIModifierTests: XCTestCase {
             return XCTFail("Expected .event for navigation, got \(calls[0])")
         }
         XCTAssertEqual(name, "navigation")
-        XCTAssertEqual(attributes["navigation.kind"], .string("swiftui"))
-        XCTAssertEqual(attributes["navigation.screen"], .string("Checkout"))
+        XCTAssertEqual(attributes["navigation.route_type"], .string("swiftui"))
+        XCTAssertEqual(attributes["navigation.to_screen"], .string("Checkout"))
         XCTAssertNil(attributes["navigation.type"], "F29: deleted")
         XCTAssertEqual(attributes["funnel.step"], .int(3))
     }
@@ -61,8 +61,8 @@ final class SwiftUIModifierTests: XCTestCase {
         SwiftUIEmitter.emitScreenAppear(
             name: "Checkout",
             attributes: [
-                "navigation.kind": .string("host-supplied"),
-                "navigation.screen": .string("HostScreenName")
+                "navigation.route_type": .string("host-supplied"),
+                "navigation.to_screen": .string("HostScreenName")
             ],
             recorder: recorder,
             riders: Riders()
@@ -71,8 +71,8 @@ final class SwiftUIModifierTests: XCTestCase {
         guard case let .event(_, attributes) = recorder.calls[0] else {
             return XCTFail("Expected .event for navigation")
         }
-        XCTAssertEqual(attributes["navigation.kind"], .string("swiftui"))
-        XCTAssertEqual(attributes["navigation.screen"], .string("Checkout"))
+        XCTAssertEqual(attributes["navigation.route_type"], .string("swiftui"))
+        XCTAssertEqual(attributes["navigation.to_screen"], .string("Checkout"))
         XCTAssertEqual(attributes[HostAttributes.droppedKey], .int(2))
     }
 
@@ -80,8 +80,8 @@ final class SwiftUIModifierTests: XCTestCase {
         SwiftUIEmitter.emitTap(
             name: "buy_button",
             attributes: [
-                "interaction.kind": .string("host-supplied"),
-                "interaction.name": .string("HostName")
+                "ui.type": .string("host-supplied"),
+                "ui.target": .string("HostName")
             ],
             recorder: recorder
         )
@@ -89,8 +89,8 @@ final class SwiftUIModifierTests: XCTestCase {
         guard case let .event(_, attributes) = recorder.calls[0] else {
             return XCTFail("Expected .event for user.interaction")
         }
-        XCTAssertEqual(attributes["interaction.kind"], .string("tap"))
-        XCTAssertEqual(attributes["interaction.name"], .string("buy_button"))
+        XCTAssertEqual(attributes["ui.type"], .string("tap"))
+        XCTAssertEqual(attributes["ui.target"], .string("buy_button"))
         XCTAssertEqual(attributes[HostAttributes.droppedKey], .int(2))
     }
 
@@ -108,10 +108,10 @@ final class SwiftUIModifierTests: XCTestCase {
         guard case let .event(name, attributes) = calls[0] else {
             return XCTFail("Expected .event for user.interaction, got \(calls[0])")
         }
-        XCTAssertEqual(name, "user.interaction")
-        XCTAssertEqual(attributes["interaction.kind"], .string("tap"))
-        XCTAssertEqual(attributes["interaction.name"], .string("buy_button"))
-        XCTAssertEqual(attributes["interaction.name_source"], .string("host"), "F29: host-supplied label")
+        XCTAssertEqual(name, "ui.interaction")
+        XCTAssertEqual(attributes["ui.type"], .string("tap"))
+        XCTAssertEqual(attributes["ui.target"], .string("buy_button"))
+        XCTAssertEqual(attributes["ui.name_source"], .string("host"), "F29: host-supplied label")
         XCTAssertEqual(attributes["product.id"], .string("SKU-123"))
         XCTAssertNil(attributes[HostAttributes.droppedKey], "omitted when zero")
     }
@@ -132,7 +132,7 @@ final class SwiftUIModifierTests: XCTestCase {
         guard case let .event(name, _) = calls[0] else {
             return XCTFail("Expected .event for user.interaction via shared recorder")
         }
-        XCTAssertEqual(name, "user.interaction")
+        XCTAssertEqual(name, "ui.interaction")
     }
 }
 #endif

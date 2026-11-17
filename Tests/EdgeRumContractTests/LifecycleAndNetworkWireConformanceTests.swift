@@ -52,7 +52,7 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
     func testAppLifecycleEventProducesWireValidEvent() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "app_lifecycle", attributes: [
+        recorder.recordEvent(name: "app.lifecycle", attributes: [
             "lifecycle.state": .string("backgrounded"),
             "lifecycle.previous_state": .string("inactive")
         ])
@@ -63,7 +63,7 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?["type"] as? String, "event")
-        XCTAssertEqual(events.first?["eventName"] as? String, "app_lifecycle")
+        XCTAssertEqual(events.first?["eventName"] as? String, "app.lifecycle")
 
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
@@ -77,7 +77,7 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
     func testAppLifecycleFirstEmissionWithUnknownPreviousIsWireValid() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "app_lifecycle", attributes: [
+        recorder.recordEvent(name: "app.lifecycle", attributes: [
             "lifecycle.state": .string("active"),
             "lifecycle.previous_state": .string("unknown")
         ])
@@ -99,9 +99,9 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
     func testNetworkChangeCellularPathIsWireValid() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "network_change", attributes: [
+        recorder.recordEvent(name: "network.change", attributes: [
             "network.type": .string("cellular"),
-            "network.effectiveType": .string("cellular"),
+            "network.effective_type": .string("cellular"),
             "network.expensive": .bool(true),
             "network.constrained": .bool(false)
         ])
@@ -111,12 +111,12 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?["eventName"] as? String, "network_change")
+        XCTAssertEqual(events.first?["eventName"] as? String, "network.change")
 
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
         XCTAssertEqual(attrs["network.type"] as? String, "cellular")
-        XCTAssertEqual(attrs["network.effectiveType"] as? String, "cellular")
+        XCTAssertEqual(attrs["network.effective_type"] as? String, "cellular")
         XCTAssertEqual(attrs["network.expensive"] as? Bool, true)
         XCTAssertEqual(attrs["network.constrained"] as? Bool, false)
         XCTAssertNil(attrs["network.unsatisfied_reason"],
@@ -129,9 +129,9 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
     func testNetworkChangeWithUnsatisfiedReasonIsWireValid() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "network_change", attributes: [
+        recorder.recordEvent(name: "network.change", attributes: [
             "network.type": .string("none"),
-            "network.effectiveType": .string("unknown"),
+            "network.effective_type": .string("unknown"),
             "network.expensive": .bool(false),
             "network.constrained": .bool(false),
             "network.unsatisfied_reason": .string("cellular_denied")
@@ -152,13 +152,13 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
     func testLifecycleAndNetworkInSameBatch() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "app_lifecycle", attributes: [
+        recorder.recordEvent(name: "app.lifecycle", attributes: [
             "lifecycle.state": .string("active"),
             "lifecycle.previous_state": .string("foregrounded")
         ])
-        recorder.recordEvent(name: "network_change", attributes: [
+        recorder.recordEvent(name: "network.change", attributes: [
             "network.type": .string("wifi"),
-            "network.effectiveType": .string("wifi"),
+            "network.effective_type": .string("wifi"),
             "network.expensive": .bool(false),
             "network.constrained": .bool(false)
         ])
@@ -169,6 +169,6 @@ final class LifecycleAndNetworkWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 2)
         let names = events.compactMap { $0["eventName"] as? String }
-        XCTAssertEqual(Set(names), Set(["app_lifecycle", "network_change"]))
+        XCTAssertEqual(Set(names), Set(["app.lifecycle", "network.change"]))
     }
 }

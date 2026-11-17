@@ -141,7 +141,7 @@ let package = Package(
         ),
         .testTarget(
             name: "EdgeRumCrashTests",
-            dependencies: ["EdgeRum", "EdgeRumCore", "EdgeRumCrash"],
+            dependencies: ["EdgeRum", "EdgeRumCore", "EdgeRumCrash", "EdgeRumCapture"],
             path: "Tests/EdgeRumCrashTests"
         )
     ],

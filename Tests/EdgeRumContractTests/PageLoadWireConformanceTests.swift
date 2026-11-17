@@ -50,9 +50,9 @@ final class PageLoadWireConformanceTests: XCTestCase {
     func testPageLoadColdStart_isWireValid() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "page_load", attributes: [
-            "page_load.duration_ms": .int(842),
-            "page_load.prewarmed": .bool(false),
+        recorder.recordEvent(name: "app.start", attributes: [
+            "app.start.duration_ms": .int(842),
+            "app.start.prewarmed": .bool(false),
             "page_load.source": .string("displaylink")
         ])
         recorder.flush(reason: .manual)
@@ -62,14 +62,14 @@ final class PageLoadWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?["type"] as? String, "event")
-        XCTAssertEqual(events.first?["eventName"] as? String, "page_load")
+        XCTAssertEqual(events.first?["eventName"] as? String, "app.start")
 
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
 
-        XCTAssertEqual(attrs["page_load.duration_ms"] as? Int, 842)
+        XCTAssertEqual(attrs["app.start.duration_ms"] as? Int, 842)
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertEqual(attrs["page_load.prewarmed"] as? Bool, false)
+        XCTAssertEqual(attrs["app.start.prewarmed"] as? Bool, false)
         XCTAssertEqual(attrs["page_load.source"] as? String, "displaylink")
     }
 
@@ -82,9 +82,9 @@ final class PageLoadWireConformanceTests: XCTestCase {
     func testPageLoadPrewarmed_isWireValid() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "page_load", attributes: [
-            "page_load.duration_ms": .int(41),
-            "page_load.prewarmed": .bool(true),
+        recorder.recordEvent(name: "app.start", attributes: [
+            "app.start.duration_ms": .int(41),
+            "app.start.prewarmed": .bool(true),
             "page_load.source": .string("displaylink")
         ])
         recorder.flush(reason: .manual)
@@ -96,9 +96,9 @@ final class PageLoadWireConformanceTests: XCTestCase {
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
 
-        XCTAssertEqual(attrs["page_load.duration_ms"] as? Int, 41)
+        XCTAssertEqual(attrs["app.start.duration_ms"] as? Int, 41)
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertEqual(attrs["page_load.prewarmed"] as? Bool, true)
+        XCTAssertEqual(attrs["app.start.prewarmed"] as? Bool, true)
         XCTAssertEqual(attrs["page_load.source"] as? String, "displaylink")
     }
 
@@ -112,9 +112,9 @@ final class PageLoadWireConformanceTests: XCTestCase {
     func testPageLoadAttributesArePrimitives() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "page_load", attributes: [
-            "page_load.duration_ms": .int(1234),
-            "page_load.prewarmed": .bool(false),
+        recorder.recordEvent(name: "app.start", attributes: [
+            "app.start.duration_ms": .int(1234),
+            "app.start.prewarmed": .bool(false),
             "page_load.source": .string("displaylink")
         ])
         recorder.flush(reason: .manual)
@@ -125,14 +125,14 @@ final class PageLoadWireConformanceTests: XCTestCase {
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
 
         // Spot-check each F12-owned key — must be String|Int|Bool.
-        XCTAssertNotNil(attrs["page_load.duration_ms"] as? Int)
+        XCTAssertNotNil(attrs["app.start.duration_ms"] as? Int)
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertNotNil(attrs["page_load.prewarmed"] as? Bool)
+        XCTAssertNotNil(attrs["app.start.prewarmed"] as? Bool)
         XCTAssertNotNil(attrs["page_load.source"] as? String)
 
         // No nested values in the F12 keys (defense-in-depth on top of
         // the shared primitive assertion).
-        XCTAssertNil(attrs["page_load.duration_ms"] as? [Any])
+        XCTAssertNil(attrs["app.start.duration_ms"] as? [Any])
         XCTAssertNil(attrs["page_load.cold_start"] as? [String: Any])
 
         // Raw bytes still free of the SDK-banned tokens; the shared
@@ -153,12 +153,12 @@ final class PageLoadWireConformanceTests: XCTestCase {
     func testPageLoad_inSameBatch_withOtherEvents() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordEvent(name: "page_load", attributes: [
-            "page_load.duration_ms": .int(900),
-            "page_load.prewarmed": .bool(false),
+        recorder.recordEvent(name: "app.start", attributes: [
+            "app.start.duration_ms": .int(900),
+            "app.start.prewarmed": .bool(false),
             "page_load.source": .string("displaylink")
         ])
-        recorder.recordEvent(name: "app_lifecycle", attributes: [
+        recorder.recordEvent(name: "app.lifecycle", attributes: [
             "lifecycle.state": .string("active"),
             "lifecycle.previous_state": .string("foregrounded")
         ])
@@ -169,6 +169,6 @@ final class PageLoadWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 2)
         let names = events.compactMap { $0["eventName"] as? String }
-        XCTAssertEqual(Set(names), Set(["page_load", "app_lifecycle"]))
+        XCTAssertEqual(Set(names), Set(["app.start", "app.lifecycle"]))
     }
 }

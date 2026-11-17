@@ -61,15 +61,15 @@ final class SwiftUIWireConformanceTests: XCTestCase {
         XCTAssertEqual(events.first?["eventName"] as? String, "navigation")
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
-        XCTAssertEqual(attrs["navigation.kind"] as? String, "swiftui")
-        XCTAssertEqual(attrs["navigation.screen"] as? String, "Checkout")
+        XCTAssertEqual(attrs["navigation.route_type"] as? String, "swiftui")
+        XCTAssertEqual(attrs["navigation.to_screen"] as? String, "Checkout")
         XCTAssertNil(attrs["navigation.type"])
         XCTAssertEqual(attrs["funnel.step"] as? Int, 3)
     }
 
 
     /// `.edgeRumTrackTap` → a wire-valid `user.interaction` event
-    /// with `interaction.kind = "tap"`.
+    /// with `ui.type = "tap"`.
     func testSwiftUITapProducesWireValidUserInteraction() throws {
         let (recorder, sink) = makeRecorder()
 
@@ -85,11 +85,11 @@ final class SwiftUIWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?["type"] as? String, "event")
-        XCTAssertEqual(events.first?["eventName"] as? String, "user.interaction")
+        XCTAssertEqual(events.first?["eventName"] as? String, "ui.interaction")
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
-        XCTAssertEqual(attrs["interaction.kind"] as? String, "tap")
-        XCTAssertEqual(attrs["interaction.name"] as? String, "buy_button")
+        XCTAssertEqual(attrs["ui.type"] as? String, "tap")
+        XCTAssertEqual(attrs["ui.target"] as? String, "buy_button")
         XCTAssertEqual(attrs["product.id"] as? String, "SKU-123")
     }
 }

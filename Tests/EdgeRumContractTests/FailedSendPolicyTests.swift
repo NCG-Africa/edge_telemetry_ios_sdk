@@ -66,7 +66,7 @@ final class FailedSendPolicyTests: XCTestCase {
     }
 
     private func sendOne(_ rig: Rig, _ name: String = "e") {
-        rig.recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string(name)])
+        rig.recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string(name)])
         rig.recorder.flush(reason: .manual)
     }
 
@@ -140,7 +140,7 @@ final class FailedSendPolicyTests: XCTestCase {
 
     /// A queued 4.0.0 batch whose one event is named `tag`.
     private func queued(_ tag: String, at stamp: String = "2026-01-01T00:00:00.000Z") -> Data {
-        Data(#"{"app":{"package_name":"com.example.shop","platform":"ios"},"batch_size":1,"contract_version":"4.0.0","device_id":"device_1717234876123_a1b2c3d4e5f60718_ios","events":[{"attributes":{"event.name":"\#(tag)"},"eventName":"custom_event","timestamp":"\#(stamp)","type":"event"}],"sdk":{"name":"ios","version":"4.0.0"},"timestamp":"\#(stamp)","type":"telemetry_batch"}"#.utf8)
+        Data(#"{"app":{"package_name":"com.example.shop","platform":"ios"},"batch_size":1,"contract_version":"4.0.0","device_id":"device_1717234876123_a1b2c3d4e5f60718_ios","events":[{"attributes":{"event.name":"\#(tag)"},"eventName":"custom.event","timestamp":"\#(stamp)","type":"event"}],"sdk":{"name":"ios","version":"4.0.0"},"timestamp":"\#(stamp)","type":"telemetry_batch"}"#.utf8)
     }
 
     private func tags(_ requests: ArraySlice<LocalHTTPStub.Request>) -> [String] {

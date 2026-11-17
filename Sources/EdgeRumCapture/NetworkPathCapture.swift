@@ -156,7 +156,7 @@ public enum NetworkPathCapture {
     ) -> [String: AttributeValue] {
         var attrs: [String: AttributeValue] = [
             "network.type": .string(context.type.rawValue),
-            "network.effectiveType": .string(context.effectiveType),
+            "network.effective_type": .string(context.effectiveType),
             "network.expensive": .bool(isExpensive),
             "network.constrained": .bool(isConstrained)
         ]
@@ -262,7 +262,7 @@ public enum NetworkPathCapture {
         os_unfair_lock_unlock(fingerprintLock)
 
         recorder.recordEvent(
-            name: "network_change",
+            name: "network.change",
             attributes: makeAttributes(
                 context: context,
                 isExpensive: isExpensive,

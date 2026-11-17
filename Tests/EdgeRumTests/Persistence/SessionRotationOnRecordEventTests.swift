@@ -69,7 +69,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         let (recorder, _, manager) = makeRecorder(clock: clock)
 
         clock.advance(by: 60)
-        recorder.recordPerformance(name: "memory_usage", attributes: [:])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
 
         XCTAssertEqual(manager.currentState()?.lastActiveAt, clock.now)
     }
@@ -117,7 +117,7 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         // rotated one) per the F4 mid-event rotation contract.
         if let finalized = allEvents.first(where: { $0.name == "session.finalized" }) {
             XCTAssertEqual(finalized.attributes["session.id"], originalSession)
-            XCTAssertEqual(finalized.attributes["session.rotation"], .string("idle"))
+            XCTAssertEqual(finalized.attributes["session.reason"], .string("timeout"))
             // F29: end_time = the ended session's last activity, not detection time.
             XCTAssertEqual(
                 finalized.attributes["session.end_time"],
@@ -140,9 +140,9 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         let events = sink.envelopes.flatMap(\.recordedEvents)
         let finalized = events.filter { $0.name == "session.finalized" }
         XCTAssertEqual(finalized.count, 1)
-        XCTAssertEqual(finalized.first?.attributes["session.rotation"], .string("max_duration"))
+        XCTAssertEqual(finalized.first?.attributes["session.reason"], .string("max_duration"))
         let started = events.first { $0.name == "session.started" }
-        XCTAssertEqual(started?.attributes["session.rotation"], .string("max_duration"))
+        XCTAssertEqual(started?.attributes["session.reason"], .string("max_duration"))
     }
 
     func testStopFlushesWithoutFinalized() {
@@ -175,8 +175,8 @@ final class SessionRotationOnRecordEventTests: XCTestCase {
         XCTAssertEqual(events.map(\.name).prefix(2), ["session.finalized", "session.started"])
         XCTAssertEqual(events.first?.attributes["session.id"], .string(first.id))
         XCTAssertEqual(events.first?.attributes["session.end_time"], .string(WireDateFormatter.string(from: first.lastActiveAt)))
-        XCTAssertEqual(events.first?.attributes["session.rotation"], .string("idle"))
-        XCTAssertEqual(events.dropFirst().first?.attributes["session.rotation"], .string("idle"))
+        XCTAssertEqual(events.first?.attributes["session.reason"], .string("timeout"))
+        XCTAssertEqual(events.dropFirst().first?.attributes["session.reason"], .string("timeout"))
     }
 
     // MARK: didAckBatch — issue #43 acceptance

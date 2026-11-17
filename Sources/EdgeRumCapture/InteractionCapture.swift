@@ -202,14 +202,15 @@ public enum InteractionCapture {
 
         for touch in touches where touch.phase == .ended {
             guard let hitView = touch.view else { continue }
-            guard let attrs = decideEmission(
-                for: hitView,
-                captureButtonTitles: captureButtonTitles
-            ) else {
-                continue
-            }
-            recorder.recordEvent(name: "user.interaction", attributes: attrs)
+            emitTap(on: hitView, captureButtonTitles: captureButtonTitles, recorder: recorder)
         }
+    }
+
+    /// One completed tap on `hitView`: the event, unless
+    /// `decideEmission` drops it.
+    static func emitTap(on hitView: UIView, captureButtonTitles: Bool, recorder: Recording = Recorder.shared) {
+        guard let attrs = decideEmission(for: hitView, captureButtonTitles: captureButtonTitles) else { return }
+        recorder.recordEvent(name: "ui.interaction", attributes: attrs)
     }
     #endif
 
@@ -250,13 +251,13 @@ public enum InteractionCapture {
 
         // 3. Build the bag — SDK-owned keys only.
         var attrs: [String: AttributeValue] = [
-            "interaction.kind": .string("tap"),
-            "interaction.target": .string(String(reflecting: type(of: target)))
+            "ui.type": .string("tap"),
+            "ui.view_class": .string(String(reflecting: type(of: target)))
         ]
         let (id, source) = resolveTargetIdentifier(target, captureButtonTitles: captureButtonTitles)
-        attrs["interaction.name_source"] = .string(source)
+        attrs["ui.name_source"] = .string(source)
         if let id {
-            attrs["interaction.name"] = .string(id)
+            attrs["ui.target"] = .string(id)
         }
         return attrs
     }

@@ -312,16 +312,12 @@ and logged when `debug == true`.
 
 ## Payload examples
 
-A complete 4-event reference batch (`navigation`, `http.request`,
-`metric:resource_timing`, `metric:frame_render_time`) lives in
-`docs/payload-example.jsonc`. iOS does **not** emit `screen.duration`
-(the Processor synthesizes it from `navigation` — see #144). All other event shapes — `app.error`, `app.hang`, `app.crash`,
-`user.profile.update`, `custom_event`, `app_lifecycle`, `page_load`,
-`network_change`, `session.started`, `session.finalized`, and the
-`metric` items from `EdgeRum.time()`, `memory_usage`, `long_task`,
-`resource_timing` — follow the same envelope and identity-attribute
-rules. `payload-schema.json` in the EdgeTelemetryProcessor repo is the
-authoritative attribute list; it has not been copied into this repo yet.
+A complete reference batch (`navigation`, `http.request`,
+`metric:perf.resource_timing`, `frame.summary`, `sdk.health`) lives in
+`docs/payload-example.jsonc`. Every event and attribute name follows the
+shared event catalogue (processor `docs/catalogue/*.yaml`, tag pinned in
+`catalogue.version`, #264). `Tests/golden/` holds one real-wire batch per
+event the SDK sends; `Tools/conform.sh` checks them against the catalogue.
 
 ---
 

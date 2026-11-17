@@ -34,7 +34,7 @@ final class AppErrorBuilderTests: XCTestCase {
         )
         XCTAssertEqual(attrs["error.kind"], .string("nserror"))
         XCTAssertEqual(attrs["error.domain"], .string("MyDomain"))
-        XCTAssertEqual(attrs["error.code"], .int(7))
+        XCTAssertEqual(attrs["error.code"], .string("7"))
     }
 
     // MARK: - error_type (F33)
@@ -72,7 +72,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: [],
             debug: false
         )
-        XCTAssertEqual(attrs["error.class"], .string("CheckoutFailure"))
+        XCTAssertEqual(attrs["error.type"], .string("CheckoutFailure"))
     }
 
     func testErrorTypeForNSErrorIsClassName() {
@@ -83,7 +83,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: [],
             debug: false
         )
-        XCTAssertEqual(attrs["error.class"], .string("NSError"))
+        XCTAssertEqual(attrs["error.type"], .string("NSError"))
     }
 
     // MARK: - userInfo flattening (T13.2)
@@ -195,7 +195,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: frames,
             debug: false
         )
-        if case let .string(joined) = attrs["error.stack"] {
+        if case let .string(joined) = attrs["error.stacktrace"] {
             XCTAssertEqual(joined.components(separatedBy: "\n").count, 3)
             XCTAssertTrue(joined.contains("frame_a"))
             XCTAssertTrue(joined.contains("frame_c"))
@@ -211,7 +211,7 @@ final class AppErrorBuilderTests: XCTestCase {
             stack: [],
             debug: false
         )
-        XCTAssertNil(attrs["error.stack"])
+        XCTAssertNil(attrs["error.stacktrace"])
     }
 
     func testStackOverCapSetsTruncatedBytesAndKeptImagesOnly() {
@@ -226,8 +226,8 @@ final class AppErrorBuilderTests: XCTestCase {
         let attrs = AppErrorBuilder.build(
             error: NSError(domain: "x", code: 0), context: [:], stack: frames, debug: false
         )
-        guard case let .string(stack)? = attrs["error.stack"],
-              case let .int(removed)? = attrs["error.stack.truncated"] else {
+        guard case let .string(stack)? = attrs["error.stacktrace"],
+              case let .int(removed)? = attrs["error.stacktrace.truncated"] else {
             return XCTFail("error.stack + error.stack.truncated expected")
         }
         XCTAssertLessThanOrEqual(stack.utf8.count, AppErrorBuilder.maxStackBytes)
@@ -243,8 +243,8 @@ final class AppErrorBuilderTests: XCTestCase {
             error: NSError(domain: "x", code: 0), context: [:],
             stack: [StackFrame(text: "0x1234")], debug: false
         )
-        XCTAssertEqual(attrs["error.stack"], .string("0x1234"))
-        XCTAssertNil(attrs["error.stack.truncated"])
+        XCTAssertEqual(attrs["error.stacktrace"], .string("0x1234"))
+        XCTAssertNil(attrs["error.stacktrace.truncated"])
         XCTAssertNil(attrs["error.binary_images"])
     }
 

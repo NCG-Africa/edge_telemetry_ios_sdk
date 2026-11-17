@@ -52,7 +52,7 @@ final class RecorderTests: XCTestCase {
 
     func testKnownEventNamePassesThrough() {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.route_type": "uikit"])
         recorder.flush(reason: .manual)
         XCTAssertEqual(sink.envelopes.count, 1)
         XCTAssertEqual(sink.envelopes.first?.recordedEvents.count, 1)
@@ -61,14 +61,16 @@ final class RecorderTests: XCTestCase {
 
     func testAllowedEventNamesContainsExpectedSet() {
         let expected: Set<String> = [
-            "session.started", "session.finalized", "app_lifecycle",
-            "page_load", "navigation",
-            "http.request", "user.interaction", "network_change",
-            "user.profile.update", "custom_event",
+            "session.started", "session.finalized", "app.lifecycle",
+            "app.start", "navigation",
+            "http.request", "ui.interaction", "network.change",
+            "user.profile.update", "custom.event",
             "app.error", "app.hang", "app.crash",
-            "action.started", "action.ended"
+            "action.started", "task.complete",
+            "screen.duration", "screen.load", "frame.summary",
+            "memory.usage", "memory.pressure"
         ]
-        XCTAssertEqual(expected.count, 15)
+        XCTAssertEqual(expected.count, 20)
         XCTAssertEqual(Recorder.allowedEventNames, expected)
     }
 
@@ -160,12 +162,12 @@ final class RecorderTests: XCTestCase {
 
     func testRecordPerformanceBuildsMetric() {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordPerformance(name: "custom_timer", attributes: ["duration_ms": 250])
+        recorder.recordPerformance(name: "perf.custom_timer", attributes: ["duration_ms": 250])
         recorder.flush(reason: .manual)
         guard case let .metric(name, value, _, attributes) = sink.envelopes.first?.recordedEvents.first else {
             return XCTFail("Expected a metric Event")
         }
-        XCTAssertEqual(name, "custom_timer")
+        XCTAssertEqual(name, "perf.custom_timer")
         XCTAssertEqual(value, 250)
         XCTAssertEqual(attributes["duration_ms"], .int(250))
     }
@@ -177,15 +179,14 @@ final class RecorderTests: XCTestCase {
         recorder.flush(reason: .manual)
         XCTAssertTrue(sink.envelopes.isEmpty)
         XCTAssertEqual(Recorder.allowedMetricNames, [
-            "resource_timing", "long_task", "frame_render_time",
-            "memory_usage", "cpu_usage", "custom_timer",
-            "screen_ready", "launch_interactive"
+            "perf.resource_timing", "perf.long_task", "perf.cpu_usage",
+            "perf.custom_timer", "perf.launch_interactive"
         ])
     }
 
     func testRecordPerformanceStripsValueCopyFromAttributes() {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordPerformance(name: "long_task", attributes: ["value": 72.5, "long_task.threshold_ms": 50.0])
+        recorder.recordPerformance(name: "perf.long_task", attributes: ["value": 72.5, "long_task.threshold_ms": 50.0])
         recorder.flush(reason: .manual)
         guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.recordedEvents.first else {
             return XCTFail("Expected a metric Event")
@@ -197,7 +198,7 @@ final class RecorderTests: XCTestCase {
 
     func testRecordPerformanceAcceptsIntValue() {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordPerformance(name: "long_task", attributes: ["value": .int(80)])
+        recorder.recordPerformance(name: "perf.long_task", attributes: ["value": .int(80)])
         recorder.flush(reason: .manual)
         guard case let .metric(_, value, _, attributes) = sink.envelopes.first?.recordedEvents.first else {
             return XCTFail("Expected a metric Event")
@@ -246,11 +247,11 @@ final class RecorderTests: XCTestCase {
 
     func testContextAttributesAreMergedIntoEveryEvent() {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.route_type": "uikit"])
         recorder.flush(reason: .manual)
         let event = sink.envelopes.first?.recordedEvents.first
         XCTAssertNotNil(event?.attributes["session.id"], "context rides every event")
-        XCTAssertEqual(event?.attributes["navigation.kind"], .string("uikit"),
+        XCTAssertEqual(event?.attributes["navigation.route_type"], .string("uikit"),
                        "Event-supplied attrs must survive the merge")
         // #250 R1: SDK identity rides the envelope only.
         XCTAssertNil(event?.attributes["sdk.version"])

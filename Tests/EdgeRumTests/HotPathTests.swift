@@ -53,7 +53,7 @@ final class HotPathTests: XCTestCase {
 
         for _ in 0..<50 {
             recorder.recordEvent(name: "navigation", attributes: [:])
-            recorder.recordPerformance(name: "memory_usage", attributes: [:])
+            recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
         }
         recorder.flush(reason: .manual)
 
@@ -142,7 +142,7 @@ final class HotPathTests: XCTestCase {
 
         clock.advance(by: SessionManager.idleRotationInterval + 1)
         sink.reset()
-        recorder.recordPerformance(name: "memory_usage", attributes: [:])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
         recorder.flush(reason: .manual)
         let finalized = try XCTUnwrap(sink.envelopes.first { $0.events.contains { $0.name == "session.finalized" } })
         let newSession = try XCTUnwrap(sink.envelopes.last?.sdkThreadTimeMs)
@@ -180,7 +180,7 @@ final class HotPathTests: XCTestCase {
 
     private func burst(_ recorder: Recorder, _ count: Int) {
         for i in 0..<count {
-            recorder.recordEvent(name: "user.interaction", attributes: ["interaction.name": .string("b\(i)")])
+            recorder.recordEvent(name: "ui.interaction", attributes: ["ui.target": .string("b\(i)")])
         }
     }
 
@@ -190,9 +190,9 @@ final class HotPathTests: XCTestCase {
         let (recorder, sink) = makeRecorder()
         recorder.setEnabled(false)
 
-        recorder.recordEvent(name: "custom_event", attributes: [:])
+        recorder.recordEvent(name: "custom.event", attributes: [:])
         recorder.recordEvent(name: "app.crash", attributes: [:])
-        recorder.recordPerformance(name: "memory_usage", attributes: [:])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
         recorder.flush(reason: .manual)
 
         XCTAssertTrue(sink.envelopes.isEmpty)

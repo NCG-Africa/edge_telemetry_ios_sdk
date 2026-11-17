@@ -61,9 +61,9 @@ final class RidersTests: XCTestCase {
         let (recorder, sink) = makeRecorder(riders: riders)
 
         riders.setOrientation("portrait")
-        recorder.recordEvent(name: "custom_event", attributes: [:])
+        recorder.recordEvent(name: "custom.event", attributes: [:])
         riders.setOrientation("landscape")
-        recorder.recordPerformance(name: "memory_usage", attributes: [:])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
         recorder.flush(reason: .manual)
 
         let events = try XCTUnwrap(sink.envelopes.last).recordedEvents
@@ -78,7 +78,7 @@ final class RidersTests: XCTestCase {
         riders.setAppState("background")
         riders.enterScreen("Checkout")
 
-        recorder.recordEvent(name: "network_change", attributes: [:])
+        recorder.recordEvent(name: "network.change", attributes: [:])
         recorder.flush(reason: .manual)
 
         let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.recordedEvents.first))
@@ -90,7 +90,7 @@ final class RidersTests: XCTestCase {
         let riders = Riders()
         let (recorder, sink) = makeRecorder(riders: riders)
 
-        recorder.recordEvent(name: "custom_event", attributes: [:])
+        recorder.recordEvent(name: "custom.event", attributes: [:])
         recorder.flush(reason: .manual)
 
         let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.recordedEvents.first))
@@ -104,7 +104,7 @@ final class RidersTests: XCTestCase {
         let (recorder, sink) = makeRecorder(riders: riders)
         riders.enterScreen("Next")
 
-        recorder.recordPerformance(name: "custom_timer", attributes: ["screen.name": .string("Leaving")])
+        recorder.recordPerformance(name: "perf.custom_timer", attributes: ["screen.name": .string("Leaving")])
         recorder.flush(reason: .manual)
 
         let attrs = attributes(try XCTUnwrap(sink.envelopes.last?.recordedEvents.first))
@@ -277,8 +277,8 @@ final class RidersTests: XCTestCase {
 
         spy.reset()
         for _ in 0..<50 {
-            recorder.recordEvent(name: "custom_event", attributes: [:])
-            recorder.recordPerformance(name: "memory_usage", attributes: [:])
+            recorder.recordEvent(name: "custom.event", attributes: [:])
+            recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
         }
         riders._drainForTesting()
         XCTAssertEqual(spy.volatileWrites, 0, "enqueue never writes the sidecar")

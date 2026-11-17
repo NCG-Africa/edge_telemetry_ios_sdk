@@ -53,14 +53,14 @@ final class GoldenBatchSnapshotTests: XCTestCase {
             "device.manufacturer":      "Apple",
             "device.os":                "ios",
             "device.platform_version":  "17.4.1",
-            "device.isVirtual":         false,
-            "device.screenWidth":       1290,
-            "device.screenHeight":      2796,
-            "device.pixelRatio":        3.0,
-            "device.batteryLevel":      0.82,
-            "device.batteryCharging":   false,
+            "device.is_virtual":         false,
+            "device.screen_width_px":       1290,
+            "device.screen_height_px":      2796,
+            "device.screen_density":        3.0,
+            "device.battery_level":      0.82,
+            "device.battery_charging":   false,
             "network.type":             "wifi",
-            "network.effectiveType":    "4g",
+            "network.effective_type":    "4g",
             "session.id":               "session_1717234870002_ff009988aabbccdd_ios",
             "session.start_time":       "2026-06-14T10:25:00.002Z",
             "session.sequence":         1,
@@ -91,9 +91,9 @@ final class GoldenBatchSnapshotTests: XCTestCase {
                 name: "navigation",
                 timestamp: navTime,
                 attributes: AttributeBag([
-                    "navigation.screen":          "CartViewController",
-                    "navigation.previous_screen": "ProductListViewController",
-                    "navigation.kind":            "uikit",
+                    "navigation.to_screen":          "CartViewController",
+                    "navigation.from_screen": "ProductListViewController",
+                    "navigation.route_type":            "uikit",
                     "screen.name":                "CartViewController"
                 ])
             ),
@@ -113,7 +113,7 @@ final class GoldenBatchSnapshotTests: XCTestCase {
                 ])
             ),
             .metric(
-                name: "resource_timing",
+                name: "perf.resource_timing",
                 value: 342,
                 timestamp: exitTime,
                 attributes: AttributeBag([
@@ -128,16 +128,17 @@ final class GoldenBatchSnapshotTests: XCTestCase {
                     "screen.name":            "CartViewController"
                 ])
             ),
-            .metric(
-                name: "frame_render_time",
-                value: 18.4,
+            .event(
+                name: "frame.summary",
                 timestamp: frameTime,
                 attributes: AttributeBag([
-                    "frame.max_ms":         33,
-                    "frame.p95_ms":         28,
-                    "frame.dropped_count":  1,
-                    "frame.target_hz":      60,
-                    "frame.source":         "displaylink"
+                    "frame.total_frames":          118,
+                    "frame.slow_frames":           1,
+                    "frame.max_total_duration_ms": 33.3,
+                    "frame.p95_ms":                28.1,
+                    "frame.window_duration_ms":    2000,
+                    "display.refresh_rate":        60.0,
+                    "frame.source":                "displaylink"
                 ])
             )
         ]

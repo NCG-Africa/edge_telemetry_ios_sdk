@@ -2,9 +2,9 @@
 //
 // F37 / #224 — RUM coverage tranche 13 ("Host-gated readiness").
 //
-//   - a mark consumes the appear token: `screen_ready`, ms from appear
+//   - a mark consumes the appear token: `screen.load`, settled ms from appear
 //   - first mark wins; a mark after navigation moved on is a no-op
-//   - a marked screen left pending → `screen.ready_outcome = abandoned`
+//   - a marked screen left pending → `screen.load.outcome = abandoned`
 //   - hole on record: a screen's first appear, before its first mark,
 //     is not judged
 //
@@ -25,7 +25,7 @@ final class ScreenReadyTests: XCTestCase {
         super.setUp()
         clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876))
         rows = []
-        riders = Riders(clock: clock) { [unowned self] in rows.append($0) }
+        riders = Riders(clock: clock, emitReady: { [unowned self] in rows.append($0) }, emitVisit: { _ in })
     }
 
     private func advance(ms: Double) { clock.advance(by: ms / 1000) }
@@ -36,8 +36,9 @@ final class ScreenReadyTests: XCTestCase {
         XCTAssertTrue(riders.markScreenReady())
         XCTAssertEqual(rows, [[
             "screen.name": .string("Home"),
-            "screen.ready_outcome": .string("ready"),
-            "value": .double(420)
+            "screen.load.outcome": .string("settled"),
+            "screen.load.settled_ms": .int(420),
+            "screen.load.source": .string("reported")
         ]])
     }
 
@@ -74,8 +75,9 @@ final class ScreenReadyTests: XCTestCase {
         riders.enterScreen("Detail")
         XCTAssertEqual(rows.last, [
             "screen.name": .string("Home"),
-            "screen.ready_outcome": .string("abandoned"),
-            "value": .double(90)
+            "screen.load.outcome": .string("abandoned"),
+            "screen.load.settled_ms": .int(90),
+            "screen.load.source": .string("reported")
         ])
         XCTAssertEqual(rows.count, 2)
     }
@@ -99,8 +101,8 @@ final class ScreenReadyTests: XCTestCase {
         advance(ms: 30)
         riders.disappearScreen("Sheet")
         riders.leaveScreen("Sheet")
-        XCTAssertEqual(rows.last?["screen.ready_outcome"], .string("abandoned"))
-        XCTAssertEqual(rows.last?["value"], .double(30))
+        XCTAssertEqual(rows.last?["screen.load.outcome"], .string("abandoned"))
+        XCTAssertEqual(rows.last?["screen.load.settled_ms"], .int(30))
         XCTAssertEqual(rows.count, 2)
     }
 
@@ -110,14 +112,14 @@ final class ScreenReadyTests: XCTestCase {
         riders.enterScreen("Home")  // spurious SwiftUI re-fire
         advance(ms: 100)
         riders.markScreenReady()
-        XCTAssertEqual(rows.first?["value"], .double(200))
+        XCTAssertEqual(rows.first?["screen.load.settled_ms"], .int(200))
     }
 
     // MARK: Wire
 
-    func testRecorderAcceptsBothNewMetricNames() {
-        XCTAssertTrue(Recorder.allowedMetricNames.isSuperset(of: ["screen_ready", "launch_interactive"]))
-        XCTAssertEqual(Recorder.allowedMetricNames.count, 8)
+    func testRecorderAcceptsTheReadinessNames() {
+        XCTAssertTrue(Recorder.allowedEventNames.contains("screen.load"))
+        XCTAssertTrue(Recorder.allowedMetricNames.contains("perf.launch_interactive"))
     }
 }
 
@@ -158,7 +160,7 @@ final class ReadinessAPITests: XCTestCase {
         EdgeRum.markInteractive()
         EdgeRum.markInteractive()
         let after = PageLoadCapture.elapsedMs(fromNs: PageLoadCapture.launchStartNs, toNs: PageLoadCapture.monotonicNs())
-        XCTAssertEqual(perfs.map(\.0), ["launch_interactive"])
+        XCTAssertEqual(perfs.map(\.0), ["perf.launch_interactive"])
         guard case let .double(ms)? = perfs.first?.1["value"], let before, let after else { return XCTFail("no value") }
         // Anchored at `launchStart`, the `page_load` anchor.
         XCTAssertTrue(Double(before)...Double(after) ~= ms)
@@ -169,7 +171,7 @@ final class ReadinessAPITests: XCTestCase {
         XCTAssertTrue(probe.calls.isEmpty)
         start()
         EdgeRum.markInteractive()
-        XCTAssertEqual(perfs.map(\.0), ["launch_interactive"])
+        XCTAssertEqual(perfs.map(\.0), ["perf.launch_interactive"])
     }
 
     func testMarkScreenReadyRoutesScreenReady() {
@@ -177,8 +179,12 @@ final class ReadinessAPITests: XCTestCase {
         EdgeRum.trackScreen("Checkout")
         EdgeRum.markScreenReady()
         EdgeRum.markScreenReady()
-        XCTAssertEqual(perfs.map(\.0), ["screen_ready"])
-        XCTAssertEqual(perfs.first?.1["screen.name"], .string("Checkout"))
+        let loads = probe.calls.compactMap { call -> [String: AttributeValue]? in
+            if case let .event(name, attributes) = call, name == "screen.load" { return attributes }
+            return nil
+        }
+        XCTAssertEqual(loads.count, 1)
+        XCTAssertEqual(loads.first?["screen.name"], .string("Checkout"))
     }
 
     func testMarkScreenReadyBeforeStartIsNoOp() {

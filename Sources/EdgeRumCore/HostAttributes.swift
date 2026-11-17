@@ -18,7 +18,7 @@ public enum HostAttributes {
     /// dropped.
     public static let reservedPrefixes: [String] = [
         "app.", "device.", "network.", "session.", "user.", "sdk.",
-        "navigation.", "interaction.", "http.", "resource.", "crash.",
+        "navigation.", "interaction.", "ui.", "task.", "http.", "resource.", "crash.",
         "error.", "hang.", "action.", "trace.", "span.", "rum.", "screen.",
         "lifecycle.", "page_load.", "launch.", "long_task.", "frame.",
         "memory.", "cpu.", "timer.", "event.", "breadcrumb.",

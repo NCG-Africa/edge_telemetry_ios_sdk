@@ -138,7 +138,7 @@ final class NetworkPathCaptureTests: XCTestCase {
             unsatisfiedReason: nil
         )
         XCTAssertEqual(attrs["network.type"], .string("wifi"))
-        XCTAssertEqual(attrs["network.effectiveType"], .string("wifi"))
+        XCTAssertEqual(attrs["network.effective_type"], .string("wifi"))
         XCTAssertEqual(attrs["network.expensive"], .bool(false))
         XCTAssertEqual(attrs["network.constrained"], .bool(false))
         XCTAssertNil(attrs["network.unsatisfied_reason"],
@@ -263,7 +263,7 @@ final class NetworkPathCaptureTests: XCTestCase {
             if case let .event(name, attrs) = call { return (name, attrs) } else { return nil }
         }
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events[0].0, "network_change")
+        XCTAssertEqual(events[0].0, "network.change")
         XCTAssertEqual(events[0].1["network.type"], .string("cellular"))
         XCTAssertEqual(events[0].1["network.expensive"], .bool(true))
     }
@@ -289,7 +289,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         )
 
         let eventCount = probe.calls.filter { call in
-            if case let .event(name, _) = call { return name == "network_change" }
+            if case let .event(name, _) = call { return name == "network.change" }
             return false
         }.count
         XCTAssertEqual(eventCount, 1, "Identical transitions should emit once")
@@ -330,7 +330,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         )
 
         let events = probe.calls.compactMap { call -> String? in
-            if case let .event(name, _) = call, name == "network_change" { return name }
+            if case let .event(name, _) = call, name == "network.change" { return name }
             return nil
         }
         XCTAssertEqual(events.count, 4)
@@ -350,7 +350,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         }
 
         let generations = probe.calls.compactMap { call -> AttributeValue? in
-            if case .event("network_change", let attrs) = call { return attrs["network.effectiveType"] }
+            if case .event("network.change", let attrs) = call { return attrs["network.effective_type"] }
             return nil
         }
         XCTAssertEqual(generations, [.string("4g"), .string("5g")])
@@ -365,7 +365,7 @@ final class NetworkPathCaptureTests: XCTestCase {
         Recorder.installShared(probe)
         func changes() -> Int {
             probe.calls.filter {
-                if case .event("network_change", _) = $0 { return true }
+                if case .event("network.change", _) = $0 { return true }
                 return false
             }.count
         }

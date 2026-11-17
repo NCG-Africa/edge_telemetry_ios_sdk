@@ -1,5 +1,11 @@
 # iOS data catalogue — every event and attribute `edge-rum-ios` emits
 
+> **Superseded for names and keys (#264).** The wire vocabulary is the shared event catalogue:
+> [`docs/catalogue/*.yaml`](https://github.com/NCG-Africa/edge_telemetry_processor_go/tree/main/docs/catalogue)
+> in the processor, at the tag pinned in [`catalogue.version`](../../catalogue.version). Where this
+> document and the YAML disagree, the YAML wins; `Tools/conform.sh` checks the golden batches in
+> `Tests/golden/` against it. This document keeps the iOS-side rationale and history.
+
 **Status:** the backend hand-off, and the terminal deliverable of map
 [iOS RUM coverage][M188] ([W15 Write the catalogue and roadmap][W15]). It holds the
 **as-is** wire (`main` @ `e72928f`, `1.0.0-alpha.2`, from [W2 Wire inventory][W2]) plus every
@@ -23,12 +29,10 @@ and rows that carry one cite its section.
 
 ## 0. Header contract
 
-1. **iOS names natively; the Processor adapts per platform.** Outside the trace v3 attributes
-   (frozen to Android's contract) and the cross-platform required-identity set, iOS does not bend
-   its vocabulary to Android's or web's.
-2. **The cost is stated, not discovered: three platform-specific ingestion paths instead of one
-   shared vocabulary.** The Processor carries an iOS path, an Android path and a web path. The
-   `delta` column on every row is the evidence for that cost.
+1. **iOS names follow the event catalogue** (#264). Event names and attribute keys are the shared
+   catalogue's (see the banner); iOS-only diagnostics are registered there too. The earlier
+   "iOS names natively; the Processor adapts per platform" rule is retired.
+2. *(retired with 1.)*
 3. **Read-time depends on `scope`.**
    - `context` attributes carry their value at **batch flush**, not at event emission. All events
      in one batch share one `ContextProvider.snapshot()`, taken in `Recorder.flush`
@@ -47,10 +51,11 @@ and rows that carry one cite its section.
      the reporting launch's.
 4. **Where a ticket and a later ticket disagree, this document wins.** (§13.)
 5. **Exception wins** ([W11 Error taxonomy][W11]). On `app.crash`, `crash.signal` /
-   `crash.signal_code` and `crash.exception_name` / `crash.exception_reason` are both optional and
+   `crash.signal_code` and the exception name / reason are both optional and
    **co-occur in the common case** — an uncaught Objective-C exception raises `SIGABRT`. When both
    are present the exception is the proximate cause; the signal is how the runtime expressed it.
-   The SDK ships no `crash.kind`; this rule is how the Processor derives one.
+   The SDK applies this rule itself: `error.type` / `error.message` are the exception's name and
+   reason, else the signal and its code (#264).
 6. **`unknown` never means `oom`** ([W11][W11]). `previous_session.end = unknown` means the SDK
    observed neither a clean termination nor a crash report. A user force-quit from the app switcher
    is indistinguishable from a foreground OOM and far more common. OOM is a backend inference

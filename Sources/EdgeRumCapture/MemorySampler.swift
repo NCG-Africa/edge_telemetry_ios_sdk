@@ -2,27 +2,21 @@
 //
 // F10 / T10.2 — memory usage sampler.
 //
-// Two complementary sources feed the same `memory_usage` metric
-// (PLAN-iOS.md §6.11):
+// Two sources (PLAN-iOS.md §6.11, catalogue #264):
 //
 //   1. Periodic poll — every 30 s (F30), skipped while the
-//      `SamplingGate` is closed, carrying the last observed pressure
-//      level. The same tick emits `cpu_usage` (whole-process, per-core
-//      percent, may exceed 100) from `ProcessCPUReader`. Reads `mach_task_basic_info`
+//      `SamplingGate` is closed: one `memory.usage` event, plus
+//      `perf.cpu_usage` (whole-process, per-core percent, may exceed
+//      100) from `ProcessCPUReader`. Reads `mach_task_basic_info`
 //      (`resident_size`, `virtual_size`) and `task_vm_info`
-//      (`phys_footprint`) so we can report what's wired in memory,
-//      what the address space looks like, and what the kernel actually
-//      bills the app for.
+//      (`phys_footprint`); `memory.usage_mb` is the footprint.
 //   2. Memory-pressure source — `DispatchSource.makeMemoryPressureSource`
-//      with `.all` mask. Each transition emits a fresh sample tagged
-//      with `memory.pressure ∈ {"normal","warning","critical"}` so a
-//      dashboard can correlate the spike with the system pressure
-//      event that triggered it. Ungated.
+//      with `.all` mask. Each transition sends `memory.pressure` with
+//      `memory.pressure_level` `normal` or `critical` (an iOS warning is
+//      critical) and the same snapshot keys. Ungated.
 //
-// The `memory.*_kb` keys are kB (Int); the metric `value` is MB (F29). The pure
-// `makeAttributes(rss:vsz:footprint:pressure:)` builder is the
-// shared seam — both feeds route through it so the on-the-wire
-// attribute shape is identical.
+// The `memory.*_kb` keys are kB (Int), `memory.usage_mb` binary MB.
+// `makeAttributes(rssBytes:vszBytes:footprintBytes:)` is the shared seam.
 //
 // Recorder access: live `Recorder.shared` is fetched per emission;
 // tests swap a probe via `Recorder.installShared(_:)`.
@@ -54,8 +48,7 @@ public enum MemoryPressureLevel: String, Sendable, Equatable {
 // MARK: - Sampler
 
 /// F10 / T10.2 installer — periodic poll + memory-pressure dispatch
-/// source. Both feeds emit through `Recorder.shared.recordPerformance`
-/// as `memory_usage` metrics.
+/// source.
 public enum MemorySampler {
 
     // MARK: Diagnostics
@@ -100,26 +93,22 @@ public enum MemorySampler {
 
     // MARK: Pure attribute builder
 
-    /// Translate a raw mach snapshot + pressure level into the
+    /// Translate a raw mach snapshot into the
     /// wire-canonical attribute bag. Inputs are in bytes; the `_kb`
     /// keys are kB and `value` (resident set) is MB. A `nil` input
     /// (kernel read failed) omits its keys — never a fake `0` (C21).
     public static func makeAttributes(
         rssBytes: UInt64?,
         vszBytes: UInt64?,
-        footprintBytes: UInt64?,
-        pressure: MemoryPressureLevel
+        footprintBytes: UInt64?
     ) -> [String: AttributeValue] {
-        var attrs: [String: AttributeValue] = ["memory.pressure": .string(pressure.rawValue)]
-        if let rssBytes {
-            let rssKb = Int(rssBytes / 1024)
-            attrs["memory.resident_kb"] = .int(rssKb)
-            // Recorder.recordPerformance moves `value` to the envelope
-            // as the headline scalar: resident set in MB (F29 unit).
-            attrs["value"] = .double(Double(rssKb) / 1024.0)
-        }
+        // Catalogue memory.usage (#264): usage = phys_footprint in MB
+        // (binary), resident set when the footprint is unreadable.
+        var attrs: [String: AttributeValue] = [:]
+        if let rssBytes { attrs["memory.resident_kb"] = .int(Int(rssBytes / 1024)) }
         if let vszBytes { attrs["memory.virtual_kb"] = .int(Int(vszBytes / 1024)) }
         if let footprintBytes { attrs["memory.footprint_kb"] = .int(Int(footprintBytes / 1024)) }
+        if let bytes = footprintBytes ?? rssBytes { attrs["memory.usage_mb"] = .double(Double(bytes) / 1_048_576) }
         return attrs
     }
 
@@ -136,25 +125,20 @@ public enum MemorySampler {
 
     // MARK: Emission seam
 
-    /// Public seam — emit one `memory_usage` metric with the supplied
-    /// snapshot + pressure level. Both the periodic timer and the
-    /// memory-pressure handler funnel through here so the wire shape
-    /// is identical.
+    /// Emit one `memory.usage` event for the supplied snapshot.
     static func emit(
         rssBytes: UInt64?,
         vszBytes: UInt64?,
-        footprintBytes: UInt64?,
-        pressure: MemoryPressureLevel
+        footprintBytes: UInt64?
     ) {
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
-        recorder.recordPerformance(
-            name: "memory_usage",
+        recorder.recordEvent(
+            name: "memory.usage",
             attributes: makeAttributes(
                 rssBytes: rssBytes,
                 vszBytes: vszBytes,
-                footprintBytes: footprintBytes,
-                pressure: pressure
+                footprintBytes: footprintBytes
             )
         )
     }
@@ -224,9 +208,6 @@ public enum MemorySampler {
         private let cpuSample: () -> Double?
         private var timer: DispatchSourceTimer?
         private var pressureSource: DispatchSourceMemoryPressure?
-        /// Last level the pressure source reported; the timer tick
-        /// carries it so a sustained warning stays a warning.
-        private(set) var lastPressure: MemoryPressureLevel = .normal
 
         init(
             debug: Bool,
@@ -262,21 +243,26 @@ public enum MemorySampler {
             self.pressureSource = source
         }
 
-        /// Timer tick: one `memory_usage` (last observed pressure) and
+        /// Timer tick: one `memory.usage` and
         /// one `cpu_usage`, both skipped while the gate is closed.
         func tick() {
             // Read CPU even when gated so the next open sample covers
             // only its own 30 s, not the closed stretch.
             let percent = cpuSample()
             guard gate() else { return }
-            emitSnapshot(pressure: lastPressure)
+            emitSnapshot()
             guard let percent, Recorder.shared.isEnabled else { return }
-            Recorder.shared.recordPerformance(name: "cpu_usage", attributes: ["value": .double(percent)])
+            Recorder.shared.recordPerformance(name: "perf.cpu_usage", attributes: ["value": .double(percent)])
         }
 
         func pressureChanged(_ level: MemoryPressureLevel) {
-            lastPressure = level
-            emitSnapshot(pressure: level)
+            let stats = MemorySampler.readMachStats()
+            var attrs = MemorySampler.makeAttributes(
+                rssBytes: stats.rss, vszBytes: stats.vsz, footprintBytes: stats.footprint
+            )
+            // memory.pressure (#264): an iOS memory warning is critical.
+            attrs["memory.pressure_level"] = .string(level == .normal ? "normal" : "critical")
+            if Recorder.shared.isEnabled { Recorder.shared.recordEvent(name: "memory.pressure", attributes: attrs) }
             if debug {
                 os_log(
                     "MemorySampler pressure transition: %{public}@",
@@ -287,13 +273,12 @@ public enum MemorySampler {
             }
         }
 
-        private func emitSnapshot(pressure: MemoryPressureLevel) {
+        private func emitSnapshot() {
             let stats = MemorySampler.readMachStats()
             MemorySampler.emit(
                 rssBytes: stats.rss,
                 vszBytes: stats.vsz,
-                footprintBytes: stats.footprint,
-                pressure: pressure
+                footprintBytes: stats.footprint
             )
         }
 

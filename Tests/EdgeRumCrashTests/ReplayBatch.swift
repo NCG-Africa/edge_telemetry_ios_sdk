@@ -29,7 +29,7 @@ enum ReplayBatch {
             appBuild: "20",
             sdkVersion: "4.0.0"
         ))
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.route_type": "uikit"])
         return (recorder, sink)
     }
 

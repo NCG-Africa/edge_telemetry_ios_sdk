@@ -71,9 +71,9 @@ final class AppErrorWireConformanceTests: XCTestCase {
         XCTAssertNil(wireAttrs["cause"])
         XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
         XCTAssertEqual(wireAttrs["error.kind"] as? String, "nserror")
-        XCTAssertEqual(wireAttrs["error.class"] as? String, "NSError")
+        XCTAssertEqual(wireAttrs["error.type"] as? String, "NSError")
         XCTAssertEqual(wireAttrs["error.domain"] as? String, "PaymentDomain")
-        XCTAssertEqual(wireAttrs["error.code"] as? Int, 42)
+        XCTAssertEqual(wireAttrs["error.code"] as? String, "42")
         XCTAssertEqual(wireAttrs["error.message"] as? String, "Card declined")
 
         // T13.2: NSError.userInfo flattens with the `error.userInfo.`
@@ -91,14 +91,14 @@ final class AppErrorWireConformanceTests: XCTestCase {
         XCTAssertNil(wireAttrs["payment.method"])
 
         // Stack present
-        XCTAssertNotNil(wireAttrs["error.stack"] as? String)
+        XCTAssertNotNil(wireAttrs["error.stacktrace"] as? String)
         // binary_images rides as a JSON *string* of {name, uuid}, deduplicated.
         let imagesJSON = try XCTUnwrap(wireAttrs["error.binary_images"] as? String)
         let images = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(imagesJSON.utf8)) as? [[String: String]]
         )
         XCTAssertEqual(images, [["name": "EdgeRum", "uuid": "0123456789abcdef0123456789abcdef"]])
-        XCTAssertNil(wireAttrs["error.stack.truncated"], "omitted when zero")
+        XCTAssertNil(wireAttrs["error.stacktrace.truncated"], "omitted when zero")
     }
 
     // MARK: - Swift Error → app.error (T13.1 acceptance)
@@ -124,7 +124,7 @@ final class AppErrorWireConformanceTests: XCTestCase {
         XCTAssertNil(wireAttrs["cause"])
         XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
         XCTAssertEqual(wireAttrs["error.kind"] as? String, "swift")
-        XCTAssertEqual(wireAttrs["error.class"] as? String, "DecodingFailure")
+        XCTAssertEqual(wireAttrs["error.type"] as? String, "DecodingFailure")
         XCTAssertEqual(wireAttrs["crash.context.screen"] as? String, "Receipt")
         XCTAssertNil(wireAttrs["screen"])
 
@@ -196,8 +196,8 @@ final class AppErrorWireConformanceTests: XCTestCase {
         // flush explicitly after both events (`app.error` never forces a flush) and
         // assert both events ride the same envelope.
         recorder.recordEvent(name: "navigation", attributes: [
-            "navigation.kind": .string("uikit"),
-            "navigation.screen": .string("Cart")
+            "navigation.route_type": .string("uikit"),
+            "navigation.to_screen": .string("Cart")
         ])
         let crashAttrs = AppErrorBuilder.build(
             error: NSError(domain: "x", code: 1),

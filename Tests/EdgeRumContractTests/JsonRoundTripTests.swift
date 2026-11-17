@@ -34,10 +34,10 @@ final class JsonRoundTripTests: XCTestCase {
             app: AppContext(),
             events: [
                 .event(name: "navigation", timestamp: t0, attributes: [
-                    "navigation.kind": "uikit",
-                    "navigation.screen": "Cart"
+                    "navigation.route_type": "uikit",
+                    "navigation.to_screen": "Cart"
                 ]),
-                .metric(name: "frame_render_time", value: 18.4, timestamp: t0, attributes: [
+                .metric(name: "perf.long_task", value: 18.4, timestamp: t0, attributes: [
                     "frame.target_hz": 60,
                     "frame.dropped_count": 1
                 ])

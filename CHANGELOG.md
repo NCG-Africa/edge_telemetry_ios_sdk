@@ -15,6 +15,38 @@ minimum-iOS bump is a major version — are documented in the
 
 ### Changed
 
+* **Wire converges on the event catalogue** (catalogue 4.4, #264). Needs the
+  processor release that reads catalogue 4.4 before shipping. Renames:
+  `page_load` → `app.start` (`app.start.duration_ms` now from process start,
+  `app.start.type`, `app.start.prewarmed`, `app.start.sdk_init_ms`);
+  `frame_render_time` → `frame.summary` event (`frame.total_frames`,
+  `frame.slow_frames`, `frame.max_total_duration_ms`, `display.refresh_rate`,
+  `frame.window_duration_ms`; empty windows not sent); `memory_usage` →
+  `memory.usage` event with `memory.usage_mb` = `phys_footprint`; pressure
+  transitions send `memory.pressure` (a warning is `critical`);
+  `user.interaction` → `ui.interaction` (`ui.type`, `ui.target`,
+  `ui.name_source`, `ui.view_class`); `action.ended` → `task.complete`
+  (`task.name`, `task.outcome`, `task.abandon_source` `session_end` /
+  `launch_recovery` / `timeout`, `task.failure_reason`); `screen_ready` →
+  `screen.load` event (`screen.load.outcome` `settled` / `abandoned`,
+  `screen.load.settled_ms`); `app_lifecycle`, `network_change`, `custom_event`
+  → `app.lifecycle`, `network.change`, `custom.event`; metrics gain `perf.`
+  (`perf.resource_timing`, `perf.long_task`, `perf.cpu_usage`,
+  `perf.custom_timer`, `perf.launch_interactive`).
+* `navigation` sends `navigation.to_screen`, `navigation.from_screen`,
+  `navigation.method` (`initial`, `push`, `pop`, `tab`, `unknown`) and
+  `navigation.route_type`. A new `screen.duration` event closes each screen visit.
+* `app.crash`, `app.error`, `app.hang` carry `error.type`, `error.message`,
+  `error.stacktrace` (crash: the crashed thread's frames). `app.error` sends
+  `error.cause = handled` and `error.code` as a string.
+* Context keys are snake_case: `device.is_virtual`, `device.screen_width_px`,
+  `device.screen_height_px`, `device.screen_density`, `device.battery_level`,
+  `device.battery_charging`, `device.thermal_status`, `device.power_save`,
+  `network.effective_type`; `http.reused_connection` → `http.connection_reused`;
+  `session.rotation` → `session.reason` (`idle` → `timeout`).
+* `Tests/golden/` holds one real-wire batch per event; `Tools/conform.sh` (and
+  the `conform` workflow) checks them against the catalogue tag in `catalogue.version`.
+
 * `http.request`: `http.path` is templated on device per RN contract
   §4.4.1 — a segment holding a digit, or ≥ 32 chars, becomes `{id}`
   (`vN` kept); trailing slash dropped, capped at 6 segments then `/…`,

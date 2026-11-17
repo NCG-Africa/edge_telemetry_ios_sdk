@@ -28,8 +28,8 @@ final class RecorderPipelineContractTests: XCTestCase {
     func testNavigationEventEnvelopePassesWireAssertions() throws {
         let (recorder, sink, _) = makeRecorder()
         recorder.recordEvent(name: "navigation", attributes: [
-            "navigation.kind": "uikit",
-            "navigation.screen": "Cart"
+            "navigation.route_type": "uikit",
+            "navigation.to_screen": "Cart"
         ])
         recorder.flush(reason: .manual)
         let envelope = try XCTUnwrap(sink.envelopes.first)
@@ -38,12 +38,12 @@ final class RecorderPipelineContractTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
-        XCTAssertEqual(attrs["navigation.kind"] as? String, "uikit")
+        XCTAssertEqual(attrs["navigation.route_type"] as? String, "uikit")
     }
 
     func testMetricEnvelopePassesWireAssertions() throws {
         let (recorder, sink, _) = makeRecorder()
-        recorder.recordPerformance(name: "frame_render_time", attributes: [
+        recorder.recordPerformance(name: "perf.long_task", attributes: [
             "frame.target_hz": 60,
             "value": 18.4
         ])
@@ -52,7 +52,7 @@ final class RecorderPipelineContractTests: XCTestCase {
         let (_, json) = try WireAssertions.assertValidEnvelope(envelope)
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.first?["type"] as? String, "metric")
-        XCTAssertEqual(events.first?["metricName"] as? String, "frame_render_time")
+        XCTAssertEqual(events.first?["metricName"] as? String, "perf.long_task")
         XCTAssertEqual(events.first?["value"] as? Double, 18.4)
     }
 
@@ -84,7 +84,7 @@ final class RecorderPipelineContractTests: XCTestCase {
         XCTAssertEqual(wireAttrs["runtime"] as? String, "swift")
         XCTAssertEqual(wireAttrs["error.kind"] as? String, "nserror")
         XCTAssertEqual(wireAttrs["error.domain"] as? String, "PaymentDomain")
-        XCTAssertEqual(wireAttrs["error.code"] as? Int, 42)
+        XCTAssertEqual(wireAttrs["error.code"] as? String, "42")
         XCTAssertEqual(wireAttrs["error.message"] as? String, "Card declined")
         // T13.2: NSError.userInfo entries flatten with the `error.userInfo.` prefix.
         XCTAssertEqual(
@@ -95,13 +95,13 @@ final class RecorderPipelineContractTests: XCTestCase {
         // not bare. Catches regressions to the F2/F3 un-prefixed behaviour.
         XCTAssertEqual(wireAttrs["crash.context.payment.method"] as? String, "card")
         XCTAssertNil(wireAttrs["payment.method"])
-        XCTAssertNotNil(wireAttrs["error.stack"])
+        XCTAssertNotNil(wireAttrs["error.stacktrace"])
     }
 
     func testEnvelopeBytesContainNoForbiddenTokens() throws {
         let (recorder, sink, _) = makeRecorder()
         for _ in 0..<5 {
-            recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
+            recorder.recordEvent(name: "navigation", attributes: ["navigation.route_type": "uikit"])
         }
         recorder.flush(reason: .manual)
         let envelope = try XCTUnwrap(sink.envelopes.first)

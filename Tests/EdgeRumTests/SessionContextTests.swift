@@ -87,7 +87,7 @@ final class SessionContextTests: XCTestCase {
         XCTAssertNotEqual(first.state.id, second.state.id)
         XCTAssertTrue(second.rotated)
         XCTAssertEqual(second.ended?.state.id, first.state.id)
-        XCTAssertEqual(second.ended?.reason, "idle")
+        XCTAssertEqual(second.ended?.reason, "timeout")
         XCTAssertEqual(second.ended?.state.lastActiveAt, first.state.lastActiveAt)
     }
 

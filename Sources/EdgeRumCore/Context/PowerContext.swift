@@ -1,6 +1,6 @@
 // Sources/EdgeRumCore/Context/PowerContext.swift
 //
-// F16/T16.1 — `device.thermal_state` + `device.low_power_mode`.
+// F16/T16.1 — `device.thermal_status` + `device.power_save`.
 //
 // Reads `ProcessInfo.processInfo.thermalState` and
 // `ProcessInfo.processInfo.isLowPowerModeEnabled`. The two underlying
@@ -10,8 +10,8 @@
 // the next emitted event carries the fresh values.
 //
 // Wire keys (docs/data-flow.md §3.2):
-//   device.thermal_state    — "nominal" / "fair" / "serious" / "critical"
-//   device.low_power_mode   — Bool
+//   device.thermal_status   — "nominal" / "fair" / "serious" / "critical"
+//   device.power_save       — Bool (Low Power Mode)
 //
 // Refs: PLAN-iOS.md §16.4 / F16 / T16.1.
 //
@@ -53,8 +53,8 @@ public struct PowerContext: Sendable, Hashable {
     }
 
     public func write(into bag: inout AttributeBag) {
-        bag.setIfPresent("device.thermal_state", thermalState.map { .string($0) })
-        bag.setIfPresent("device.low_power_mode", lowPowerMode.map { .bool($0) })
+        bag.setIfPresent("device.thermal_status", thermalState.map { .string($0) })
+        bag.setIfPresent("device.power_save", lowPowerMode.map { .bool($0) })
     }
 
     /// Map `ProcessInfo.ThermalState` to the wire string. Exposed

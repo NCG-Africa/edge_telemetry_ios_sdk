@@ -102,6 +102,6 @@ public final class RumAction: @unchecked Sendable {
         guard let id, let attrs = actions.end(
             id: id, outcome: outcome, abandonReason: abandonReason, errorMessage: errorMessage
         ) else { return }
-        recorder.recordEvent(name: "action.ended", attributes: attrs)
+        recorder.recordEvent(name: "task.complete", attributes: attrs)
     }
 }

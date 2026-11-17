@@ -376,7 +376,7 @@ public enum HTTPCapture {
                 metricAttrs["resource.protocol"] = .string(proto)
             }
             metricAttrs["value"] = .double(Double(durationMs))
-            liveRecorder.recordPerformance(name: "resource_timing", attributes: metricAttrs)
+            liveRecorder.recordPerformance(name: "perf.resource_timing", attributes: metricAttrs)
         }
     }
 
@@ -425,7 +425,7 @@ public enum HTTPCapture {
         if let tlsCipher = tlsCipherName(last.negotiatedTLSCipherSuite) {
             attrs["http.tls_cipher"] = .string(tlsCipher)
         }
-        attrs["http.reused_connection"] = .bool(last.isReusedConnection)
+        attrs["http.connection_reused"] = .bool(last.isReusedConnection)
         attrs["http.proxy_connection"] = .bool(last.isProxyConnection)
         if let proto = networkProtocolNormalised(last.networkProtocolName) {
             attrs["http.network_protocol"] = .string(proto)

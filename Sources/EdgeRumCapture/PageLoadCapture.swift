@@ -217,7 +217,7 @@ public enum PageLoadCapture {
 
     // MARK: Pure attribute builder (test seam)
 
-    /// Build the `page_load` attribute bag. Pure; tests drive it directly.
+    /// Build the `app.start` attribute bag. Pure; tests drive it directly.
     /// `prewarmed` is passed in (rather than read from static state)
     /// so this function stays trivially testable.
     static func makeAttributes(
@@ -225,18 +225,20 @@ public enum PageLoadCapture {
         prewarmed: Bool,
         preSdkDurationMs: Int? = nil
     ) -> [String: AttributeValue] {
+        // Catalogue app.start (#264): process start -> first frame, so
+        // the pre-SDK time is added back; a prewarmed launch has none.
         var attrs: [String: AttributeValue] = [
-            "page_load.prewarmed": .bool(prewarmed),
-            "page_load.source": .string("displaylink")
+            "app.start.type": .string("cold"),
+            "app.start.prewarmed": .bool(prewarmed)
         ]
-        if let durationMs { attrs["page_load.duration_ms"] = .int(durationMs) }
-        if let preSdkDurationMs { attrs["launch.pre_sdk_duration_ms"] = .int(preSdkDurationMs) }
+        if let durationMs { attrs["app.start.duration_ms"] = .int(durationMs + (preSdkDurationMs ?? 0)) }
+        if let preSdkDurationMs { attrs["app.start.sdk_init_ms"] = .int(preSdkDurationMs) }
         return attrs
     }
 
     // MARK: Emission
 
-    /// Emit one `page_load` event. One-shot per process: subsequent
+    /// Emit one `app.start` event. One-shot per process: subsequent
     /// calls return without touching the Recorder. Returns `true` if
     /// the event was recorded, `false` if the guard short-circuited.
     @discardableResult
@@ -266,7 +268,7 @@ public enum PageLoadCapture {
         }
 
         recorder.recordEvent(
-            name: "page_load",
+            name: "app.start",
             attributes: makeAttributes(
                 durationMs: durationMs,
                 prewarmed: prewarmed,

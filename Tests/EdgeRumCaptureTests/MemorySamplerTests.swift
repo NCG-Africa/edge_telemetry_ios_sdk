@@ -6,7 +6,7 @@
 //     PLAN-§6.11 key present, `value` mirrors resident_kb.
 //   - pressureLevel mapping for each DispatchSource event mask.
 //   - emit() routes through Recorder.shared.recordPerformance with
-//     metricName = "memory_usage".
+//     eventName = "memory.usage".
 //   - Recorder.isEnabled = false halts emission.
 //   - readMachStats returns a plausible (non-zero) RSS on real iOS /
 //     macOS hosts.
@@ -98,26 +98,17 @@ final class MemorySamplerTests: XCTestCase {
         let attrs = MemorySampler.makeAttributes(
             rssBytes: 200 * 1024,
             vszBytes: 800 * 1024,
-            footprintBytes: 250 * 1024,
-            pressure: .normal
+            footprintBytes: 250 * 1024
         )
         XCTAssertEqual(attrs["memory.resident_kb"], .int(200))
         XCTAssertEqual(attrs["memory.virtual_kb"], .int(800))
         XCTAssertEqual(attrs["memory.footprint_kb"], .int(250))
-        XCTAssertEqual(attrs["memory.pressure"], .string("normal"))
-        XCTAssertEqual(attrs["value"], .double(200.0 / 1024.0), "F29: value is MB")
+        XCTAssertEqual(attrs["memory.usage_mb"], .double(250.0 / 1024.0), "usage is phys_footprint MB")
     }
 
-    func test_makeAttributes_pressureLevelStringMatchesWireSpec() {
-        let warn = MemorySampler.makeAttributes(
-            rssBytes: 0, vszBytes: 0, footprintBytes: 0, pressure: .warning
-        )
-        XCTAssertEqual(warn["memory.pressure"], .string("warning"))
-
-        let crit = MemorySampler.makeAttributes(
-            rssBytes: 0, vszBytes: 0, footprintBytes: 0, pressure: .critical
-        )
-        XCTAssertEqual(crit["memory.pressure"], .string("critical"))
+    func test_makeAttributes_usageFallsBackToResident() {
+        let attrs = MemorySampler.makeAttributes(rssBytes: 1_048_576, vszBytes: nil, footprintBytes: nil)
+        XCTAssertEqual(attrs["memory.usage_mb"], .double(1))
     }
 
     // MARK: pressureLevel mapping
@@ -138,29 +129,22 @@ final class MemorySamplerTests: XCTestCase {
 
     // MARK: emit() routing
 
-    func test_emit_routesToRecordPerformance() {
+    func test_emit_sendsMemoryUsageEvent() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
-        MemorySampler.emit(
-            rssBytes: 1024,
-            vszBytes: 2048,
-            footprintBytes: 4096,
-            pressure: .warning
-        )
+        MemorySampler.emit(rssBytes: 1024, vszBytes: 2048, footprintBytes: 4096)
         XCTAssertEqual(probe.calls.count, 1)
-        guard case let .performance(name, attrs) = probe.calls[0] else {
-            return XCTFail("Expected a .performance call, got \(probe.calls)")
+        guard case let .event(name, attrs) = probe.calls[0] else {
+            return XCTFail("Expected an .event call, got \(probe.calls)")
         }
-        XCTAssertEqual(name, "memory_usage")
-        XCTAssertEqual(attrs["memory.pressure"], .string("warning"))
+        XCTAssertEqual(name, "memory.usage")
+        XCTAssertEqual(attrs["memory.footprint_kb"], .int(4))
     }
 
     func test_emit_haltedWhenRecorderDisabled() {
         let probe = CaptureProbeRecorder(enabled: false)
         Recorder.installShared(probe)
-        MemorySampler.emit(
-            rssBytes: 1024, vszBytes: 0, footprintBytes: 0, pressure: .normal
-        )
+        MemorySampler.emit(rssBytes: 1024, vszBytes: 0, footprintBytes: 0)
         XCTAssertEqual(probe.calls.count, 0)
     }
 
@@ -168,11 +152,16 @@ final class MemorySamplerTests: XCTestCase {
 
     func test_makeAttributes_failedReadOmitsKeys_neverZero() {
         let attrs = MemorySampler.makeAttributes(
-            rssBytes: nil, vszBytes: nil, footprintBytes: 100 * 1024, pressure: .normal
+            rssBytes: nil, vszBytes: nil, footprintBytes: nil
         )
         XCTAssertNil(attrs["memory.resident_kb"])
         XCTAssertNil(attrs["memory.virtual_kb"])
-        XCTAssertNil(attrs["value"])
+        XCTAssertNil(attrs["memory.footprint_kb"])
+        XCTAssertNil(attrs["memory.usage_mb"])
+    }
+
+    func test_makeAttributes_partialReadKeepsTheRest() {
+        let attrs = MemorySampler.makeAttributes(rssBytes: nil, vszBytes: nil, footprintBytes: 100 * 1024)
         XCTAssertEqual(attrs["memory.footprint_kb"], .int(100))
     }
 
@@ -182,18 +171,20 @@ final class MemorySamplerTests: XCTestCase {
         XCTAssertEqual(MemorySampler.tickSeconds, 30)
     }
 
-    func test_tick_carriesLastObservedPressure_onEverySample() {
+    func test_pressureChanged_sendsMemoryPressure_warningIsCritical() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
         let driver = MemorySampler.Driver(debug: false, gate: { true })
         driver.pressureChanged(.warning)
+        driver.pressureChanged(.normal)
         driver.tick()
-        driver.tick()
-        let pressures = probe.calls.compactMap { call -> AttributeValue? in
-            guard case let .performance("memory_usage", attrs) = call else { return nil }
-            return attrs["memory.pressure"]
+        let levels = probe.calls.compactMap { call -> AttributeValue? in
+            guard case let .event("memory.pressure", attrs) = call else { return nil }
+            return attrs["memory.pressure_level"]
         }
-        XCTAssertEqual(pressures, [.string("warning"), .string("warning"), .string("warning")])
+        XCTAssertEqual(levels, [.string("critical"), .string("normal")])
+        let usage = probe.calls.filter { if case .event("memory.usage", _) = $0 { return true }; return false }
+        XCTAssertEqual(usage.count, 1, "only the tick sends memory.usage")
     }
 
     func test_tick_emitsCpuUsagePercent() {
@@ -205,7 +196,7 @@ final class MemorySamplerTests: XCTestCase {
         XCTAssertGreaterThan(x, 0)
         driver.tick()
         let cpu = probe.calls.compactMap { call -> [String: AttributeValue]? in
-            guard case let .performance("cpu_usage", attrs) = call else { return nil }
+            guard case let .performance("perf.cpu_usage", attrs) = call else { return nil }
             return attrs
         }
         XCTAssertEqual(cpu.count, 1)

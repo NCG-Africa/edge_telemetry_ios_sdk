@@ -62,7 +62,7 @@ public final class RumTimer: @unchecked Sendable {
         payload["timer.name"] = .string(name)
         payload["duration_ms"] = .int(elapsedMs)
         payload["value"] = .double(Double(elapsedMs))
-        recorder.recordPerformance(name: "custom_timer", attributes: payload)
+        recorder.recordPerformance(name: "perf.custom_timer", attributes: payload)
     }
 
     /// Discard the timer without recording anything. After calling

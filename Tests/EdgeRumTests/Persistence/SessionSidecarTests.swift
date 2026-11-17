@@ -74,7 +74,7 @@ final class SessionSidecarTests: XCTestCase {
         bag.set("app.name", .string("Shop"))
 
         // Transient keys that must NOT be mirrored.
-        bag.set("device.batteryLevel", .double(0.82))
+        bag.set("device.battery_level", .double(0.82))
         bag.set("network.type", .string("wifi"))
         bag.set("app.state", .string("active"))
 
@@ -93,7 +93,7 @@ final class SessionSidecarTests: XCTestCase {
         XCTAssertEqual(read?["app.build_number"], .string("10"))
         XCTAssertEqual(read?["app.name"], .string("Shop"))
 
-        XCTAssertNil(read?["device.batteryLevel"])
+        XCTAssertNil(read?["device.battery_level"])
         XCTAssertNil(read?["network.type"])
         XCTAssertNil(read?["sdk.platform"], "#250 R2: no longer mirrored")
     }

@@ -46,40 +46,41 @@ public final class Recorder: Recording, @unchecked Sendable {
     /// The strict set of wire `eventName`s the backend dispatcher
     /// will route. Anything outside this set is dropped on ingress
     /// (and logged when `config.debug == true`). Custom user events
-    /// from `EdgeRum.track(_:_:)` arrive here as `"custom_event"` —
+    /// from `EdgeRum.track(_:_:)` arrive here as `"custom.event"` —
     /// the original name is carried as the `event.name` attribute.
     public static let allowedEventNames: Set<String> = [
         "session.started",
         "session.finalized",
-        "app_lifecycle",
-        "page_load",
+        "app.lifecycle",
+        "app.start",
         "navigation",
+        "screen.duration",
+        "screen.load",
         "http.request",
-        "user.interaction",
-        "network_change",
+        "ui.interaction",
+        "network.change",
         "user.profile.update",
-        "custom_event",
+        "custom.event",
         "app.error",
         "app.hang",
         "app.crash",
+        "frame.summary",
+        "memory.usage",
+        "memory.pressure",
         // F36 — action lifecycle.
         "action.started",
-        "action.ended"
+        "task.complete"
     ]
 
-    /// The bounded `metricName` space (F29). `recordPerformance`
-    /// rejects anything else; host timers arrive as `custom_timer`
-    /// with the host's name in `timer.name`.
+    /// The bounded `metricName` space (F29, catalogue #264).
+    /// `recordPerformance` rejects anything else; host timers arrive as
+    /// `perf.custom_timer` with the host's name in `timer.name`.
     public static let allowedMetricNames: Set<String> = [
-        "resource_timing",
-        "long_task",
-        "frame_render_time",
-        "memory_usage",
-        "cpu_usage",
-        "custom_timer",
-        // F37 — host-gated readiness.
-        "screen_ready",
-        "launch_interactive"
+        "perf.resource_timing",
+        "perf.long_task",
+        "perf.cpu_usage",
+        "perf.custom_timer",
+        "perf.launch_interactive"
     ]
 
     /// Design-constant bound on the in-memory buffer (F32): flushes at
@@ -422,7 +423,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         // A rotation pair carries `session.rotation` on both halves.
         if let pendingFinalized {
             recordEventInternal(name: "session.finalized", attributes: pendingFinalized)
-            startedAttrs["session.rotation"] = pendingFinalized["session.rotation"]
+            startedAttrs["session.reason"] = pendingFinalized["session.reason"]
         }
         // Reset after `session.finalized` flushed, as on idle rotation,
         // so the ending session's last envelope carries its own totals.
@@ -792,13 +793,13 @@ public final class Recorder: Recording, @unchecked Sendable {
         // The prior session's identity needs to ride with the
         // `session.finalized` event since the context is about to
         // refresh to the new session before the buffer's next flush.
-        let reason = result.ended?.reason ?? "idle"
+        let reason = result.ended?.reason ?? "timeout"
         // F36 — open actions can no longer complete: closed on the
         // ending session's identity (the context has not moved yet) and
         // its sampling decision.
         for attrs in actions.abandonAll(reason: .rotation) {
-            if endingSampler.shouldEmit(eventName: "action.ended") {
-                recordEventInternal(name: "action.ended", attributes: attrs)
+            if endingSampler.shouldEmit(eventName: "task.complete") {
+                recordEventInternal(name: "task.complete", attributes: attrs)
             } else {
                 countDrop(\.droppedSampled)
             }
@@ -814,19 +815,19 @@ public final class Recorder: Recording, @unchecked Sendable {
         context.refreshSession(newSnapshot)
         writeSidecar()
 
-        recordEventInternal(name: "session.started", attributes: ["session.rotation": .string(reason)])
+        recordEventInternal(name: "session.started", attributes: ["session.reason": .string(reason)])
     }
 
     /// `session.finalized` for an ended session: its own identity
     /// (the context has moved on), `session.end_time` = its last
-    /// activity, and why it ended (`idle` / `max_duration`).
+    /// activity, and why it ended (`session.reason`: `timeout` / `max_duration`).
     private static func finalizedAttributes(_ ended: SessionState, reason: String) -> [String: AttributeValue] {
         [
             "session.id": .string(ended.id),
             "session.start_time": .string(WireDateFormatter.string(from: ended.startTime)),
             "session.sequence": .int(ended.sequence),
             "session.end_time": .string(WireDateFormatter.string(from: ended.lastActiveAt)),
-            "session.rotation": .string(reason)
+            "session.reason": .string(reason)
         ]
     }
 
@@ -865,7 +866,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     private static func isReplayed(_ name: String, _ attributes: [String: AttributeValue]) -> Bool {
         name == "app.crash"
             || (name == "app.hang" && attributes["hang.terminated"] != nil)
-            || (name == "action.ended" && attributes["action.abandon_reason"] == .string("process_death"))
+            || (name == "task.complete" && attributes["task.abandon_source"] == .string("launch_recovery"))
     }
 
     private func stampRiders(_ event: Event) -> Event {

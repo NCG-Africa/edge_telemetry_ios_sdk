@@ -163,7 +163,7 @@ final class LifecycleCaptureTests: XCTestCase {
             XCTFail("Expected event call, got \(probe.calls[0])")
             return
         }
-        XCTAssertEqual(name, "app_lifecycle")
+        XCTAssertEqual(name, "app.lifecycle")
         XCTAssertEqual(attrs["lifecycle.state"], .string("backgrounded"))
         XCTAssertEqual(attrs["lifecycle.previous_state"], .string("unknown"))
     }
@@ -290,12 +290,12 @@ final class LifecycleCaptureTests: XCTestCase {
         let eventNames = calls.compactMap { call -> String? in
             if case let .event(name, _) = call { return name } else { return nil }
         }
-        XCTAssertTrue(eventNames.contains("app_lifecycle"))
+        XCTAssertTrue(eventNames.contains("app.lifecycle"))
         XCTAssertFalse(eventNames.contains("session.finalized"))
         XCTAssertTrue(calls.contains(.flush(.immediate)))
 
         guard let lifecycle = calls.first(where: { call in
-            if case let .event(name, _) = call { return name == "app_lifecycle" }
+            if case let .event(name, _) = call { return name == "app.lifecycle" }
             return false
         }), case let .event(_, attrs) = lifecycle else {
             XCTFail("Expected an app_lifecycle event")
@@ -322,7 +322,7 @@ final class LifecycleCaptureTests: XCTestCase {
         let calls = probe.calls
         XCTAssertTrue(calls.contains { call in
             if case let .event(name, attrs) = call {
-                return name == "app_lifecycle" &&
+                return name == "app.lifecycle" &&
                     attrs["lifecycle.state"] == .string("active")
             }
             return false
@@ -347,7 +347,7 @@ final class LifecycleCaptureTests: XCTestCase {
 
         XCTAssertTrue(probe.calls.contains { call in
             if case let .event(name, attrs) = call {
-                return name == "app_lifecycle" &&
+                return name == "app.lifecycle" &&
                     attrs["lifecycle.state"] == .string("backgrounded")
             }
             return false
@@ -371,7 +371,7 @@ final class LifecycleCaptureTests: XCTestCase {
 
         XCTAssertTrue(probe.calls.contains { call in
             if case let .event(name, attrs) = call {
-                return name == "app_lifecycle" &&
+                return name == "app.lifecycle" &&
                     attrs["lifecycle.state"] == .string("foregrounded")
             }
             return false
@@ -396,13 +396,13 @@ final class LifecycleCaptureTests: XCTestCase {
         let names = probe.calls.compactMap { call -> String? in
             if case let .event(name, _) = call { return name } else { return nil }
         }
-        XCTAssertTrue(names.contains("app_lifecycle"))
+        XCTAssertTrue(names.contains("app.lifecycle"))
         XCTAssertFalse(names.contains("session.finalized"))
         XCTAssertTrue(probe.calls.contains(.flush(.immediate)))
 
         XCTAssertTrue(probe.calls.contains { call in
             if case let .event(name, attrs) = call {
-                return name == "app_lifecycle" &&
+                return name == "app.lifecycle" &&
                     attrs["lifecycle.state"] == .string("will_terminate")
             }
             return false

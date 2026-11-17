@@ -110,10 +110,10 @@ final class PageLoadCaptureTests: XCTestCase {
             prewarmed: false
         )
         XCTAssertEqual(attrs.count, 3)
-        XCTAssertEqual(attrs["page_load.duration_ms"], .int(842))
+        XCTAssertEqual(attrs["app.start.duration_ms"], .int(842))
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertEqual(attrs["page_load.prewarmed"], .bool(false))
-        XCTAssertEqual(attrs["page_load.source"], .string("displaylink"))
+        XCTAssertEqual(attrs["app.start.prewarmed"], .bool(false))
+        XCTAssertEqual(attrs["app.start.type"], .string("cold"))
     }
 
     func test_makeAttributes_prewarmed_shape() {
@@ -122,10 +122,10 @@ final class PageLoadCaptureTests: XCTestCase {
             prewarmed: true
         )
         XCTAssertEqual(attrs.count, 3)
-        XCTAssertEqual(attrs["page_load.duration_ms"], .int(41))
+        XCTAssertEqual(attrs["app.start.duration_ms"], .int(41))
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertEqual(attrs["page_load.prewarmed"], .bool(true))
-        XCTAssertEqual(attrs["page_load.source"], .string("displaylink"))
+        XCTAssertEqual(attrs["app.start.prewarmed"], .bool(true))
+        XCTAssertEqual(attrs["app.start.type"], .string("cold"))
     }
 
     func test_makeAttributes_zeroDuration_isWireValid() {
@@ -136,7 +136,7 @@ final class PageLoadCaptureTests: XCTestCase {
             durationMs: 0,
             prewarmed: true
         )
-        XCTAssertEqual(attrs["page_load.duration_ms"], .int(0))
+        XCTAssertEqual(attrs["app.start.duration_ms"], .int(0))
     }
 
     // MARK: emit routes through Recorder.shared.recordEvent
@@ -156,11 +156,11 @@ final class PageLoadCaptureTests: XCTestCase {
             XCTFail("Expected event call, got \(probe.calls[0])")
             return
         }
-        XCTAssertEqual(name, "page_load")
-        XCTAssertEqual(attrs["page_load.duration_ms"], .int(1234))
+        XCTAssertEqual(name, "app.start")
+        XCTAssertEqual(attrs["app.start.duration_ms"], .int(1234))
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertEqual(attrs["page_load.prewarmed"], .bool(false))
-        XCTAssertEqual(attrs["page_load.source"], .string("displaylink"))
+        XCTAssertEqual(attrs["app.start.prewarmed"], .bool(false))
+        XCTAssertEqual(attrs["app.start.type"], .string("cold"))
     }
 
     func test_emit_isOneShotPerProcess() {
@@ -248,7 +248,7 @@ final class PageLoadCaptureTests: XCTestCase {
             return
         }
         XCTAssertNil(attrs["page_load.cold_start"])
-        XCTAssertEqual(attrs["page_load.prewarmed"], .bool(true))
+        XCTAssertEqual(attrs["app.start.prewarmed"], .bool(true))
     }
 
     // MARK: F34 — monotonic duration, pre-SDK window
@@ -262,9 +262,9 @@ final class PageLoadCaptureTests: XCTestCase {
 
     func test_makeAttributes_nilDuration_omitsKey() {
         let attrs = PageLoadCapture.makeAttributes(durationMs: nil, prewarmed: false)
-        XCTAssertNil(attrs["page_load.duration_ms"])
-        XCTAssertNil(attrs["launch.pre_sdk_duration_ms"])
-        XCTAssertEqual(attrs["page_load.prewarmed"], .bool(false))
+        XCTAssertNil(attrs["app.start.duration_ms"])
+        XCTAssertNil(attrs["app.start.sdk_init_ms"])
+        XCTAssertEqual(attrs["app.start.prewarmed"], .bool(false))
     }
 
     func test_preSdkDuration_prewarmed_isOmitted() {
@@ -290,7 +290,7 @@ final class PageLoadCaptureTests: XCTestCase {
         Recorder.installShared(probe)
         PageLoadCapture.emit(durationMs: 10, prewarmed: false, preSdkDurationMs: 300)
         guard case let .event(_, attrs) = probe.calls.first else { return XCTFail("Expected event call") }
-        XCTAssertEqual(attrs["launch.pre_sdk_duration_ms"], .int(300))
+        XCTAssertEqual(attrs["app.start.sdk_init_ms"], .int(300))
     }
 
     func test_processStartTime_isReadableAndPrecedesLaunchStart() throws {
@@ -342,8 +342,8 @@ final class PageLoadCaptureTests: XCTestCase {
             XCTFail("Expected event call")
             return
         }
-        guard case let .int(value) = attrs["page_load.duration_ms"] else {
-            XCTFail("page_load.duration_ms must be .int(_)")
+        guard case let .int(value) = attrs["app.start.duration_ms"] else {
+            XCTFail("app.start.duration_ms must be .int(_)")
             return
         }
         XCTAssertGreaterThan(value, 0)

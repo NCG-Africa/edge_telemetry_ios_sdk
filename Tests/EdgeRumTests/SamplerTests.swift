@@ -26,7 +26,7 @@ final class SamplerTests: XCTestCase {
         XCTAssertFalse(s.included)
         XCTAssertFalse(s.shouldEmit(eventName: "navigation"))
         XCTAssertFalse(s.shouldEmit(eventName: "http.request"))
-        XCTAssertFalse(s.shouldEmit(eventName: "user.interaction"))
+        XCTAssertFalse(s.shouldEmit(eventName: "ui.interaction"))
         XCTAssertFalse(s.shouldEmit(eventName: "app.error"), "F29: handled errors are sampled")
         XCTAssertFalse(s.shouldEmit(eventName: "app.hang"), "F29: hangs are sampled")
     }
@@ -39,7 +39,7 @@ final class SamplerTests: XCTestCase {
                       "session.finalized must bypass the sampler")
         XCTAssertTrue(s.shouldEmit(eventName: "app.crash"),
                       "app.crash must bypass the sampler")
-        XCTAssertTrue(s.shouldEmit(eventName: "network_change"),
+        XCTAssertTrue(s.shouldEmit(eventName: "network.change"),
                       "network_change must bypass the sampler")
     }
 
@@ -75,7 +75,7 @@ final class SamplerTests: XCTestCase {
     func testForcedEmitAllowlistContents() {
         XCTAssertEqual(
             Sampler.forcedEmitAllowlist,
-            ["session.started", "session.finalized", "app.crash", "network_change"]
+            ["session.started", "session.finalized", "app.crash", "network.change"]
         )
     }
 

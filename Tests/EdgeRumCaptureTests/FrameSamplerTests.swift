@@ -230,24 +230,25 @@ final class FrameSamplerTests: XCTestCase {
             sampleCount: 56, windowMs: 1_000
         )
         let attrs = FrameSampler.makeAttributes(stats: stats, targetHz: 60)
-        XCTAssertEqual(attrs["frame.max_ms"], .double(33.3))
+        XCTAssertEqual(attrs["frame.total_frames"], .int(56))
+        XCTAssertEqual(attrs["frame.slow_frames"], .int(4))
+        XCTAssertEqual(attrs["frame.max_total_duration_ms"], .double(33.3))
         XCTAssertEqual(attrs["frame.p95_ms"], .double(28.1))
-        XCTAssertEqual(attrs["frame.dropped_count"], .int(4))
-        XCTAssertEqual(attrs["frame.target_hz"], .int(60))
+        XCTAssertEqual(attrs["display.refresh_rate"], .double(60))
         XCTAssertEqual(attrs["frame.source"], .string("displaylink"))
-        XCTAssertEqual(attrs["value"], .double(33.3))
     }
 
-    func test_makeAttributes_emptyWindow_omitsDroppedCount() {
-        let stats = FrameWindowAggregator.Stats(
-            maxMs: 0, p95Ms: 0, droppedCount: nil, sampleCount: 0, windowMs: 2_000)
-        XCTAssertNil(FrameSampler.makeAttributes(stats: stats, targetHz: 60)["frame.dropped_count"])
+    func test_emit_emptyWindow_sendsNothing() {
+        let probe = CaptureProbeRecorder()
+        Recorder.installShared(probe)
+        FrameSampler.emit(stats: .init(maxMs: 0, p95Ms: 0, droppedCount: nil, sampleCount: 0, windowMs: 2_000), targetHz: 60)
+        XCTAssertEqual(probe.calls.count, 0)
     }
 
     func test_makeAttributes_carriesWindowMs() {
         let stats = FrameWindowAggregator.Stats(
             maxMs: 20, p95Ms: 18, droppedCount: 0, sampleCount: 120, windowMs: 2_400)
-        XCTAssertEqual(FrameSampler.makeAttributes(stats: stats, targetHz: 60)["frame.window_ms"], .int(2_400))
+        XCTAssertEqual(FrameSampler.makeAttributes(stats: stats, targetHz: 60)["frame.window_duration_ms"], .int(2_400))
     }
 
     func test_makeAttributes_proMotion_target_hz120() {
@@ -255,14 +256,14 @@ final class FrameSamplerTests: XCTestCase {
             maxMs: 16.6, p95Ms: 16.6, droppedCount: 0, sampleCount: 120, windowMs: 1_000
         )
         let attrs = FrameSampler.makeAttributes(stats: stats, targetHz: 120)
-        XCTAssertEqual(attrs["frame.target_hz"], .int(120))
+        XCTAssertEqual(attrs["display.refresh_rate"], .double(120))
     }
     #endif
 
     // MARK: emit() routing
 
     #if canImport(UIKit) && os(iOS)
-    func test_emit_routesToRecordPerformance() {
+    func test_emit_sendsFrameSummaryEvent() {
         let probe = CaptureProbeRecorder()
         Recorder.installShared(probe)
 
@@ -272,10 +273,10 @@ final class FrameSamplerTests: XCTestCase {
         FrameSampler.emit(stats: stats, targetHz: 60)
 
         XCTAssertEqual(probe.calls.count, 1)
-        guard case let .performance(name, attrs) = probe.calls[0] else {
-            return XCTFail("Expected a .performance call, got \(probe.calls)")
+        guard case let .event(name, attrs) = probe.calls[0] else {
+            return XCTFail("Expected an .event call, got \(probe.calls)")
         }
-        XCTAssertEqual(name, "frame_render_time")
+        XCTAssertEqual(name, "frame.summary")
         XCTAssertEqual(attrs["frame.source"], .string("displaylink"))
     }
 
