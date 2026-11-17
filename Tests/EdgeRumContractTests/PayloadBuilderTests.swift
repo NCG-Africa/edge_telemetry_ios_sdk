@@ -15,9 +15,9 @@ final class PayloadBuilderContractTests: XCTestCase {
             "device.manufacturer": "Apple",
             "device.os": "ios",
             "device.id": "device_1717234876123_a1b2c3d4e5f60718_ios",
-            "device.isVirtual": false,
+            "device.is_virtual": false,
             "network.type": "wifi",
-            "network.effectiveType": "4g",
+            "network.effective_type": "4g",
             "session.id": "session_1717234870002_ff009988aabbccdd_ios",
             "session.start_time": "2026-06-14T10:25:00.002Z",
             "session.sequence": 1,
@@ -31,9 +31,9 @@ final class PayloadBuilderContractTests: XCTestCase {
         let builder = PayloadBuilder()
         let envelope = builder.build(
             events: [
-                .event(name: "navigation", timestamp: t0, attributes: ["navigation.kind": "uikit"]),
+                .event(name: "navigation", timestamp: t0, attributes: ["navigation.route_type": "uikit"]),
                 .event(name: "http.request", timestamp: t0, attributes: ["http.method": "GET", "http.status_code": 200]),
-                .metric(name: "frame_render_time", value: 18.4, timestamp: t0, attributes: ["frame.target_hz": 60])
+                .metric(name: "perf.long_task", value: 18.4, timestamp: t0, attributes: ["frame.target_hz": 60])
             ],
             context: sampleContext(),
             flushTime: t0
@@ -77,7 +77,7 @@ final class PayloadBuilderContractTests: XCTestCase {
     /// event-supplied — and the context's identity fills the envelope.
     func testIdentityIsLiftedToTheEnvelopeAndStrippedFromEvents() {
         let env = PayloadBuilder().build(
-            events: [.event(name: "custom_event", timestamp: t0, attributes: [
+            events: [.event(name: "custom.event", timestamp: t0, attributes: [
                 "app.name": "Evil", "app.version": "0", "app.environment": "prod",
                 "sdk.version": "0", "sdk.platform": "ios-native", "device.id": "x",
                 "app.state": "active"

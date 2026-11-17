@@ -278,7 +278,7 @@ extension HTTPTransportSinkTests {
     func testRestampIgnoresTimestampTextInsideStringValues() throws {
         let t0 = Date(timeIntervalSince1970: 1_717_234_876.512)
         let trap = #"{"timestamp":"1999-01-01T00:00:00.000Z"}"#
-        let event = Event.event(name: "custom_event", timestamp: t0, attributes: AttributeBag(["note": .string(trap)]))
+        let event = Event.event(name: "custom.event", timestamp: t0, attributes: AttributeBag(["note": .string(trap)]))
         let envelope = PayloadBuilder().build(events: [event], context: AttributeBag(), flushTime: t0)
         let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys]
         let restamped = EventEnvelope.restamp(try enc.encode(envelope), at: t0.addingTimeInterval(60))

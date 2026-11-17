@@ -32,7 +32,7 @@ internal enum SwiftUIEmitter {
     ///
     /// Attribute precedence: caller-supplied attributes are applied
     /// first (minus reserved SDK prefixes), then SDK-owned keys
-    /// (`navigation.screen`, `navigation.kind`) overwrite.
+    /// (`navigation.*`) overwrite.
     internal static func emitScreenAppear(
         name: String,
         attributes: [String: AttributeValue]?,
@@ -40,12 +40,12 @@ internal enum SwiftUIEmitter {
         riders: Riders = .shared
     ) {
         // Box first, so this event's `screen.name` is the screen entered.
-        riders.enterScreen(name)
+        let edge = riders.navigate(to: name, method: "unknown")
         FrameSampler.noteMotion()  // F30: screen transition
         var payload = HostAttributes.sanitize(attributes, debug: recorder.debug)
         // SDK-owned keys win on conflict — apply last.
-        payload["navigation.screen"] = .string(name)
-        payload["navigation.kind"] = .string("swiftui")
+        payload.merge(edge) { _, sdk in sdk }
+        payload["navigation.route_type"] = .string("swiftui")
         recorder.recordEvent(name: "navigation", attributes: payload)
     }
 
@@ -70,10 +70,10 @@ internal enum SwiftUIEmitter {
     ) {
         var payload = HostAttributes.sanitize(attributes, debug: recorder.debug)
         // SDK-owned keys win on conflict — apply last.
-        payload["interaction.kind"] = .string("tap")
-        payload["interaction.name"] = .string(name)
-        payload["interaction.name_source"] = .string("host")
-        recorder.recordEvent(name: "user.interaction", attributes: payload)
+        payload["ui.type"] = .string("tap")
+        payload["ui.target"] = .string(name)
+        payload["ui.name_source"] = .string("host")
+        recorder.recordEvent(name: "ui.interaction", attributes: payload)
     }
 }
 

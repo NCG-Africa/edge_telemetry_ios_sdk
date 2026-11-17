@@ -28,7 +28,7 @@ final class HangWireConformanceTests: XCTestCase {
             "hang.duration_ms": .double(5_240),
             "hang.threshold_ms": .double(5_000),
             "hang.cpu_usage": .double(83.0),
-            "hang.stack": .string(
+            "error.stacktrace": .string(
                 "EdgeRumCrashSampleApp +0x1a2b8 -[ViewController hangButtonTapped:]\n" +
                 "EdgeRumCrashSampleApp +0x4f10 main"
             ),
@@ -91,7 +91,7 @@ final class HangWireConformanceTests: XCTestCase {
                                     "hang.duration_ms must meet or exceed threshold")
         XCTAssertEqual(evAttrs["hang.cpu_usage"] as? Double, 83.0)
 
-        let stack = try XCTUnwrap(evAttrs["hang.stack"] as? String)
+        let stack = try XCTUnwrap(evAttrs["error.stacktrace"] as? String)
         XCTAssertFalse(stack.isEmpty,
                        "T15.2 acceptance: hang.stack must be non-empty")
         XCTAssertEqual(evAttrs["hang.stack.truncated"] as? Int, 12)

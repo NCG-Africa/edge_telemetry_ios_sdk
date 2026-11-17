@@ -70,7 +70,7 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: [],
             timestamp: referenceTimestamp
         )
-        guard case let .string(stack) = attrs["hang.stack"] else {
+        guard case let .string(stack) = attrs["error.stacktrace"] else {
             return XCTFail("hang.stack must be set with a string value")
         }
         XCTAssertEqual(stack, HangEventEncoder.unavailableFrame)
@@ -90,7 +90,7 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: bigStack,
             timestamp: referenceTimestamp
         )
-        guard case let .string(stack) = attrs["hang.stack"] else {
+        guard case let .string(stack) = attrs["error.stacktrace"] else {
             return XCTFail("hang.stack must be set with a string value")
         }
         let lines = stack.components(separatedBy: "\n")
@@ -113,7 +113,7 @@ final class HangEventEncoderTests: XCTestCase {
             stackFrames: [StackFrame(text: "0x1234")],
             timestamp: referenceTimestamp
         )
-        XCTAssertEqual(attrs["hang.stack"], .string("0x1234"))
+        XCTAssertEqual(attrs["error.stacktrace"], .string("0x1234"))
         XCTAssertNil(attrs["hang.stack.truncated"])
         XCTAssertNil(attrs["hang.binary_images"])
     }

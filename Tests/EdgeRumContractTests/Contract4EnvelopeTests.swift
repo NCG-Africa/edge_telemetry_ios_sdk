@@ -47,7 +47,7 @@ final class Contract4EnvelopeTests: XCTestCase {
         _ sink: RecordingTransportSink,
         attributes: [String: AttributeValue] = ["event.name": "checkout"]
     ) throws -> [String: Any] {
-        recorder.recordEvent(name: "custom_event", attributes: attributes)
+        recorder.recordEvent(name: "custom.event", attributes: attributes)
         recorder.flush(reason: .manual)
         return try json(XCTUnwrap(sink.envelopes.last))
     }
@@ -122,7 +122,7 @@ final class Contract4EnvelopeTests: XCTestCase {
                 XCTAssertFalse(Self.isIdentityKey(key), "event \(event["eventName"] ?? "?") carries \(key)")
             }
         }
-        let custom = try XCTUnwrap(events.first { $0["eventName"] as? String == "custom_event" })
+        let custom = try XCTUnwrap(events.first { $0["eventName"] as? String == "custom.event" })
         let attrs = try XCTUnwrap(custom["attributes"] as? [String: Any])
         XCTAssertEqual(attrs["event.name"] as? String, "checkout")
         XCTAssertNotNil(attrs["session.id"], "non-identity context still rides each event")
@@ -138,7 +138,7 @@ final class Contract4EnvelopeTests: XCTestCase {
             "app.background_refresh": "available"
         ])
         let events = try XCTUnwrap(root["events"] as? [[String: Any]])
-        let custom = try XCTUnwrap(events.first { $0["eventName"] as? String == "custom_event" })
+        let custom = try XCTUnwrap(events.first { $0["eventName"] as? String == "custom.event" })
         let attrs = try XCTUnwrap(custom["attributes"] as? [String: Any])
         XCTAssertEqual(attrs["app.state"] as? String, "active")
         XCTAssertEqual(attrs["app.background_refresh"] as? String, "available")
@@ -160,9 +160,9 @@ final class Contract4EnvelopeTests: XCTestCase {
 
     func testHealthIsOneLastEventCountedInBatchSizeAndStampedAtFlush() throws {
         let (recorder, sink, clock) = makeRecorder()
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": "a"])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": "a"])
         clock.advance(by: 2.0)
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": "b"])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": "b"])
         clock.advance(by: 3.0)
         recorder.flush(reason: .manual)
         let root = try json(XCTUnwrap(sink.envelopes.last))

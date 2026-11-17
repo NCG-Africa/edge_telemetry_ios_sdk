@@ -96,13 +96,13 @@ final class ContextObserversTests: XCTestCase {
         let p = makeProvider()
         // Pre-install: nothing populated.
         let preBag = p.snapshot()
-        XCTAssertNil(preBag["device.thermal_state"])
+        XCTAssertNil(preBag["device.thermal_status"])
 
         ContextObservers.install(provider: p)
 
         let bag = p.snapshot()
         // Power should always seed thermal state on iOS/macOS.
-        XCTAssertNotNil(bag["device.thermal_state"])
+        XCTAssertNotNil(bag["device.thermal_status"])
         // #254: disk space is never read (E174.1).
         XCTAssertNil(bag["device.disk_total_mb"])
     }

@@ -38,14 +38,14 @@ final class ContextProviderTests: XCTestCase {
         XCTAssertEqual(bag["device.os"], .string("ios"))
         XCTAssertEqual(bag["device.platform_version"], .string("17.4.1"))
         XCTAssertEqual(bag["device.model"], .string("iPhone15,3"))
-        XCTAssertEqual(bag["device.isVirtual"], .bool(false))
-        XCTAssertEqual(bag["device.screenWidth"], .int(1290))
-        XCTAssertEqual(bag["device.screenHeight"], .int(2796))
-        XCTAssertEqual(bag["device.pixelRatio"], .double(3.0))
+        XCTAssertEqual(bag["device.is_virtual"], .bool(false))
+        XCTAssertEqual(bag["device.screen_width_px"], .int(1290))
+        XCTAssertEqual(bag["device.screen_height_px"], .int(2796))
+        XCTAssertEqual(bag["device.screen_density"], .double(3.0))
         XCTAssertEqual(bag["device.id"], .string("device_1_aaaaaaaaaaaaaaaa_ios"))
         // network.*
         XCTAssertEqual(bag["network.type"], .string("wifi"))
-        XCTAssertEqual(bag["network.effectiveType"], .string("wifi"))
+        XCTAssertEqual(bag["network.effective_type"], .string("wifi"))
         // session.*
         XCTAssertEqual(bag["session.id"], .string("session_1_bbbbbbbbbbbbbbbb_ios"))
         XCTAssertEqual(bag["session.sequence"], .int(0))
@@ -70,7 +70,7 @@ final class ContextProviderTests: XCTestCase {
         let bag = p.snapshot()
         XCTAssertNil(bag["app.name"])
         XCTAssertNil(bag["app.version"])
-        XCTAssertNil(bag["device.batteryLevel"])
+        XCTAssertNil(bag["device.battery_level"])
     }
 
     // MARK: Refresh hooks
@@ -91,7 +91,7 @@ final class ContextProviderTests: XCTestCase {
         p.refreshNetwork(NetworkContext(type: .cellular, effectiveType: "cellular"))
         let bag = p.snapshot()
         XCTAssertEqual(bag["network.type"], .string("cellular"))
-        XCTAssertEqual(bag["network.effectiveType"], .string("cellular"))
+        XCTAssertEqual(bag["network.effective_type"], .string("cellular"))
     }
 
     func testRefreshSessionReplacesSessionKeys() {
@@ -130,8 +130,8 @@ final class ContextProviderTests: XCTestCase {
         )
         let bag = p.snapshot()
         // power.*
-        XCTAssertEqual(bag["device.thermal_state"], .string("fair"))
-        XCTAssertEqual(bag["device.low_power_mode"], .bool(true))
+        XCTAssertEqual(bag["device.thermal_status"], .string("fair"))
+        XCTAssertEqual(bag["device.power_save"], .bool(true))
         // accessibility.*
         XCTAssertEqual(bag["device.dynamic_type"], .string("AX1"))
         XCTAssertEqual(bag["device.reduce_motion"], .bool(true))
@@ -144,11 +144,11 @@ final class ContextProviderTests: XCTestCase {
 
     func testRefreshPowerReplacesPowerKeys() {
         let p = makeProvider()
-        XCTAssertNil(p.snapshot()["device.thermal_state"])
+        XCTAssertNil(p.snapshot()["device.thermal_status"])
         p.refreshPower(PowerContext(thermalState: "critical", lowPowerMode: true))
         let bag = p.snapshot()
-        XCTAssertEqual(bag["device.thermal_state"], .string("critical"))
-        XCTAssertEqual(bag["device.low_power_mode"], .bool(true))
+        XCTAssertEqual(bag["device.thermal_status"], .string("critical"))
+        XCTAssertEqual(bag["device.power_save"], .bool(true))
     }
 
     func testRefreshAccessibilityReplacesAccessibilityKeys() {

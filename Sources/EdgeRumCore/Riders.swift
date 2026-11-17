@@ -22,7 +22,7 @@
 //
 // F37 — beside the box sits the screen-ready token (screen + appear
 // time): set on each appear, consumed by the first `markScreenReady()`
-// (`screen_ready`, `ready`). `disappearScreen` drops a pending token of
+// (`screen.load`, outcome `settled`). `disappearScreen` drops a pending token of
 // that screen — as `abandoned` if it was marked earlier in this process
 // (ADR-028). Another screen's appear replaces it silently.
 //
@@ -68,18 +68,26 @@ public final class Riders: @unchecked Sendable {
     // ponytail: grows with distinct screen names this process — the
     // 128 B-capped names a host's screens produce, not user input.
     private var marked: Set<String> = []
+    /// When `lastEntered` was entered: the open screen visit (#264).
+    private var enteredAt: Date?
     private let clock: Clock
     private let emitReady: @Sendable ([String: AttributeValue]) -> Void
+    private let emitVisit: @Sendable ([String: AttributeValue]) -> Void
 
-    /// `emitReady` receives each `screen_ready` row, outside the lock.
+    /// `emitReady` receives each `screen.load` row and `emitVisit` each
+    /// `screen.duration` row, outside the lock.
     public init(
         clock: Clock = SystemClock(),
         emitReady: @escaping @Sendable ([String: AttributeValue]) -> Void = {
-            Recorder.shared.recordPerformance(name: "screen_ready", attributes: $0)
+            Recorder.shared.recordEvent(name: "screen.load", attributes: $0)
+        },
+        emitVisit: @escaping @Sendable ([String: AttributeValue]) -> Void = {
+            Recorder.shared.recordEvent(name: "screen.duration", attributes: $0)
         }
     ) {
         self.clock = clock
         self.emitReady = emitReady
+        self.emitVisit = emitVisit
     }
 
     deinit { lockPtr.deallocate() }
@@ -94,18 +102,60 @@ public final class Riders: @unchecked Sendable {
     /// last entered before this one (the `navigation` from-edge).
     @discardableResult
     public func enterScreen(_ name: String) -> String? {
+        enter(name, method: "unknown")?.from
+    }
+
+    /// A screen entry (#264, processor #31): the `navigation` keys —
+    /// `navigation.to_screen`, `navigation.from_screen` (the screen last
+    /// entered) and `navigation.method` (`initial` for the first screen,
+    /// else `method`). Entering a different screen ends the open visit,
+    /// sent as `screen.duration` with `screen.exit_method = method`.
+    /// Empty when `name` is empty.
+    @discardableResult
+    public func navigate(to name: String, method: String) -> [String: AttributeValue] {
+        guard let edge = enter(name, method: method) else { return [:] }
+        var attrs: [String: AttributeValue] = [
+            "navigation.to_screen": .string(edge.to),
+            "navigation.method": .string(edge.from == nil ? "initial" : method)
+        ]
+        if let from = edge.from { attrs["navigation.from_screen"] = .string(from) }
+        return attrs
+    }
+
+    private func enter(_ name: String, method: String) -> (to: String, from: String?)? {
         guard !name.isEmpty else { return nil }
         let screen = Self.cap(name)
-        lock(); defer { unlock() }
+        lock()
+        let now = clock.now
         // A re-fired appear of the same screen keeps its anchor.
-        if pending?.screen != screen { pending = (screen, clock.now) }
+        if pending?.screen != screen { pending = (screen, now) }
         let previous = lastEntered
+        var visit: [String: AttributeValue]?
+        if previous != screen.name {
+            if let previous, let since = enteredAt {
+                visit = Self.visitRow(previous, from: since, to: now, exitMethod: method)
+            }
+            enteredAt = now
+        }
         lastEntered = screen.name
-        guard screen != current else { return previous }
-        replaced = current
-        current = screen
-        schedulePersistLocked()
-        return previous
+        if screen != current {
+            replaced = current
+            current = screen
+            schedulePersistLocked()
+        }
+        unlock()
+        // Outside the lock: the Recorder's enqueue reads this box.
+        if let visit { emitVisit(visit) }
+        return (screen.name, previous)
+    }
+
+    private static func visitRow(_ name: String, from: Date, to: Date, exitMethod: String) -> [String: AttributeValue] {
+        [
+            "screen.name": .string(name),
+            "screen.duration_ms": .int(Int((max(0, to.timeIntervalSince(from)) * 1000).rounded())),
+            "screen.exit_method": .string(exitMethod),
+            "span.start_time": .string(WireDateFormatter.string(from: from))
+        ]
     }
 
     /// `name` is going away (sheet dismissed, view popped). Restores the
@@ -158,7 +208,7 @@ public final class Riders: @unchecked Sendable {
         marked.insert(token.screen.name)
         let now = clock.now
         unlock()
-        emitReady(Self.readyRow(token.screen, from: token.at, to: now, outcome: "ready"))
+        emitReady(Self.readyRow(token.screen, from: token.at, to: now, outcome: "settled"))
         return true
     }
 
@@ -183,8 +233,9 @@ public final class Riders: @unchecked Sendable {
     private static func readyRow(_ screen: Screen, from: Date, to: Date, outcome: String) -> [String: AttributeValue] {
         var row: [String: AttributeValue] = [
             "screen.name": .string(screen.name),
-            "screen.ready_outcome": .string(outcome),
-            "value": .double((to.timeIntervalSince(from) * 1000).rounded())
+            "screen.load.outcome": .string(outcome),
+            "screen.load.settled_ms": .int(Int((to.timeIntervalSince(from) * 1000).rounded())),
+            "screen.load.source": .string("reported")
         ]
         if screen.truncated > 0 { row["screen.name.truncated"] = .int(screen.truncated) }
         return row
@@ -265,6 +316,7 @@ public final class Riders: @unchecked Sendable {
         current = nil
         replaced = nil
         lastEntered = nil
+        enteredAt = nil
         orientation = nil
         appState = nil
         actionId = nil

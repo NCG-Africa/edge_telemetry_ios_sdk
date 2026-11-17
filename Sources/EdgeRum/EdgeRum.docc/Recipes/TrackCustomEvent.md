@@ -7,7 +7,7 @@ Emit an arbitrarily-named event from anywhere in the host app.
 Use ``EdgeRum/track(_:attributes:)`` to record an event that doesn't
 fit one of the auto-captured shapes — funnel steps, A/B-test bucket
 assignments, business-domain events. The name travels on the wire as
-the `event.name` attribute under the `custom_event` channel.
+the `event.name` attribute under the `custom.event` channel.
 
 ```swift
 import EdgeRum
@@ -34,6 +34,6 @@ prefer `"cart.size"` over a `"cart"` map of further keys.
 ## Naming conventions
 
 Pick stable, snake-case names. The backend dispatcher routes the
-event through the `custom_event` channel regardless of the name, but
+event through the `custom.event` channel regardless of the name, but
 dashboards group by the literal string you supply — drift across
 releases turns one funnel step into two separate metrics.

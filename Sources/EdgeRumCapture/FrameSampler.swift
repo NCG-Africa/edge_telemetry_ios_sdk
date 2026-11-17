@@ -9,20 +9,21 @@
 // closes `idleCloseSeconds` after the last motion or at the
 // `hardCapSeconds` cap, whichever is first; the link is paused otherwise,
 // so static content never pins the panel at max refresh. Each window
-// emits one `frame_render_time` carrying `frame.max_ms`, `frame.p95_ms`,
-// `frame.dropped_count`, `frame.target_hz`, `frame.sample_count`,
-// `frame.window_ms`, `frame.source = "displaylink"` (PLAN-iOS.md §6.10).
+// with frames emits one `frame.summary` event (catalogue #264):
+// `frame.total_frames`, `frame.slow_frames`, `frame.max_total_duration_ms`,
+// `frame.p95_ms`, `frame.window_duration_ms`, `display.refresh_rate`,
+// `frame.source = "displaylink"`.
 //
-// F33 — `frame.dropped_count` is observed, not inferred: per callback
-// `round(Δtimestamp / (targetTimestamp − timestamp)) − 1`, against the
-// refresh interval actually running, so a ProMotion ramp-down is not a
-// drop. A window with no frame deltas omits the key.
+// F33 — `frame.slow_frames` counts skipped frames, observed not inferred:
+// per callback `round(Δtimestamp / (targetTimestamp − timestamp)) − 1`,
+// against the refresh interval actually running, so a ProMotion
+// ramp-down is not a drop. A window with no frame deltas is not sent.
 //
 // iOS version paths:
 //   - iOS 14: `preferredFramesPerSecond = 0` so UIKit uses the device's
-//     native refresh; `frame.target_hz` reports `60` (non-ProMotion).
+//     native refresh; `display.refresh_rate` reports `60` (non-ProMotion).
 //   - iOS 15+: `preferredFrameRateRange` is used so ProMotion devices
-//     drive 120 Hz; `frame.target_hz` reports the range's `maximum`.
+//     drive 120 Hz; `display.refresh_rate` reports the range's `maximum`.
 //
 // Gate: a window opens only while `SamplingGate` is open and the SDK is
 // enabled. Resigning active, a low-power or thermal change that closes
@@ -70,7 +71,7 @@ public struct FrameWindowAggregator: Sendable {
         /// Observed drops; `nil` for an empty window (key omitted).
         public let droppedCount: Int?
         public let sampleCount: Int
-        /// Window length (ms) — `frame.window_ms`.
+        /// Window length (ms) — `frame.window_duration_ms`.
         public let windowMs: Int
     }
 
@@ -79,7 +80,7 @@ public struct FrameWindowAggregator: Sendable {
     /// A window never runs longer than this.
     public static let hardCapSeconds: Double = 10.0
 
-    /// Native target refresh rate (Hz) — `frame.target_hz` context.
+    /// Native target refresh rate (Hz) — `display.refresh_rate`.
     public let targetHz: Int
 
     private var samples: [Double] = []
@@ -205,7 +206,7 @@ public enum FrameSampler {
 
     #if canImport(UIKit) && os(iOS)
 
-    /// Resolved target Hz for the host display. Returned as `frame.target_hz`.
+    /// Resolved target Hz for the host display. Sent as `display.refresh_rate`.
     /// Exposed `internal` so the test target can assert the resolution path.
     static func resolveTargetHz() -> Int {
         #if DEBUG
@@ -224,33 +225,26 @@ public enum FrameSampler {
     /// Public seam — assemble the metric attribute bag from a window's
     /// `Stats`. Pure; tests drive it directly.
     static func makeAttributes(stats: FrameWindowAggregator.Stats, targetHz: Int) -> [String: AttributeValue] {
-        var attrs: [String: AttributeValue] = [
-            "frame.max_ms": .double(stats.maxMs),
+        // Catalogue frame.summary (#264). Slow = frames skipped at the
+        // live refresh interval; frozen is not counted.
+        [
+            "frame.total_frames": .int(stats.sampleCount),
+            "frame.slow_frames": .int(stats.droppedCount ?? 0),
+            "frame.max_total_duration_ms": .double(stats.maxMs),
             "frame.p95_ms": .double(stats.p95Ms),
-            "frame.target_hz": .int(targetHz),
+            "frame.window_duration_ms": .int(stats.windowMs),
             "frame.source": .string("displaylink"),
-            // The Recorder's value-extraction path pulls `value` off
-            // the bag and stamps it on the metric envelope. We carry
-            // `max_ms` as the headline scalar — it surfaces the worst
-            // single frame of the window so a downstream dashboard can
-            // sort by it without parsing the attribute bag.
-            "value": .double(stats.maxMs)
+            "display.refresh_rate": .double(Double(targetHz))
         ]
-        if let dropped = stats.droppedCount {
-            attrs["frame.dropped_count"] = .int(dropped)
-        }
-        attrs["frame.sample_count"] = .int(stats.sampleCount)
-        attrs["frame.window_ms"] = .int(stats.windowMs)
-        return attrs
     }
 
-    /// Public seam — emit a frame_render_time metric for `stats`.
+    /// Emit one `frame.summary` for `stats`; an empty window sends nothing.
     /// Called by the runtime display-link driver and by tests.
     static func emit(stats: FrameWindowAggregator.Stats, targetHz: Int) {
         let recorder = Recorder.shared
-        guard recorder.isEnabled else { return }
-        recorder.recordPerformance(
-            name: "frame_render_time",
+        guard stats.sampleCount > 0, recorder.isEnabled else { return }
+        recorder.recordEvent(
+            name: "frame.summary",
             attributes: makeAttributes(stats: stats, targetHz: targetHz)
         )
     }

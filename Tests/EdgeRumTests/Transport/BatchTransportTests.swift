@@ -131,7 +131,7 @@ final class BatchTransportTests: XCTestCase {
         var events: [Event] = []
         for i in 0..<30 {
             events.append(.event(
-                name: "custom_event",
+                name: "custom.event",
                 timestamp: Date(),
                 attributes: AttributeBag(["i": .int(i)])
             ))

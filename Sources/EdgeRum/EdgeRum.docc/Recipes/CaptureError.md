@@ -9,7 +9,7 @@ Use ``EdgeRum/captureError(_:type:context:)`` to record an
 the error's type (`error.class`), domain (for `NSError`), code, and
 `localizedDescription` automatically; the call-site stack is
 snapshotted synchronously before the queue handoff so the frames in
-`error.stack` match the throw site. Frames read
+`error.stacktrace` match the throw site. Frames read
 `image +0x<offset> <hint>`, with the referenced images listed in
 `error.binary_images`.
 

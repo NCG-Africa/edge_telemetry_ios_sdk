@@ -6,14 +6,14 @@
 //   - base-class swizzle landing on UIWindow (the IMP for the base
 //     differs from a subclass override's IMP)
 //   - decideEmission for a UIButton with accessibilityIdentifier
-//     (T9.1 acceptance) — interaction.kind / target / name
+//     (T9.1 acceptance) — ui.type / target / name
 //   - F27: button title is default-off — an un-annotated button emits
-//     name_source = none and no interaction.name; opt-in falls back to
+//     name_source = none and no ui.target; opt-in falls back to
 //     UIButton.currentTitle with name_source = button_title
-//   - interaction.name omitted when neither a11y id nor button title exists
+//   - ui.target omitted when neither a11y id nor button title exists
 //   - UITableViewCell / UICollectionViewCell target resolution
 //   - UIControl wins over an enclosing cell in the chain
-//   - reflected class name in interaction.target
+//   - reflected class name in ui.view_class
 //   - secure text field as the hit view is skipped (T9.2 acceptance)
 //   - secure text field reached via the responder chain is skipped
 //     (T9.2 acceptance — full chain)
@@ -251,17 +251,17 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag for a non-secure button tap")
         }
-        XCTAssertEqual(attrs["interaction.kind"], .string("tap"))
-        XCTAssertEqual(attrs["interaction.name"], .string("checkout"))
-        XCTAssertEqual(attrs["interaction.name_source"], .string("accessibility_identifier"))
+        XCTAssertEqual(attrs["ui.type"], .string("tap"))
+        XCTAssertEqual(attrs["ui.target"], .string("checkout"))
+        XCTAssertEqual(attrs["ui.name_source"], .string("accessibility_identifier"))
         XCTAssertNil(attrs["interaction.screen"], "F29: replaced by the screen.name rider")
-        if case let .string(target) = attrs["interaction.target"] {
+        if case let .string(target) = attrs["ui.view_class"] {
             XCTAssertTrue(
                 target.contains("UIButton"),
                 "expected target to contain 'UIButton', got \(target)"
             )
         } else {
-            XCTFail("interaction.target must be a string")
+            XCTFail("ui.view_class must be a string")
         }
     }
 
@@ -274,8 +274,8 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        XCTAssertNil(attrs["interaction.name"], "rendered button text must not ship by default")
-        XCTAssertEqual(attrs["interaction.name_source"], .string("none"))
+        XCTAssertNil(attrs["ui.target"], "rendered button text must not ship by default")
+        XCTAssertEqual(attrs["ui.name_source"], .string("none"))
     }
 
     func test_decideEmission_buttonTitleOptIn_fallsBackToCurrentTitle() {
@@ -288,8 +288,8 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        XCTAssertEqual(attrs["interaction.name"], .string("Buy"))
-        XCTAssertEqual(attrs["interaction.name_source"], .string("button_title"))
+        XCTAssertEqual(attrs["ui.target"], .string("Buy"))
+        XCTAssertEqual(attrs["ui.name_source"], .string("button_title"))
     }
 
     func test_decideEmission_omitsTargetIdWhenNoIdOrTitle() {
@@ -299,8 +299,8 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag for a plain view tap")
         }
-        XCTAssertNil(attrs["interaction.name"])
-        XCTAssertEqual(attrs["interaction.name_source"], .string("none"))
+        XCTAssertNil(attrs["ui.target"])
+        XCTAssertEqual(attrs["ui.name_source"], .string("none"))
     }
 
     func test_decideEmission_resolvesCellTargetForChildView() {
@@ -313,13 +313,13 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        if case let .string(target) = attrs["interaction.target"] {
+        if case let .string(target) = attrs["ui.view_class"] {
             XCTAssertTrue(
                 target.contains("UITableViewCell"),
                 "expected target to contain 'UITableViewCell', got \(target)"
             )
         } else {
-            XCTFail("interaction.target must be a string")
+            XCTFail("ui.view_class must be a string")
         }
     }
 
@@ -333,13 +333,13 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        if case let .string(target) = attrs["interaction.target"] {
+        if case let .string(target) = attrs["ui.view_class"] {
             XCTAssertTrue(
                 target.contains("UICollectionViewCell"),
                 "expected target to contain 'UICollectionViewCell', got \(target)"
             )
         } else {
-            XCTFail("interaction.target must be a string")
+            XCTFail("ui.view_class must be a string")
         }
     }
 
@@ -357,14 +357,14 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        XCTAssertEqual(attrs["interaction.name"], .string("subscribe"))
-        if case let .string(target) = attrs["interaction.target"] {
+        XCTAssertEqual(attrs["ui.target"], .string("subscribe"))
+        if case let .string(target) = attrs["ui.view_class"] {
             XCTAssertTrue(
                 target.contains("UIButton"),
                 "expected target to contain 'UIButton', got \(target)"
             )
         } else {
-            XCTFail("interaction.target must be a string")
+            XCTFail("ui.view_class must be a string")
         }
     }
 
@@ -377,13 +377,13 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected an attribute bag")
         }
-        if case let .string(target) = attrs["interaction.target"] {
+        if case let .string(target) = attrs["ui.view_class"] {
             XCTAssertTrue(
                 target.contains("TestCheckoutButton"),
                 "expected target to contain 'TestCheckoutButton', got \(target)"
             )
         } else {
-            XCTFail("interaction.target must be a string")
+            XCTFail("ui.view_class must be a string")
         }
     }
 
@@ -409,7 +409,7 @@ final class InteractionCaptureTests: XCTestCase {
         ) else {
             return XCTFail("Expected a non-secure text field to emit")
         }
-        XCTAssertEqual(attrs["interaction.name"], .string("email"))
+        XCTAssertEqual(attrs["ui.target"], .string("email"))
     }
 
     func test_decideEmission_secureFieldReachedViaResponderChainIsSkipped() {
@@ -474,8 +474,8 @@ final class InteractionCaptureTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.0, "user.interaction")
-        XCTAssertEqual(events.first?.1["interaction.name"], .string("checkout"))
+        XCTAssertEqual(events.first?.0, "ui.interaction")
+        XCTAssertEqual(events.first?.1["ui.target"], .string("checkout"))
     }
 
     func test_handleSendEvent_beganOnlyIsIgnored() {
@@ -573,7 +573,7 @@ final class InteractionCaptureTests: XCTestCase {
         }
         XCTAssertEqual(events.count, 2)
         let ids = Set(events.compactMap { attrs -> String? in
-            if case let .string(s) = attrs["interaction.name"] { return s }
+            if case let .string(s) = attrs["ui.target"] { return s }
             return nil
         })
         XCTAssertEqual(ids, ["left", "right"])
@@ -599,7 +599,7 @@ final class InteractionCaptureTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?["interaction.name"], .string("only-this-one"))
+        XCTAssertEqual(events.first?["ui.target"], .string("only-this-one"))
     }
 
     func test_handleSendEvent_screenSourcedFromNavigationState() {

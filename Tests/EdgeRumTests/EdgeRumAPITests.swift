@@ -137,12 +137,12 @@ final class EdgeRumAPITests: XCTestCase {
         }
         XCTAssertEqual(events.count, 1)
         // The wire `eventName` for custom track() calls is always
-        // `"custom_event"`; the user-supplied name carries as the
+        // `"custom.event"`; the user-supplied name carries as the
         // `event.name` attribute. F3 enforces this strict allowlist
         // mapping at the EdgeRum.track call site so the Recorder's
         // `allowedEventNames` set never has to accept arbitrary
         // strings.
-        XCTAssertEqual(events.first?.0, "custom_event")
+        XCTAssertEqual(events.first?.0, "custom.event")
         XCTAssertEqual(events.first?.1["event.name"], .string("checkout_started"))
         XCTAssertEqual(events.first?.1["cart.size"], .int(3))
     }
@@ -157,8 +157,8 @@ final class EdgeRumAPITests: XCTestCase {
         }
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.0, "navigation")
-        XCTAssertEqual(events.first?.1["navigation.screen"], .string("Home"))
-        XCTAssertEqual(events.first?.1["navigation.kind"], .string("manual"))
+        XCTAssertEqual(events.first?.1["navigation.to_screen"], .string("Home"))
+        XCTAssertEqual(events.first?.1["navigation.route_type"], .string("manual"))
         XCTAssertNil(events.first?.1["navigation.name"], "F29: renamed")
         XCTAssertEqual(events.first?.1["funnel.step"], .int(1))
     }
@@ -173,7 +173,7 @@ final class EdgeRumAPITests: XCTestCase {
         ])
 
         let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
-            if case let .event("custom_event", attributes) = call { return attributes }
+            if case let .event("custom.event", attributes) = call { return attributes }
             return nil
         }.first
         XCTAssertNil(attrs?["device.model"])
@@ -185,12 +185,12 @@ final class EdgeRumAPITests: XCTestCase {
 
     func testTrackScreenDropsHostKeysUnderReservedPrefixes() {
         EdgeRum.start(Self.validConfig())
-        EdgeRum.trackScreen("Home", attributes: ["navigation.kind": "Forged", "app.name": "x"])
+        EdgeRum.trackScreen("Home", attributes: ["navigation.route_type": "Forged", "app.name": "x"])
         let attrs = probe.calls.compactMap { call -> [String: AttributeValue]? in
             if case let .event("navigation", attributes) = call { return attributes }
             return nil
         }.first
-        XCTAssertEqual(attrs?["navigation.kind"], .string("manual"))
+        XCTAssertEqual(attrs?["navigation.route_type"], .string("manual"))
         XCTAssertNil(attrs?["app.name"])
         XCTAssertEqual(attrs?["host_attributes.dropped"], .int(2))
     }
@@ -244,7 +244,7 @@ final class EdgeRumAPITests: XCTestCase {
             return nil
         }
         XCTAssertEqual(perfs.count, 1)
-        XCTAssertEqual(perfs.first?.0, "custom_timer", "F29: bounded metric name")
+        XCTAssertEqual(perfs.first?.0, "perf.custom_timer", "F29: bounded metric name")
         XCTAssertEqual(perfs.first?.1["timer.name"], .string("checkout.submit"))
         XCTAssertEqual(perfs.first?.1["payment.method"], .string("card"))
         XCTAssertNotNil(perfs.first?.1["duration_ms"])
@@ -300,13 +300,13 @@ final class EdgeRumAPITests: XCTestCase {
         XCTAssertEqual(attrs["runtime"], .string("swift"))
         XCTAssertEqual(attrs["error.kind"], .string("nserror"))
         XCTAssertEqual(attrs["error.domain"], .string("PaymentDomain"))
-        XCTAssertEqual(attrs["error.code"], .int(42))
+        XCTAssertEqual(attrs["error.code"], .string("42"))
         XCTAssertEqual(attrs["error.message"], .string("Card declined"))
         XCTAssertEqual(attrs["crash.context.payment.method"], .string("card"))
         XCTAssertNil(attrs["payment.method"],
                      "Caller context must be prefixed `crash.context.`, never bare")
         // `error.stack` should be captured at the call site.
-        if case let .string(stack) = attrs["error.stack"] {
+        if case let .string(stack) = attrs["error.stacktrace"] {
             XCTAssertFalse(stack.isEmpty, "error.stack must be captured at the call site")
             XCTAssertTrue(stack.contains("testCaptureErrorRoutesAppCrashEventToRecorder")
                           || stack.contains("EdgeRumTests"),

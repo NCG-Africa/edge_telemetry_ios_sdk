@@ -25,7 +25,7 @@ final class NetworkContextExtrasTests: XCTestCase {
         var bag = AttributeBag()
         ctx.write(into: &bag)
         XCTAssertEqual(bag["network.type"], .string("wifi"))
-        XCTAssertEqual(bag["network.effectiveType"], .string("wifi"))
+        XCTAssertEqual(bag["network.effective_type"], .string("wifi"))
         XCTAssertEqual(bag["network.expensive"], .bool(true))
         XCTAssertEqual(bag["network.constrained"], .bool(false))
         XCTAssertEqual(bag["network.interface"], .string("en0"))

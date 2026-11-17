@@ -263,9 +263,9 @@ final class UIViewControllerCaptureTests: XCTestCase {
         }
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.0, "navigation")
-        XCTAssertEqual(events.first?.1["navigation.kind"], .string("uikit"))
+        XCTAssertEqual(events.first?.1["navigation.route_type"], .string("uikit"))
         XCTAssertNil(events.first?.1["navigation.type"], "F29: deleted")
-        XCTAssertNotNil(events.first?.1["navigation.screen"])
+        XCTAssertNotNil(events.first?.1["navigation.to_screen"])
     }
 
     // 4. Container VCs are skipped
@@ -301,8 +301,8 @@ final class UIViewControllerCaptureTests: XCTestCase {
         guard case let .event(_, attrs) = probe.calls.first else {
             return XCTFail("Expected a navigation event")
         }
-        XCTAssertEqual(attrs["navigation.screen"], .string("Cart"))
-        XCTAssertEqual(attrs["navigation.kind"], .string("uikit"))
+        XCTAssertEqual(attrs["navigation.to_screen"], .string("Cart"))
+        XCTAssertEqual(attrs["navigation.route_type"], .string("uikit"))
     }
 
     // 6. Fallback: reflected type name
@@ -319,10 +319,10 @@ final class UIViewControllerCaptureTests: XCTestCase {
         guard case let .event(_, attrs) = probe.calls.first else {
             return XCTFail("Expected a navigation event")
         }
-        if case let .string(name) = attrs["navigation.screen"] {
+        if case let .string(name) = attrs["navigation.to_screen"] {
             XCTAssertTrue(
-                name.contains("TestCheckoutViewController"),
-                "expected reflected name to contain 'TestCheckoutViewController', got \(name)"
+                name.contains("UIViewControllerCaptureTests"),  // capped at 128 B
+                "expected the reflected type name, got \(name)"
             )
         } else {
             XCTFail("navigation.screen must be a string")
@@ -344,8 +344,8 @@ final class UIViewControllerCaptureTests: XCTestCase {
         guard case let .event(_, attrs) = probe.calls.first else {
             return XCTFail("Expected a navigation event")
         }
-        XCTAssertEqual(attrs["navigation.kind"], .string("swiftui"))
-        if case let .string(name) = attrs["navigation.screen"] {
+        XCTAssertEqual(attrs["navigation.route_type"], .string("swiftui"))
+        if case let .string(name) = attrs["navigation.to_screen"] {
             XCTAssertTrue(
                 name.contains("TestRootView"),
                 "expected swiftui name to contain TestRootView, got \(name)"
@@ -374,13 +374,13 @@ final class UIViewControllerCaptureTests: XCTestCase {
         let screenBEvent = probe.calls.compactMap { call -> [String: AttributeValue]? in
             if case let .event(name, attrs) = call,
                name == "navigation",
-               attrs["navigation.screen"] == .string("ScreenB") {
+               attrs["navigation.to_screen"] == .string("ScreenB") {
                 return attrs
             }
             return nil
         }.first
 
-        XCTAssertEqual(screenBEvent?["navigation.previous_screen"], .string("ScreenA"))
+        XCTAssertEqual(screenBEvent?["navigation.from_screen"], .string("ScreenA"))
     }
 
     // F28 — sheet dismissal restores the presenter (its appear does not re-fire).
@@ -433,7 +433,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
 
         let previous = probe.calls.compactMap { call -> AttributeValue? in
             guard case let .event(name, attrs) = call, name == "navigation" else { return nil }
-            return attrs["navigation.previous_screen"]
+            return attrs["navigation.from_screen"]
         }
         XCTAssertEqual(previous.last, .string("B"))
     }
@@ -465,7 +465,7 @@ final class UIViewControllerCaptureTests: XCTestCase {
             return XCTFail("Expected a navigation event")
         }
         XCTAssertNil(
-            attrs["navigation.previous_screen"],
+            attrs["navigation.from_screen"],
             "first navigation must omit previous_screen entirely (key absent, not empty string)"
         )
     }

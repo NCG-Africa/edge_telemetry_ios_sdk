@@ -65,7 +65,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
             "http.redirect_count": .int(0),
             "http.tls_protocol": .string("1.3"),
             "http.tls_cipher": .string("TLS_AES_128_GCM_SHA256"),
-            "http.reused_connection": .bool(true),
+            "http.connection_reused": .bool(true),
             "http.proxy_connection": .bool(false),
             "http.network_protocol": .string("h2"),
             "http.request_body_bytes_before_encoding": .int(0),
@@ -96,7 +96,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         XCTAssertEqual(attrs["http.redirect_count"] as? Int, 0)
         XCTAssertEqual(attrs["http.tls_protocol"] as? String, "1.3")
         XCTAssertEqual(attrs["http.tls_cipher"] as? String, "TLS_AES_128_GCM_SHA256")
-        XCTAssertEqual(attrs["http.reused_connection"] as? Bool, true)
+        XCTAssertEqual(attrs["http.connection_reused"] as? Bool, true)
         XCTAssertEqual(attrs["http.proxy_connection"] as? Bool, false)
         XCTAssertEqual(attrs["http.network_protocol"] as? String, "h2")
         XCTAssertEqual(attrs["http.request_body_bytes_before_encoding"] as? Int, 0)
@@ -140,7 +140,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
     func testResourceTimingProducesWireValidMetric() throws {
         let (recorder, sink) = makeRecorder()
 
-        recorder.recordPerformance(name: "resource_timing", attributes: [
+        recorder.recordPerformance(name: "perf.resource_timing", attributes: [
             "resource.host": .string("api.example.com"),
             "resource.dns_ms": .int(12),
             "resource.connect_ms": .int(31),
@@ -160,7 +160,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?["type"] as? String, "metric")
-        XCTAssertEqual(events.first?["metricName"] as? String, "resource_timing")
+        XCTAssertEqual(events.first?["metricName"] as? String, "perf.resource_timing")
 
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
         try WireAssertions.assertIdentityAttributes(attrs)
@@ -194,7 +194,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
             "http.response_size": .int(64),
             "http.from_cache": .bool(false)
         ])
-        recorder.recordPerformance(name: "resource_timing", attributes: [
+        recorder.recordPerformance(name: "perf.resource_timing", attributes: [
             "resource.host": .string("api.example.com"),
             "resource.dns_ms": .int(5),
             "resource.connect_ms": .int(12),
@@ -212,7 +212,7 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
         let events = try XCTUnwrap(json["events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 2)
         XCTAssertEqual(events[0]["eventName"] as? String, "http.request")
-        XCTAssertEqual(events[1]["metricName"] as? String, "resource_timing")
+        XCTAssertEqual(events[1]["metricName"] as? String, "perf.resource_timing")
     }
 
     /// T17.3 — a request that followed one redirect emits
@@ -234,11 +234,11 @@ final class HTTPCaptureWireConformanceTests: XCTestCase {
             "http.redirect_count": .int(1),
             "http.tls_protocol": .string("1.3"),
             "http.network_protocol": .string("h2"),
-            "http.reused_connection": .bool(false),
+            "http.connection_reused": .bool(false),
             "http.proxy_connection": .bool(false),
             "http.request_body_bytes_before_encoding": .int(0)
         ])
-        recorder.recordPerformance(name: "resource_timing", attributes: [
+        recorder.recordPerformance(name: "perf.resource_timing", attributes: [
             "resource.host": .string("api.example.com"),
             "resource.dns_ms": .int(8),
             "resource.connect_ms": .int(22),

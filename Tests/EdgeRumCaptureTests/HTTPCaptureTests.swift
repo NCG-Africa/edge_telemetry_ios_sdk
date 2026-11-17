@@ -882,7 +882,7 @@ final class HTTPCaptureTests: XCTestCase {
         XCTAssertEqual(evAttrs["http.redirect_count"], .int(0))
         XCTAssertEqual(evAttrs["http.tls_protocol"], .string("1.3"))
         XCTAssertEqual(evAttrs["http.tls_cipher"], .string("TLS_AES_128_GCM_SHA256"))
-        XCTAssertEqual(evAttrs["http.reused_connection"], .bool(true))
+        XCTAssertEqual(evAttrs["http.connection_reused"], .bool(true))
         XCTAssertEqual(evAttrs["http.proxy_connection"], .bool(false))
         XCTAssertEqual(evAttrs["http.network_protocol"], .string("h2"))
         XCTAssertEqual(evAttrs["http.request_body_bytes_before_encoding"], .int(128))
@@ -890,7 +890,7 @@ final class HTTPCaptureTests: XCTestCase {
         guard case .performance(let metricName, let metricAttrs) = probe.calls[1] else {
             XCTFail("Expected performance"); return
         }
-        XCTAssertEqual(metricName, "resource_timing")
+        XCTAssertEqual(metricName, "perf.resource_timing")
         XCTAssertEqual(metricAttrs["resource.dns_ms"], .int(11))
         XCTAssertEqual(metricAttrs["resource.download_ms"], .int(50))
         XCTAssertEqual(metricAttrs["resource.redirect_count"], .int(0))

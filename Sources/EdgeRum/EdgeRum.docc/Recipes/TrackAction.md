@@ -7,7 +7,7 @@ Record something the user is trying to do, and how it ended.
 Call ``EdgeRum/startAction(_:)`` when the user begins — a checkout, a
 sign-in — and `complete()` or `fail(reason:)` on the returned
 ``RumAction`` when it ends. The SDK records an `action.started` event
-now and one `action.ended` event with `action.outcome` later. While the
+now and one `task.complete` event with `task.outcome` later. While the
 action is open, every event recorded carries its `action.id`, so the
 requests and screens that made up a slow checkout can be found.
 
@@ -29,7 +29,7 @@ The SDK never guesses that a user gave up. An action is recorded as
 `abandoned` only when it can no longer complete: its session ended, the
 app process died (sent on the next launch), or it was still open ten
 minutes after it started. Leaving the app — to fetch a one-time code,
-say — is not abandonment: the action stays open and `action.ended`
+say — is not abandonment: the action stays open and `task.complete`
 reports how often and how long the app was in the background.
 
 ## Naming

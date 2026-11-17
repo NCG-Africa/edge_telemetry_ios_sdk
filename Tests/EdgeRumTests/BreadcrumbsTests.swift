@@ -82,8 +82,8 @@ final class BreadcrumbsTests: XCTestCase {
     func testUnsampledSessionCrashReplaysWithPriorRing() throws {
         let crumbs = makeCrumbs()
         let (recorder, _) = makeRecorder(sampleRate: 0, crumbs: crumbs)
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.screen": .string("Cart")])
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string("pay")])
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.to_screen": .string("Cart")])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string("pay")])
         crumbs._drainForTesting()
 
         let prior = try XCTUnwrap(Breadcrumbs.takePrior(url: fileURL))
@@ -92,7 +92,7 @@ final class BreadcrumbsTests: XCTestCase {
 
         let attrs = Breadcrumbs.replayAttributes(prior, sessionId: recorder.currentSessionId)
         let rows = try decodeRows(attrs["breadcrumbs"])
-        XCTAssertEqual(rows.map(\.n), ["navigation", "custom_event"], "oldest first")
+        XCTAssertEqual(rows.map(\.n), ["navigation", "custom.event"], "oldest first")
         XCTAssertEqual(rows.map(\.l), ["Cart", "pay"])
         XCTAssertNil(attrs["breadcrumb.dropped"])
     }
@@ -110,7 +110,7 @@ final class BreadcrumbsTests: XCTestCase {
 
     func testRetryLoopingCaptureErrorAttachesRingOnce() {
         let (recorder, sink) = makeRecorder(crumbs: makeCrumbs())
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.screen": .string("Home")])
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.to_screen": .string("Home")])
         for _ in 0..<3 {
             recorder.recordEvent(name: "app.error", attributes: ["error.message": .string("boom")])
         }
@@ -137,7 +137,7 @@ final class BreadcrumbsTests: XCTestCase {
         crumbs.configure(capturing: true, url: fileURL)
         let (recorder, _) = makeRecorder(crumbs: crumbs)
         for i in 0..<20 {
-            recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string("e\(i)")])
+            recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string("e\(i)")])
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "nothing before the window")
         crumbs._drainForTesting()
@@ -154,10 +154,10 @@ final class BreadcrumbsTests: XCTestCase {
     func testMetricsAndForcedEmitNamesAreNotCrumbed() {
         let crumbs = makeCrumbs()
         let (recorder, _) = makeRecorder(crumbs: crumbs)
-        recorder.recordPerformance(name: "memory_usage", attributes: ["value": .double(1)])
-        recorder.recordEvent(name: "network_change", attributes: [:])
-        recorder.recordEvent(name: "page_load", attributes: [:])
-        XCTAssertEqual(crumbs._rowsForTesting.map(\.n), ["page_load"])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: ["value": .double(1)])
+        recorder.recordEvent(name: "network.change", attributes: [:])
+        recorder.recordEvent(name: "app.start", attributes: [:])
+        XCTAssertEqual(crumbs._rowsForTesting.map(\.n), ["app.start"])
         XCTAssertNil(crumbs._rowsForTesting.first?.l)
     }
 
@@ -165,12 +165,12 @@ final class BreadcrumbsTests: XCTestCase {
         let crumbs = makeCrumbs()
         let (recorder, _) = makeRecorder(crumbs: crumbs)
         recorder.setEnabled(false)
-        recorder.recordEvent(name: "page_load", attributes: [:])
+        recorder.recordEvent(name: "app.start", attributes: [:])
         XCTAssertTrue(crumbs._rowsForTesting.isEmpty)
 
         recorder.setEnabled(true)
         crumbs.configure(capturing: false, url: fileURL)
-        recorder.recordEvent(name: "page_load", attributes: [:])
+        recorder.recordEvent(name: "app.start", attributes: [:])
         XCTAssertTrue(crumbs._rowsForTesting.isEmpty)
         XCTAssertTrue(crumbs.attachOnce().isEmpty)
     }
@@ -182,10 +182,10 @@ final class BreadcrumbsTests: XCTestCase {
             "http.method": .string("GET"), "http.path": .string("/v1/orders"),
             "http.url": .string("https://x/v1/orders?token=secret"), "http.status_code": .int(500)
         ])
-        recorder.recordEvent(name: "app_lifecycle", attributes: ["lifecycle.state": .string("backgrounded")])
-        recorder.recordEvent(name: "user.interaction", attributes: ["interaction.target": .string("UIButton")])
-        recorder.recordEvent(name: "user.interaction", attributes: [
-            "interaction.name": .string("pay"), "interaction.target": .string("UIButton")
+        recorder.recordEvent(name: "app.lifecycle", attributes: ["lifecycle.state": .string("backgrounded")])
+        recorder.recordEvent(name: "ui.interaction", attributes: ["ui.view_class": .string("UIButton")])
+        recorder.recordEvent(name: "ui.interaction", attributes: [
+            "ui.target": .string("pay"), "ui.view_class": .string("UIButton")
         ])
         let rows = crumbs._rowsForTesting
         XCTAssertEqual(rows[0], .init(t: 1_717_234_876_000, n: "http.request", l: "GET /v1/orders", s: 500))
@@ -197,7 +197,7 @@ final class BreadcrumbsTests: XCTestCase {
     func testReplayedTerminatedHangDoesNotTakeTheTrail() {
         let crumbs = makeCrumbs()
         let (recorder, sink) = makeRecorder(crumbs: crumbs)
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string("pay")])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string("pay")])
         recorder.recordEvent(name: "app.hang", attributes: ["hang.terminated": .bool(true)])
         recorder.recordEvent(name: "app.hang", attributes: [:])
         recorder.flush(reason: .manual)
@@ -210,9 +210,9 @@ final class BreadcrumbsTests: XCTestCase {
     func testEvictionAndTruncationAreCounted() throws {
         let crumbs = makeCrumbs()
         let (recorder, _) = makeRecorder(crumbs: crumbs)
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string(String(repeating: "é", count: 100))])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string(String(repeating: "é", count: 100))])
         for i in 0..<(Breadcrumbs.capacity + 4) {
-            recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string("e\(i)")])
+            recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string("e\(i)")])
         }
         let attrs = crumbs.attachOnce()
         let rows = try decodeRows(attrs["breadcrumbs"])
@@ -225,7 +225,7 @@ final class BreadcrumbsTests: XCTestCase {
     func testLabelCappedAt128BytesOnCharacterBoundary() {
         let crumbs = makeCrumbs()
         let (recorder, _) = makeRecorder(crumbs: crumbs)
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": .string(String(repeating: "é", count: 100))])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": .string(String(repeating: "é", count: 100))])
         let label = crumbs._rowsForTesting.first?.l ?? ""
         XCTAssertEqual(label.utf8.count, Breadcrumbs.labelCapBytes)
         XCTAssertEqual(label, String(repeating: "é", count: 64))
@@ -235,15 +235,15 @@ final class BreadcrumbsTests: XCTestCase {
         let crumbs = makeCrumbs()
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
         let (recorder, _) = makeRecorder(crumbs: crumbs, clock: clock)
-        recorder.recordEvent(name: "page_load", attributes: [:])
+        recorder.recordEvent(name: "app.start", attributes: [:])
         crumbs._drainForTesting()
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
         clock.advance(by: 31 * 60)
-        recorder.recordPerformance(name: "memory_usage", attributes: ["value": .double(1)])  // rotates, no crumb
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: ["value": .double(1)])  // rotates, no crumb
         crumbs._drainForTesting()
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "no stale trail after rotation")
 
-        recorder.recordEvent(name: "page_load", attributes: [:])
+        recorder.recordEvent(name: "app.start", attributes: [:])
         recorder.resetIdentity()
         crumbs._drainForTesting()
         XCTAssertTrue(crumbs._rowsForTesting.isEmpty)
@@ -254,10 +254,10 @@ final class BreadcrumbsTests: XCTestCase {
         let crumbs = makeCrumbs()
         let clock = FixedClock(Date(timeIntervalSince1970: 1_717_234_876.000))
         let (recorder, sink) = makeRecorder(crumbs: crumbs, clock: clock)
-        recorder.recordEvent(name: "page_load", attributes: [:])
+        recorder.recordEvent(name: "app.start", attributes: [:])
         recorder.recordEvent(name: "app.error", attributes: [:])  // spends this session's attach
         clock.advance(by: 31 * 60)
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.screen": .string("B")])
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.to_screen": .string("B")])
         XCTAssertEqual(crumbs._rowsForTesting.map(\.n), ["navigation"])
         recorder.recordEvent(name: "app.error", attributes: [:])
         recorder.flush(reason: .shutdown)

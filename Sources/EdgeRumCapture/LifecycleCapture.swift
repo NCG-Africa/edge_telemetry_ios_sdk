@@ -119,7 +119,7 @@ public enum LifecycleCapture {
         os_unfair_lock_unlock(previousStateLock)
 
         recorder.recordEvent(
-            name: "app_lifecycle",
+            name: "app.lifecycle",
             attributes: makeAttributes(state: state, previousState: prior)
         )
     }

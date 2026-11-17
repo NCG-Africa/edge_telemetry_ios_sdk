@@ -80,9 +80,13 @@ internal enum CrashReportEncoder {
         if let sigCode = report.signalInfo?.code {
             attrs["crash.signal_code"] = .string(sigCode)
         }
+        // Catalogue error.* (#264): the exception, else the signal.
         if report.hasExceptionInfo, let exc = report.exceptionInfo {
-            attrs["crash.exception_name"] = .string(exc.exceptionName)
-            attrs["crash.exception_reason"] = .string(exc.exceptionReason)
+            attrs["error.type"] = .string(exc.exceptionName)
+            attrs["error.message"] = .string(exc.exceptionReason)
+        } else if let sigName = report.signalInfo?.name {
+            attrs["error.type"] = .string(sigName)
+            if let sigCode = report.signalInfo?.code { attrs["error.message"] = .string(sigCode) }
         }
         if let mach = report.machExceptionInfo {
             attrs["crash.mach_exception"] = .string(machExceptionName(mach.type))
@@ -101,13 +105,21 @@ internal enum CrashReportEncoder {
         if let threads = report.threads as? [PLCrashReportThreadInfo],
            let crashedThread = threads.first(where: { $0.crashed }),
            let frames = crashedThread.stackFrames as? [PLCrashReportStackFrameInfo],
-           let topFrame = frames.first,
-           let image = report.image(forAddress: topFrame.instructionPointer) {
-            if let uuid = image.imageUUID {
-                attrs["crash.binary_uuid"] = .string(uuid)
-            }
-            if let name = image.imageName {
-                attrs["crash.binary_name"] = .string((name as NSString).lastPathComponent)
+           let topFrame = frames.first {
+            // `image +0x<offset>` per frame, the app.error / app.hang form.
+            attrs["error.stacktrace"] = .string(frames.prefix(topFramesPerThread).map { frame in
+                let ip = frame.instructionPointer
+                guard let img = report.image(forAddress: ip) else { return String(format: "0x%016llx", ip) }
+                let name = ((img.imageName ?? "?") as NSString).lastPathComponent
+                return "\(name) +0x\(String(ip - img.imageBaseAddress, radix: 16))"
+            }.joined(separator: "\n"))
+            if let image = report.image(forAddress: topFrame.instructionPointer) {
+                if let uuid = image.imageUUID {
+                    attrs["crash.binary_uuid"] = .string(uuid)
+                }
+                if let name = image.imageName {
+                    attrs["crash.binary_name"] = .string((name as NSString).lastPathComponent)
+                }
             }
         }
 

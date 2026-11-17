@@ -13,7 +13,7 @@
 // Session lifecycle:
 //   - First `recordEvent` after `start()` creates a session if none
 //     exists, or rotates if the last-active timestamp is older than
-//     30 minutes (`idle`) or the session is 4 hours old
+//     30 minutes (`timeout`) or the session is 4 hours old
 //     (`max_duration`).
 //   - `session.sequence` increments on every successful transport ack
 //     — F4 calls `incrementSequence()` after a 2xx response.
@@ -94,7 +94,7 @@ public final class SessionManager: @unchecked Sendable {
     /// session exists, the last-active timestamp is older than
     /// `idleRotationInterval`, or the session is older than
     /// `maxSessionDuration`. Updates `lastActiveAt` to "now".
-    /// `ended` carries the session this call ended and why (`idle` or
+    /// `ended` carries the session this call ended and why (`timeout` or
     /// `max_duration`); `nil` when nothing ended (first session).
     @discardableResult
     public func touch() -> (state: SessionState, rotated: Bool, ended: (state: SessionState, reason: String)?) {
@@ -103,7 +103,7 @@ public final class SessionManager: @unchecked Sendable {
         var ended: (state: SessionState, reason: String)?
         if let existing = store.load() {
             if now.timeIntervalSince(existing.lastActiveAt) >= Self.idleRotationInterval {
-                ended = (existing, "idle")
+                ended = (existing, "timeout")
             } else if now.timeIntervalSince(existing.startTime) >= Self.maxSessionDuration {
                 ended = (existing, "max_duration")
             } else {

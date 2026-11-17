@@ -41,7 +41,7 @@ EdgeRum.start(config)
 ```
 
 The sanitised URL is reflected on both the `http.request` event and
-the companion `resource_timing` metric so dashboards stay consistent
+the companion `perf.resource_timing` metric so dashboards stay consistent
 across both signals.
 
 ## Drop traffic to a noisy host

@@ -42,7 +42,7 @@ the API key selects the environment.
 
 ``EdgeRumConfig/sampleRate`` is per-session, decided once at session
 start. The forced-emit set — `session.started`, `session.finalized`,
-`app.crash`, `network_change` — always emits regardless. `app.crash` is
+`app.crash`, `network.change` — always emits regardless. `app.crash` is
 native crash replay only; handled errors (`app.error`) and hangs
 (`app.hang`) follow `sampleRate` like every other event.
 
@@ -63,7 +63,7 @@ captured HTTP request whose URL matches one of them is dropped silently.
 caller thread for every captured URL. Return a redacted variant — strip
 query parameters, replace tokens, redact path segments. The sanitised
 URL is reflected on both the `http.request` event and the companion
-`resource_timing` metric so dashboards stay consistent.
+`perf.resource_timing` metric so dashboards stay consistent.
 
 ## Location
 

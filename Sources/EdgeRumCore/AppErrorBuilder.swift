@@ -61,7 +61,8 @@ public enum AppErrorBuilder {
     ) -> [String: AttributeValue] {
         var attrs: [String: AttributeValue] = [:]
         attrs["runtime"] = .string("swift")
-        attrs["error.class"] = .string(String(describing: type(of: error)))
+        attrs["error.cause"] = .string("handled")
+        attrs["error.type"] = .string(String(describing: type(of: error)))
         attrs["error.message"] = .string(messageString(for: error))
 
         // Every `Error` bridges to `NSError` on Apple platforms with a
@@ -73,7 +74,7 @@ public enum AppErrorBuilder {
         if isExplicitNSError(error) {
             attrs["error.kind"] = .string("nserror")
             attrs["error.domain"] = .string(ns.domain)
-            attrs["error.code"] = .int(ns.code)
+            attrs["error.code"] = .string(String(ns.code))
             mergeUserInfo(ns.userInfo, into: &attrs, debug: debug)
         } else {
             attrs["error.kind"] = .string("swift")
@@ -81,15 +82,15 @@ public enum AppErrorBuilder {
             // name) and a code — useful for backend bucketing without
             // misrepresenting the source as a Cocoa NSError.
             attrs["error.domain"] = .string(ns.domain)
-            attrs["error.code"] = .int(ns.code)
+            attrs["error.code"] = .string(String(ns.code))
         }
 
         let capped = StackFrames.capped(stack, maxBytes: maxStackBytes)
         if !capped.stack.isEmpty {
-            attrs["error.stack"] = .string(capped.stack)
+            attrs["error.stacktrace"] = .string(capped.stack)
         }
         if capped.bytesRemoved > 0 {
-            attrs["error.stack.truncated"] = .int(capped.bytesRemoved)
+            attrs["error.stacktrace.truncated"] = .int(capped.bytesRemoved)
         }
         if let images = capped.binaryImages {
             attrs["error.binary_images"] = .string(images)

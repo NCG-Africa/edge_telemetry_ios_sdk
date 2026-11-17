@@ -68,14 +68,14 @@ internal enum HangEventEncoder {
         attrs["hang.timestamp"] = .string(WireDateFormatter.string(from: timestamp))
 
         guard !stackFrames.isEmpty else {
-            attrs["hang.stack"] = .string(Self.unavailableFrame)
+            attrs["error.stacktrace"] = .string(Self.unavailableFrame)
             return attrs
         }
         let (kept, omitted) = CrashStackTruncator.truncate(
             frames: stackFrames,
             topN: topFrames
         )
-        attrs["hang.stack"] = .string(StackFrames.join(kept))
+        attrs["error.stacktrace"] = .string(StackFrames.join(kept))
         if omitted != nil {
             attrs["hang.stack.truncated"] = .int(stackFrames.count - kept.count)
         }

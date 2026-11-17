@@ -68,9 +68,9 @@ final class IdentityPersistenceConformanceTests: XCTestCase {
         )
 
         // Emit a mix of events.
-        recorder.recordEvent(name: "navigation", attributes: ["navigation.kind": "uikit"])
-        recorder.recordPerformance(name: "memory_usage", attributes: ["value": 42.0])
-        recorder.recordEvent(name: "custom_event", attributes: [
+        recorder.recordEvent(name: "navigation", attributes: ["navigation.route_type": "uikit"])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: ["value": 42.0])
+        recorder.recordEvent(name: "custom.event", attributes: [
             "event.name": "checkout_started"
         ])
         recorder.flush(reason: .manual)

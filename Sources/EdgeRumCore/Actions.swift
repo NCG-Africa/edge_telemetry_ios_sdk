@@ -42,9 +42,9 @@ public final class Actions: @unchecked Sendable {
         case completed, failed, abandoned
     }
 
-    /// `action.abandon_reason` — the only three points `abandoned` fires.
+    /// `task.abandon_source` — the only three points `abandoned` fires.
     public enum AbandonReason: String, Sendable {
-        case rotation, processDeath = "process_death", timeout
+        case rotation = "session_end", processDeath = "launch_recovery", timeout
     }
 
     /// One open action; also the on-disk record.
@@ -133,7 +133,7 @@ public final class Actions: @unchecked Sendable {
         publishLocked()
         Self.closeHop(&open, now: monotonicNs())
         var attrs = Self.endedAttributes(open, outcome: outcome, abandonReason: abandonReason, dropped: droppedNames.count)
-        if let errorMessage { attrs["action.error_message"] = .string(errorMessage) }
+        if let errorMessage { attrs["task.failure_reason"] = .string(errorMessage) }
         return attrs
     }
 
@@ -219,13 +219,14 @@ public final class Actions: @unchecked Sendable {
         Self.baseAttributes(open, dropped: droppedNames.count)
     }
 
-    /// The one `action.ended` builder; any open hop is already closed.
+    /// The one `task.complete` builder; any open hop is already closed.
     private static func endedAttributes(
         _ open: Open, outcome: Outcome, abandonReason: AbandonReason?, dropped: Int
     ) -> [String: AttributeValue] {
         var attrs = baseAttributes(open, dropped: dropped)
-        attrs["action.outcome"] = .string(outcome.rawValue)
-        if let abandonReason { attrs["action.abandon_reason"] = .string(abandonReason.rawValue) }
+        attrs["task.name"] = attrs.removeValue(forKey: "action.name")
+        attrs["task.outcome"] = .string(outcome.rawValue)
+        if let abandonReason { attrs["task.abandon_source"] = .string(abandonReason.rawValue) }
         attrs["action.background_count"] = .int(open.backgroundCount)
         attrs["action.background_duration_ms"] = .int(open.backgroundMs)
         return attrs

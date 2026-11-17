@@ -63,7 +63,7 @@ public struct NetworkContext: Sendable, Hashable {
 
     public func write(into bag: inout AttributeBag) {
         bag.set("network.type", .string(type.rawValue))
-        bag.set("network.effectiveType", .string(effectiveType))
+        bag.set("network.effective_type", .string(effectiveType))
         bag.set("network.expensive", .bool(isExpensive))
         bag.set("network.constrained", .bool(isConstrained))
         bag.setIfPresent("network.interface", interface.map { .string($0) })

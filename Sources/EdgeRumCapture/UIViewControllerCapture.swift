@@ -265,6 +265,15 @@ public enum UIViewControllerCapture {
     // MARK: Emission
 
     #if canImport(UIKit) && os(iOS)
+    nonisolated(unsafe) private static let leftLock: UnsafeMutablePointer<os_unfair_lock> = {
+        let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
+        p.initialize(to: os_unfair_lock())
+        return p
+    }()
+
+    /// The last disappear was a pop or dismissal; the next appear is `pop`.
+    nonisolated(unsafe) private static var _lastDisappearLeft = false
+
     static func handleViewDidAppear(_ vc: UIViewController) {
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
@@ -282,17 +291,25 @@ public enum UIViewControllerCapture {
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
 
-        // Build the navigation attribute bag.
-        var attrs: [String: AttributeValue] = [
-            "navigation.screen": .string(name),
-            "navigation.kind": .string(kind)
-        ]
         // Box first, so this event's `screen.name` is the screen entered.
         // The from-edge is the last screen entered, not the restored one.
-        if let previous = Riders.shared.enterScreen(name) {
-            attrs["navigation.previous_screen"] = .string(previous)
-        }
+        var attrs = Riders.shared.navigate(to: name, method: navigationMethod(vc))
+        attrs["navigation.route_type"] = .string(kind)
         recorder.recordEvent(name: "navigation", attributes: attrs)
+    }
+
+    /// `navigation.method` for an appear that is not the first screen
+    /// (#264): `push` when `vc` is being pushed or presented, `pop` when
+    /// the last disappear was a pop or dismissal, `tab` for any other
+    /// appear inside a tab bar controller, else `unknown`.
+    static func navigationMethod(_ vc: UIViewController) -> String {
+        os_unfair_lock_lock(leftLock)
+        let popped = _lastDisappearLeft
+        _lastDisappearLeft = false
+        os_unfair_lock_unlock(leftLock)
+        if vc.isMovingToParent || vc.isBeingPresented { return "push" }
+        if popped { return "pop" }
+        return vc.tabBarController != nil ? "tab" : "unknown"
     }
 
     static func handleViewWillDisappear(_ vc: UIViewController) {
@@ -315,6 +332,9 @@ public enum UIViewControllerCapture {
         // or pop restores the presenter, whose appear may not re-fire.
         if isLeaving(vc) {
             Riders.shared.leaveScreen(state.name)
+            os_unfair_lock_lock(leftLock)
+            _lastDisappearLeft = true
+            os_unfair_lock_unlock(leftLock)
         }
 
         // Per-controller state is consumed; clear so a future appear/

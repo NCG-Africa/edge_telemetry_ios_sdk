@@ -58,7 +58,7 @@ final class TransportConformanceTests: XCTestCase {
         ContractMockURLProtocol.responder = { _ in (200, nil, [:]) }
 
         for i in 0..<30 {
-            recorder.recordEvent(name: "custom_event", attributes: [
+            recorder.recordEvent(name: "custom.event", attributes: [
                 "event.name": .string("contract_\(i)")
             ])
         }
@@ -133,7 +133,7 @@ final class TransportConformanceTests: XCTestCase {
         // `start()` emits a session.started event which is the first
         // batch — track every subsequent custom event.
         for _ in 0..<3 {
-            recorder.recordEvent(name: "custom_event", attributes: [:])
+            recorder.recordEvent(name: "custom.event", attributes: [:])
         }
         // 4 total POSTs: session.started + 3 customs.
         XCTAssertTrue(ContractMockURLProtocol.waitForRequests(count: 4, timeout: 3))

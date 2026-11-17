@@ -14,8 +14,8 @@ final class PowerContextTests: XCTestCase {
         let ctx = PowerContext(thermalState: "fair", lowPowerMode: true)
         var bag = AttributeBag()
         ctx.write(into: &bag)
-        XCTAssertEqual(bag["device.thermal_state"], .string("fair"))
-        XCTAssertEqual(bag["device.low_power_mode"], .bool(true))
+        XCTAssertEqual(bag["device.thermal_status"], .string("fair"))
+        XCTAssertEqual(bag["device.power_save"], .bool(true))
         XCTAssertEqual(bag.count, 2)
     }
 
@@ -23,8 +23,8 @@ final class PowerContextTests: XCTestCase {
         let ctx = PowerContext()
         var bag = AttributeBag()
         ctx.write(into: &bag)
-        XCTAssertNil(bag["device.thermal_state"])
-        XCTAssertNil(bag["device.low_power_mode"])
+        XCTAssertNil(bag["device.thermal_status"])
+        XCTAssertNil(bag["device.power_save"])
         XCTAssertEqual(bag.count, 0)
     }
 
@@ -32,8 +32,8 @@ final class PowerContextTests: XCTestCase {
         let ctx = PowerContext(thermalState: "critical", lowPowerMode: nil)
         var bag = AttributeBag()
         ctx.write(into: &bag)
-        XCTAssertEqual(bag["device.thermal_state"], .string("critical"))
-        XCTAssertNil(bag["device.low_power_mode"])
+        XCTAssertEqual(bag["device.thermal_status"], .string("critical"))
+        XCTAssertNil(bag["device.power_save"])
     }
 
     // MARK: thermalStateString mapping

@@ -41,7 +41,7 @@ final class LiveCollectorTests: XCTestCase {
             appPackage: env["EDGE_RUM_E2E_PACKAGE"] ?? "com.example.shop", appBuild: "250",
             sdkVersion: EdgeRum.sdkVersion
         ))
-        recorder.recordEvent(name: "custom_event", attributes: ["event.name": "e2e_250"])
+        recorder.recordEvent(name: "custom.event", attributes: ["event.name": "e2e_250"])
         recorder.flush(reason: .manual)
 
         let deadline = Date().addingTimeInterval(15)
@@ -102,7 +102,7 @@ final class LiveCollectorTests: XCTestCase {
             throw XCTSkip("set EDGE_RUM_E2E_ENDPOINT and EDGE_RUM_E2E_REVOKED_API_KEY")
         }
         let rig = try makeRig(endpoint: endpoint, apiKey: revoked)
-        rig.recorder.recordEvent(name: "custom_event", attributes: ["event.name": "e2e_252_revoked"])
+        rig.recorder.recordEvent(name: "custom.event", attributes: ["event.name": "e2e_252_revoked"])
         rig.recorder.flush(reason: .manual)
 
         XCTAssertTrue(waitUntil(15) { rig.health.snapshot()["events_dropped.non_retryable"] != nil })
@@ -124,7 +124,7 @@ final class LiveCollectorTests: XCTestCase {
         XCTAssertTrue(waitUntil(90) { Self.probe(endpoint, apiKey) == 503 }, "collector never answered 503 not-ready")
 
         let rig = try makeRig(endpoint: endpoint, apiKey: apiKey)
-        rig.recorder.recordEvent(name: "custom_event", attributes: ["event.name": "e2e_252_not_ready"])
+        rig.recorder.recordEvent(name: "custom.event", attributes: ["event.name": "e2e_252_not_ready"])
         rig.recorder.flush(reason: .manual)
         XCTAssertTrue(waitUntil(15) { rig.queue.count == 1 }, "503 → queued")
         guard case .failure(503, _)? = rig.sender.outcomes.first else {

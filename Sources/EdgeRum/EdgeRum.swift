@@ -395,7 +395,7 @@ public enum EdgeRum {
         guard requireStarted("track") else { return }
         var merged = HostAttributes.sanitize(attributes, debug: Recorder.shared.debug)
         merged["event.name"] = .string(name)
-        Recorder.shared.recordEvent(name: "custom_event", attributes: merged)
+        Recorder.shared.recordEvent(name: "custom.event", attributes: merged)
     }
 
     /// Record a screen entry. Equivalent to the SwiftUI
@@ -405,9 +405,8 @@ public enum EdgeRum {
     public static func trackScreen(_ name: String, attributes: [String: AttributeValue]? = nil) {
         guard requireStarted("trackScreen") else { return }
         var merged = HostAttributes.sanitize(attributes, debug: Recorder.shared.debug)
-        merged["navigation.screen"] = .string(name)
-        merged["navigation.kind"] = .string("manual")
-        Riders.shared.enterScreen(name)
+        merged.merge(Riders.shared.navigate(to: name, method: "unknown")) { _, sdk in sdk }
+        merged["navigation.route_type"] = .string("manual")
         FrameSampler.noteMotion()  // F30: screen transition
         Recorder.shared.recordEvent(name: "navigation", attributes: merged)
     }
@@ -449,7 +448,7 @@ public enum EdgeRum {
             fromNs: PageLoadCapture.launchStartNs,
             toNs: PageLoadCapture.monotonicNs()
         ) else { return }
-        Recorder.shared.recordPerformance(name: "launch_interactive", attributes: ["value": .double(Double(ms))])
+        Recorder.shared.recordPerformance(name: "perf.launch_interactive", attributes: ["value": .double(Double(ms))])
     }
 
     /// Start measuring an interval of code. Call `end()` on the
@@ -609,7 +608,7 @@ public enum EdgeRum {
     ) {
         let identity = PLCrashIntegration.replayIdentity(sidecarContents: sidecarContents)
         for attrs in prior {
-            recorder.recordEvent(name: "action.ended", attributes: attrs.merging(identity) { own, _ in own })
+            recorder.recordEvent(name: "task.complete", attributes: attrs.merging(identity) { own, _ in own })
         }
     }
 
@@ -632,6 +631,12 @@ public enum EdgeRum {
 
     /// Test-only — clears the started state so successive tests can
     /// drive `start()` again. Not exposed in release builds.
+    internal static func _markStartedForTesting() {
+        stateLock.lock()
+        startedIdentity = StartedIdentity(apiKey: "edge_test", endpoint: URL(fileURLWithPath: "/"))
+        stateLock.unlock()
+    }
+
     internal static func _resetStartedConfigForTesting() {
         stateLock.lock()
         startedIdentity = nil

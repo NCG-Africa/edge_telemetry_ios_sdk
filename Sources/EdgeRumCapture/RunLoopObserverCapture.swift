@@ -125,7 +125,7 @@ public enum RunLoopObserverCapture {
         ) else { return }
         let recorder = Recorder.shared
         guard recorder.isEnabled else { return }
-        recorder.recordPerformance(name: "long_task", attributes: attrs)
+        recorder.recordPerformance(name: "perf.long_task", attributes: attrs)
     }
 
     // MARK: Driver

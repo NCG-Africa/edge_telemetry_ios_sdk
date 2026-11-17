@@ -101,8 +101,8 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
         ))
 
         recorder.recordEvent(name: "navigation", attributes: [
-            "navigation.kind": "uikit",
-            "navigation.screen": "Cart"
+            "navigation.route_type": "uikit",
+            "navigation.to_screen": "Cart"
         ])
         recorder.flush(reason: .manual)
 
@@ -114,8 +114,8 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
         try WireAssertions.assertIdentityAttributes(attrs)
 
         // T16.1 PowerContext
-        XCTAssertEqual(attrs["device.thermal_state"] as? String, "serious")
-        XCTAssertEqual(attrs["device.low_power_mode"] as? Bool, true)
+        XCTAssertEqual(attrs["device.thermal_status"] as? String, "serious")
+        XCTAssertEqual(attrs["device.power_save"] as? Bool, true)
 
         // T16.2 AccessibilityContext
         XCTAssertEqual(attrs["device.dynamic_type"] as? String, "AX2")
@@ -153,8 +153,8 @@ final class F16ContextEnrichmentConformanceTests: XCTestCase {
         let attrs = try XCTUnwrap(events.first?["attributes"] as? [String: Any])
 
         let f16Keys: [String] = [
-            "device.thermal_state",
-            "device.low_power_mode",
+            "device.thermal_status",
+            "device.power_save",
             "device.dynamic_type",
             "device.reduce_motion",
             "device.bold_text",

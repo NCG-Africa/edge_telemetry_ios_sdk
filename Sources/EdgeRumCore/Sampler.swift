@@ -25,7 +25,7 @@ public struct Sampler: Sendable {
         "session.started",
         "session.finalized",
         "app.crash",
-        "network_change"
+        "network.change"
     ]
 
     /// Whether this session is included in the sample. Computed once

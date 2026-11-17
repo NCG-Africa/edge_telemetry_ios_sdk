@@ -102,7 +102,7 @@ final class SdkHealthTests: XCTestCase {
     func testSampledOutSessionCountsDropsAndReportsOnForcedEmit() throws {
         let (recorder, sink) = makeRecorder(sampleRate: 0.0)
         for _ in 0..<5 { recorder.recordEvent(name: "navigation", attributes: [:]) }
-        recorder.recordPerformance(name: "memory_usage", attributes: [:])
+        recorder.recordPerformance(name: "perf.cpu_usage", attributes: [:])
         XCTAssertTrue(sink.envelopes.isEmpty, "unsampled session uploads nothing on its own")
 
         recorder.recordEvent(name: "app.crash", attributes: [:])  // forced, flushes

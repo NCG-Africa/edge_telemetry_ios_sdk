@@ -7,7 +7,7 @@
 //   - long_task.stack.truncated / long_task.binary_images siblings
 //     (cap mechanics themselves: StackFramesTests).
 //   - emit() routes through Recorder.shared.recordPerformance with
-//     metricName = "long_task".
+//     metricName = "perf.long_task".
 //   - Recorder.isEnabled = false halts emission.
 //   - install() idempotent + concurrent-safe.
 //   - Integration: a 200 ms main-thread sleep produces exactly one
@@ -165,7 +165,7 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         guard case let .performance(name, attrs) = probe.calls[0] else {
             return XCTFail("Expected a .performance call, got \(probe.calls)")
         }
-        XCTAssertEqual(name, "long_task")
+        XCTAssertEqual(name, "perf.long_task")
         XCTAssertEqual(attrs["value"], .double(80))
     }
 
@@ -268,7 +268,7 @@ final class RunLoopObserverCaptureTests: XCTestCase {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
 
         let longTasks = probe.calls.compactMap { call -> [String: AttributeValue]? in
-            if case let .performance(name, attrs) = call, name == "long_task" {
+            if case let .performance(name, attrs) = call, name == "perf.long_task" {
                 return attrs
             }
             return nil
