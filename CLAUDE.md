@@ -846,3 +846,17 @@ Attempt 4: +30s → push to OfflineQueue
 12. **Anything that affects the backend?** → Add it to
     `PLAN-iOS.md` § "Backend asks" so the parity discussion stays in
     one place.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `NCG-Africa/edge_telemetry_ios_sdk` via `gh`; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + decisions in `docs/decisions.md` (`docs/adr/` lazily). See `docs/agents/domain.md`.
