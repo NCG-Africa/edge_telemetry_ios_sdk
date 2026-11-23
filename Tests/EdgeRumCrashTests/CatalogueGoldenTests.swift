@@ -11,7 +11,7 @@
 // iOS only: half the emitters are UIKit. Dump on a simulator with
 //
 //   xcodebuild test -scheme EdgeRum-Package \
-//     -destination 'platform=iOS Simulator,name=iPhone 17' \
+//     -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
 //     -only-testing:EdgeRumCrashTests/CatalogueGoldenTests
 //
 
@@ -124,7 +124,12 @@ final class CatalogueGoldenTests: XCTestCase {
         EdgeRum.time("checkout.submit").end()
         EdgeRum.startAction("checkout").complete()
         EdgeRum.identify(UserContext(id: "u-42", name: "Ada", email: "ada@example.com", phone: "+254700000000"))
-        EdgeRum.captureError(GoldenError.cardDeclined, type: "payment")
+        // Fixed stack, not captureError's live one: over the cap so
+        // error.stacktrace.truncated never depends on the runner's depth.
+        recorder.recordEvent(name: "app.error", attributes: AppErrorBuilder.build(
+            error: GoldenError.cardDeclined, type: "payment", context: [:],
+            stack: Self.oversizedStack, debug: false
+        ))
         EdgeRum.markInteractive()
 
         // app.hang: a live stall, then a stall the process died in
@@ -147,6 +152,10 @@ final class CatalogueGoldenTests: XCTestCase {
     }
 
     private enum GoldenError: Error { case cardDeclined }
+
+    private static let oversizedStack = (0..<200).map {
+        StackFrame(text: "\($0) Golden 0x0000000100000010 main + 16", image: StackImage(name: "Golden", uuid: "00000000-0000-0000-0000-000000000000"))
+    }
 
     private func recordHTTP(at t0: Date) throws {
         let url = try XCTUnwrap(URL(string: "https://api.example.com/v1/orders/42"))

@@ -423,7 +423,7 @@ Tools: `Tools/` — `firewall-check.sh`, `build-xcframework.sh`,
 `check-links.sh`, `check-doc-coverage.sh`, `extract-readme-code.sh`,
 `verify-privacy-manifest.sh`,
 `check-edge-rum-core-coverage.sh`, `pick-simulator-slice.sh`,
-`gen-sample-xcodeproj.sh`.
+`gen-sample-xcodeproj.sh`, `conform.sh`.
 Top-level: `Package.swift`, `EdgeRum.podspec`, `VERSION`, `PLAN-iOS.md`,
 `README.md`, `CHANGELOG.md`, `docs/{payload-example.jsonc,decisions.md,data-flow.md,migration/}`.
 The privacy manifest lives at `Sources/EdgeRum/Resources/PrivacyInfo.xcprivacy`
@@ -828,6 +828,8 @@ Attempt 4: +30s → push to OfflineQueue
    has no call site. Runs on tag push (`privacy-manifest.yml`).
 7. *(planned)* SwiftLint clean. No `.swiftlint.yml` is checked in yet.
 8. Snapshot test: `golden-batch-ios.json` matches generated output.
+   Before a release, also the hand-run conformance gate (`Tools/conform.sh`,
+   see § "Payload examples").
 9. Performance test: `XCTMetric.cpu` / `.memory` /
    `.applicationLaunch` budgets in `PLAN-iOS.md` § 11 hold.
 
