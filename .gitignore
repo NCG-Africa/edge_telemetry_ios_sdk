@@ -37,3 +37,6 @@ Sources/EdgeRum/Generated/EdgeRumVersion.swift
 .idea/
 .vscode/
 *.swp
+
+## Golden batches (dumped by CatalogueGoldenTests, checked by Tools/conform.sh)
+Tests/golden-raw/

@@ -316,8 +316,28 @@ A complete reference batch (`navigation`, `http.request`,
 `metric:perf.resource_timing`, `frame.summary`, `sdk.health`) lives in
 `docs/payload-example.jsonc`. Every event and attribute name follows the
 shared event catalogue (processor `docs/catalogue/*.yaml`, tag pinned in
-`catalogue.version`, #264). `Tests/golden/` holds one real-wire batch per
-event the SDK sends; `Tools/conform.sh` checks them against the catalogue.
+`catalogue.version`, always a `catalogue-v*` tag, #264).
+
+**Conformance gate (#269).** `CatalogueGoldenTests` records every event
+through the real emitters and dumps the batches as sent to the gitignored
+`Tests/golden-raw/`. `Tools/conform.sh` runs the processor's `cmd/conform`
+on it: catalogue check, then the derived shape (event, key, JSON type;
+never a value) must equal the committed `Tests/shape.txt`. Not in CI: run
+it by hand before every release. A key that shows up only by timing is a
+test-input bug: fix the input, don't widen the shape.
+
+```bash
+xcodebuild test -scheme EdgeRum-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:EdgeRumCrashTests/CatalogueGoldenTests   # dump Tests/golden-raw
+Tools/conform.sh            # raw vs the pinned catalogue + shape.txt (needs go)
+Tools/conform.sh -update    # intended wire change: rewrite shape.txt, commit the diff
+PROCESSOR_DIR=../edge_telemetry_processor_go Tools/conform.sh  # dev: untagged catalogue change
+```
+
+Release checklist: (1) is the catalogue change this release needs tagged
+(`catalogue-v*` on the processor)? If not, tag it first. (2) Bump
+`catalogue.version` to that tag (only here, never in a feature PR).
+(3) Run the golden test, then `Tools/conform.sh`; it must pass.
 
 ---
 

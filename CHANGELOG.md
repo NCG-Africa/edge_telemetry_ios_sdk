@@ -15,6 +15,15 @@ minimum-iOS bump is a major version — are documented in the
 
 ### Changed
 
+* **Stable goldens** (#269). `CatalogueGoldenTests` now only dumps the batches
+  as sent to the gitignored `Tests/golden-raw/`; `Tools/conform.sh` checks them
+  against the catalogue and compares their derived shape (event, key, JSON type;
+  no values) with the committed `Tests/shape.txt` (`-update` rewrites it). The
+  simulator, run and SDK version no longer break the check. Removed: the
+  committed `Tests/golden/` JSON, its normalizer and `UPDATE_GOLDENS`, and the
+  `conform` workflow (the raw dump needs a simulator; run it by hand before a
+  release). Pin: `catalogue-v4.6` (was `catalogue-v4.4`).
+
 * **Wire converges on the event catalogue** (catalogue 4.4, #264). Needs the
   processor release that reads catalogue 4.4 before shipping. Renames:
   `page_load` → `app.start` (`app.start.duration_ms` now from process start,

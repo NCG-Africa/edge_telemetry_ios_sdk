@@ -3,8 +3,8 @@
 > **Superseded for names and keys (#264).** The wire vocabulary is the shared event catalogue:
 > [`docs/catalogue/*.yaml`](https://github.com/NCG-Africa/edge_telemetry_processor_go/tree/main/docs/catalogue)
 > in the processor, at the tag pinned in [`catalogue.version`](../../catalogue.version). Where this
-> document and the YAML disagree, the YAML wins; `Tools/conform.sh` checks the golden batches in
-> `Tests/golden/` against it. This document keeps the iOS-side rationale and history.
+> document and the YAML disagree, the YAML wins; `Tools/conform.sh` checks the golden batches
+> (dumped to `Tests/golden-raw/`) against it and their keys against `Tests/shape.txt`. This document keeps the iOS-side rationale and history.
 
 **Status:** the backend hand-off, and the terminal deliverable of map
 [iOS RUM coverage][M188] ([W15 Write the catalogue and roadmap][W15]). It holds the
