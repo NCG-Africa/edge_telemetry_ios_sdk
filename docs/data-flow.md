@@ -3,7 +3,7 @@
 > **Event and attribute names (#264):** the shared event catalogue is the source of truth —
 > [`docs/catalogue/*.yaml`](https://github.com/NCG-Africa/edge_telemetry_processor_go/tree/main/docs/catalogue)
 > in the processor, at the tag in [`catalogue.version`](../catalogue.version). Names below that
-> differ predate it; the flow and timing rules still hold. `Tests/golden/` shows the current wire.
+> differ predate it; the flow and timing rules still hold. `Tests/shape.txt` lists the current wire keys.
 
 **Audience.** EdgeTelemetryProcessor / ingest team and SDK contributors.
 

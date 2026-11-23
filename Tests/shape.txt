@@ -1,0 +1,187 @@
+action.started event action.id string
+action.started event action.name string
+action.started event screen.name string
+app.crash event crash.binary_name string
+app.crash event crash.binary_uuid string
+app.crash event crash.os_version string
+app.crash event crash.report_format_version string
+app.crash event crash.report_json string
+app.crash event crash.signal string
+app.crash event crash.signal_code string
+app.crash event crash.timestamp string
+app.crash event error.message string
+app.crash event error.stacktrace string
+app.crash event error.type string
+app.crash event runtime string
+app.error event error.binary_images string
+app.error event error.cause string
+app.error event error.code string
+app.error event error.domain string
+app.error event error.kind string
+app.error event error.message string
+app.error event error.stacktrace string
+app.error event error.stacktrace.truncated number
+app.error event error.type string
+app.error event error_type string
+app.error event runtime string
+app.error event screen.name string
+app.hang event error.stacktrace string
+app.hang event hang.cpu_usage number
+app.hang event hang.duration_ms number
+app.hang event hang.threshold_ms number
+app.hang event hang.timestamp string
+app.hang event runtime string
+app.hang event screen.name string
+app.lifecycle event lifecycle.previous_state string
+app.lifecycle event lifecycle.state string
+app.lifecycle event screen.name string
+app.start event app.start.duration_ms number
+app.start event app.start.prewarmed bool
+app.start event app.start.sdk_init_ms number
+app.start event app.start.type string
+common app.background_refresh string
+common device.battery_charging bool
+common device.battery_level number
+common device.bold_text bool
+common device.dynamic_type string
+common device.family string
+common device.increase_contrast bool
+common device.is_virtual bool
+common device.locale string
+common device.manufacturer string
+common device.model string
+common device.os string
+common device.platform string
+common device.platform_version string
+common device.power_save bool
+common device.reduce_motion bool
+common device.screen_density number
+common device.screen_height_px number
+common device.screen_width_px number
+common device.thermal_status string
+common device.timezone string
+common device.timezone_offset_min number
+common device.voiceover bool
+common network.constrained bool
+common network.effective_type string
+common network.expensive bool
+common network.interface string
+common network.type string
+common session.id string
+common session.sequence number
+common session.start_time string
+common user.email string
+common user.id string
+common user.name string
+common user.phone string
+custom.event event event.name string
+custom.event event screen.name string
+envelope app.build_number string
+envelope app.name string
+envelope app.package_name string
+envelope app.platform string
+envelope app.version string
+envelope batch_size number
+envelope contract_version string
+envelope device_id string
+envelope sdk.name string
+envelope sdk.version string
+envelope timestamp string
+envelope type string
+frame.summary event display.refresh_rate number
+frame.summary event frame.max_total_duration_ms number
+frame.summary event frame.p95_ms number
+frame.summary event frame.slow_frames number
+frame.summary event frame.source string
+frame.summary event frame.total_frames number
+frame.summary event frame.window_duration_ms number
+frame.summary event screen.name string
+http.request event http.cellular_fallback bool
+http.request event http.connection_reused bool
+http.request event http.duration_ms number
+http.request event http.from_cache bool
+http.request event http.host string
+http.request event http.method string
+http.request event http.network_protocol string
+http.request event http.path string
+http.request event http.proxy_connection bool
+http.request event http.redirect_count number
+http.request event http.request_body_bytes_before_encoding number
+http.request event http.request_size number
+http.request event http.response_size number
+http.request event http.status_code number
+http.request event http.tls_cipher string
+http.request event http.tls_protocol string
+http.request event screen.name string
+memory.pressure event memory.footprint_kb number
+memory.pressure event memory.pressure_level string
+memory.pressure event memory.resident_kb number
+memory.pressure event memory.usage_mb number
+memory.pressure event memory.virtual_kb number
+memory.pressure event screen.name string
+memory.usage event memory.footprint_kb number
+memory.usage event memory.resident_kb number
+memory.usage event memory.usage_mb number
+memory.usage event memory.virtual_kb number
+memory.usage event screen.name string
+navigation event navigation.from_screen string
+navigation event navigation.method string
+navigation event navigation.route_type string
+navigation event navigation.to_screen string
+navigation event screen.name string
+network.change event screen.name string
+perf.cpu_usage metric screen.name string
+perf.custom_timer metric duration_ms number
+perf.custom_timer metric screen.name string
+perf.custom_timer metric timer.name string
+perf.launch_interactive metric screen.name string
+perf.long_task metric long_task.stack string
+perf.long_task metric long_task.threshold_ms number
+perf.long_task metric screen.name string
+perf.resource_timing metric resource.connect_ms number
+perf.resource_timing metric resource.dns_ms number
+perf.resource_timing metric resource.download_ms number
+perf.resource_timing metric resource.fetch_start_to_response_end_ms number
+perf.resource_timing metric resource.host string
+perf.resource_timing metric resource.protocol string
+perf.resource_timing metric resource.redirect_count number
+perf.resource_timing metric resource.tls_ms number
+perf.resource_timing metric resource.transaction_count number
+perf.resource_timing metric resource.ttfb_ms number
+perf.resource_timing metric screen.name string
+screen.duration event screen.duration_ms number
+screen.duration event screen.exit_method string
+screen.duration event screen.name string
+screen.duration event span.start_time string
+screen.load event screen.load.outcome string
+screen.load event screen.load.settled_ms number
+screen.load event screen.load.source string
+screen.load event screen.name string
+sdk.health event batches_uploaded number
+sdk.health event events_generated number
+sdk.health event events_uploaded number
+sdk.health event queue_depth_max number
+sdk.health event storage_bytes_max number
+sdk.health event thread_time_ms number
+session.finalized event screen.name string
+session.finalized event session.end_time string
+session.finalized event session.reason string
+session.started event previous_session.app_version string
+session.started event previous_session.end string
+session.started event previous_session.id string
+session.started event screen.name string
+session.started event session.reason string
+task.complete event action.background_count number
+task.complete event action.background_duration_ms number
+task.complete event action.id string
+task.complete event screen.name string
+task.complete event task.abandon_source string
+task.complete event task.name string
+task.complete event task.outcome string
+ui.interaction event screen.name string
+ui.interaction event ui.name_source string
+ui.interaction event ui.target string
+ui.interaction event ui.type string
+ui.interaction event ui.view_class string
+user.profile.update event screen.name string
+user.profile.update event user.external_id string

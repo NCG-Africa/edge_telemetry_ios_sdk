@@ -1,19 +1,17 @@
 // Tests/EdgeRumCrashTests/CatalogueGoldenTests.swift
 //
-// Golden batches (#264, processor #40): every catalogue event this SDK
-// sends, recorded through the real emitters and encoded by the real
-// envelope encoder, one batch per event name in `Tests/golden/`.
-// `Tools/conform.sh` runs the processor's `cmd/conform` on that
-// directory at the ref pinned in `catalogue.version`.
+// Golden batches (#264, #269): every catalogue event this SDK sends,
+// recorded through the real emitters and encoded by the real envelope
+// encoder, dumped as sent (one file per envelope) to the gitignored
+// `Tests/golden-raw/`. `Tools/conform.sh` runs the processor's
+// `cmd/conform` on it at the tag in `catalogue.version`: catalogue check,
+// then the derived shape (event, key, JSON type; never a value) must equal
+// the committed `Tests/shape.txt`. Nothing here compares values.
 //
-// Values that change per run or per simulator (ids, timestamps,
-// durations, stacks) are normalized to a fixed value of the same JSON
-// type, so the snapshot pins event names, keys, types and enum values.
+// iOS only: half the emitters are UIKit. Dump on a simulator with
 //
-// iOS only: half the emitters are UIKit. Regenerate on a simulator with
-//
-//   TEST_RUNNER_UPDATE_GOLDENS=1 xcodebuild test -scheme EdgeRum-Package \
-//     -destination 'platform=iOS Simulator,name=iPhone 17' \
+//   xcodebuild test -scheme EdgeRum-Package \
+//     -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
 //     -only-testing:EdgeRumCrashTests/CatalogueGoldenTests
 //
 
@@ -36,37 +34,20 @@ final class CatalogueGoldenTests: XCTestCase {
         super.tearDown()
     }
 
-    func testGoldensMatchTheRealWire() throws {
-        let events = try recordEveryEvent()
-        var want: [String: Data] = [:]
-        for (envelope, event) in events {
-            let name = (event["eventName"] ?? event["metricName"]) as? String ?? "?"
-            let file = name.replacingOccurrences(of: ".", with: "-") + ".json"
-            guard want[file] == nil else { continue }  // first of each name
-            var batch = envelope
-            batch["events"] = [event]
-            batch["batch_size"] = 1
-            want[file] = try Self.render(Self.normalize(batch))
-        }
-
-        let dir = Self.goldenDir()
-        if ProcessInfo.processInfo.environment["UPDATE_GOLDENS"] != nil {
-            try? FileManager.default.removeItem(at: dir)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            for (file, body) in want { try body.write(to: dir.appendingPathComponent(file)) }
-        }
-        let onDisk = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        XCTAssertEqual(want.keys.sorted(), onDisk.filter { $0.hasSuffix(".json") }.sorted())
-        for (file, body) in want.sorted(by: { $0.key < $1.key }) {
-            let disk = try? Data(contentsOf: dir.appendingPathComponent(file))
-            XCTAssertEqual(disk.map { String(decoding: $0, as: UTF8.self) }, String(decoding: body, as: UTF8.self), file)
+    func testDumpTheGoldenBatches() throws {
+        let envelopes = try recordEveryEnvelope()
+        let dir = Self.rawDir()
+        try? FileManager.default.removeItem(at: dir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (i, body) in envelopes.enumerated() {
+            try body.write(to: dir.appendingPathComponent(String(format: "batch-%02d.json", i)))
         }
     }
 
     // MARK: - Drive every emitter
 
-    /// Every envelope sent, paired with each of its events, in send order.
-    private func recordEveryEvent() throws -> [([String: Any], [String: Any])] {
+    /// Every envelope sent, encoded as on the wire, in send order.
+    private func recordEveryEnvelope() throws -> [Data] {
         let clock = FixedClock(Date(timeIntervalSince1970: 1_767_225_600))  // 2026-01-01
         let sink = RecordingTransportSink()
         let recorder = Recorder(
@@ -143,7 +124,12 @@ final class CatalogueGoldenTests: XCTestCase {
         EdgeRum.time("checkout.submit").end()
         EdgeRum.startAction("checkout").complete()
         EdgeRum.identify(UserContext(id: "u-42", name: "Ada", email: "ada@example.com", phone: "+254700000000"))
-        EdgeRum.captureError(GoldenError.cardDeclined, type: "payment")
+        // Fixed stack, not captureError's live one: over the cap so
+        // error.stacktrace.truncated never depends on the runner's depth.
+        recorder.recordEvent(name: "app.error", attributes: AppErrorBuilder.build(
+            error: GoldenError.cardDeclined, type: "payment", context: [:],
+            stack: Self.oversizedStack, debug: false
+        ))
         EdgeRum.markInteractive()
 
         // app.hang: a live stall, then a stall the process died in
@@ -162,17 +148,14 @@ final class CatalogueGoldenTests: XCTestCase {
         recorder.touchSession()
         recorder.flush(reason: .manual)
 
-        var out: [([String: Any], [String: Any])] = []
-        for envelope in sink.envelopes {
-            let json = try XCTUnwrap(
-                JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope)) as? [String: Any]
-            )
-            for event in (json["events"] as? [[String: Any]]) ?? [] { out.append((json, event)) }
-        }
-        return out
+        return try sink.envelopes.map { try JSONEncoder().encode($0) }
     }
 
     private enum GoldenError: Error { case cardDeclined }
+
+    private static let oversizedStack = (0..<200).map {
+        StackFrame(text: "\($0) Golden 0x0000000100000010 main + 16", image: StackImage(name: "Golden", uuid: "00000000-0000-0000-0000-000000000000"))
+    }
 
     private func recordHTTP(at t0: Date) throws {
         let url = try XCTUnwrap(URL(string: "https://api.example.com/v1/orders/42"))
@@ -240,47 +223,11 @@ final class CatalogueGoldenTests: XCTestCase {
         context.refreshStorage(StorageContext(backgroundRefresh: "available"))
     }
 
-    // MARK: - Normalization
-
-    /// String values that differ per run or per machine; the key stays.
-    private static let volatileStrings: Set<String> = [
-        "error.stacktrace", "error.breadcrumbs", "error.binary_images", "error.domain", "crash.report_json",
-        "crash.binary_uuid", "crash.binary_name", "crash.os_version", "hang.binary_images",
-        "long_task.binary_images", "action.id", "action.parent_id", "previous_session.id",
-        "session.id", "user.id", "device_id"
-    ]
-
-    private static func normalize(_ value: Any, key: String = "") -> Any {
-        switch value {
-        case let dict as [String: Any]:
-            return dict.reduce(into: [String: Any]()) { $0[$1.key] = normalize($1.value, key: $1.key) }
-        case let array as [Any]:
-            return array.map { normalize($0, key: key) }
-        case let number as NSNumber where CFGetTypeID(number) != CFBooleanGetTypeID():
-            if key == "batch_size" { return number }
-            return number.doubleValue.rounded() == number.doubleValue ? 1 : 1.5
-        case let string as String:
-            if volatileStrings.contains(key) { return "<\(key)>" }
-            if WireDateFormatter.date(from: string) != nil { return "2026-01-01T00:00:00.000Z" }
-            return string
-        default:
-            return value
-        }
-    }
-
-    private static func render(_ json: Any) throws -> Data {
-        var data = try JSONSerialization.data(
-            withJSONObject: json, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        )
-        data.append(0x0A)
-        return data
-    }
-
-    private static func goldenDir(file: StaticString = #filePath) -> URL {
+    private static func rawDir(file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent()  // Tests/EdgeRumCrashTests
             .deletingLastPathComponent()  // Tests
-            .appendingPathComponent("golden", isDirectory: true)
+            .appendingPathComponent("golden-raw", isDirectory: true)
     }
 }
 

@@ -84,7 +84,9 @@ Releases are cut by hand:
 
 1. On a branch, bump `version.txt` (the repo-root `VERSION` symlinks to
    it) and add the `CHANGELOG.md` section from the commits since the
-   last tag. Merge via PR.
+   last tag. Run the conformance release checklist in `CLAUDE.md`
+   (catalogue tagged, `catalogue.version` bumped, `Tools/conform.sh`
+   passes). Merge via PR.
 2. Tag the merged commit `vX.Y.Z` (must equal `VERSION`) and push the tag.
 3. Build and publish from a Mac (no hosted macOS runners):
    ```sh
